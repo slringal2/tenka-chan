@@ -21,6 +21,7 @@
         <button class="nav-item active" data-view="overview"><span class="nav-icon">◫</span><span>ダッシュボード</span></button>
         <button class="nav-item" data-view="findings"><span class="nav-icon">◇</span><span>検出候補</span><span class="nav-count" id="nav-findings">—</span></button>
         <button class="nav-item" data-view="deterministic"><span class="nav-icon">▦</span><span>決定論的解析</span></button>
+        <button class="nav-item" data-view="hotspots"><span class="nav-icon">◉</span><span>性能ホットスポット</span></button>
         <button class="nav-item" data-view="methods"><span class="nav-icon">⌘</span><span>メソッド解析</span></button>
         <button class="nav-item" data-view="evidence"><span class="nav-icon">◉</span><span>仮説・証拠</span></button>
         <button class="nav-item" data-view="autoreview"><span class="nav-icon">✧</span><span>AI自律レビュー</span></button>
@@ -117,6 +118,55 @@
           <article class="panel diagnostic-panel">
             <div class="panel-header"><div><h3>解析の適用範囲</h3><p>省略・上限到達・未検証事項を明示します</p></div><span class="subtle-chip" id="det-completeness">未実行</span></div>
             <div id="det-notes" class="diagnostic-list"><div class="empty-mini">解析実行後に情報を表示します。</div></div>
+          </article>
+        </section>
+
+        <section class="view" id="view-hotspots" hidden>
+          <div class="page-heading">
+            <div class="eyebrow">PERFORMANCE / HOTSPOT INVESTIGATION</div>
+            <h1>性能ホットスポット</h1>
+            <p>コードから推定した調査候補と、実際のワークロードで採取したサンプリング結果を別々に表示します。</p>
+          </div>
+          <div class="panel">
+            <div class="panel-header">
+              <div><h3>静的コスト候補の分析</h3><p>ループ・割り当て・LINQ・I/O・メソッド間呼び出しを解析。LLMは使用しません。</p></div>
+              <span class="subtle-chip">STATIC / UNMEASURED</span>
+            </div>
+            <form id="hotspot-static-form" class="det-controls">
+              <label>上位メソッド数<input name="maxMethods" type="number" min="1" max="500" value="100" required></label>
+              <label>発見箇所数<input name="maxSites" type="number" min="1" max="2000" value="300" required></label>
+              <button id="hotspot-static-run" class="button button-primary" type="submit">解析する →</button>
+            </form>
+            <p class="form-note">スコアは「重い可能性のあるコードを先に調べるため」の指標です。処理時間や実行頻度を表しません。</p>
+          </div>
+          <div class="metrics det-metrics">
+            <article class="metric-card"><div class="metric-top"><span>STATIC CANDIDATES</span></div><div class="metric-value" id="hotspot-site-count">—</div><div class="metric-caption">ループ・割り当て・呼び出し等</div></article>
+            <article class="metric-card"><div class="metric-top"><span>METHODS SCANNED</span></div><div class="metric-value" id="hotspot-method-count">—</div><div class="metric-caption">Roslyn解析済みメソッド</div></article>
+            <article class="metric-card"><div class="metric-top"><span>PROFILE FRAMES</span></div><div class="metric-value" id="hotspot-profile-frames">—</div><div class="metric-caption">プロファイルの実測フレーム</div></article>
+            <article class="metric-card"><div class="metric-top"><span>RESOLVED FRAMES</span></div><div class="metric-value" id="hotspot-matched">—</div><div class="metric-caption">Roslynメソッドとの照合</div></article>
+          </div>
+          <div class="two-column">
+            <article class="panel">
+              <div class="panel-header"><div><h3>重い可能性があるメソッド</h3><p>静的な疑わしさで順位付け。実測CPU時間ではありません。</p></div><span class="subtle-chip">HEURISTIC</span></div>
+              <div id="hotspot-methods" class="stack-list"><div class="empty-mini">静的解析を実行してください。</div></div>
+            </article>
+            <article class="panel">
+              <div class="panel-header"><div><h3>処理コストの候補箇所</h3><p>各候補をクリックするとソースとCFGを確認できます。</p></div></div>
+              <div id="hotspot-sites" class="stack-list"><div class="empty-mini">静的解析を実行してください。</div></div>
+            </article>
+          </div>
+          <article class="panel diagnostic-panel">
+            <div class="panel-header"><div><h3>実測サンプリングの取り込み</h3><p>dotnet-trace等で採取・変換したSpeedscope sampled JSONを読み込みます。</p></div><span class="subtle-chip">MEASURED / WORKLOAD</span></div>
+            <form id="hotspot-profile-form" class="det-controls">
+              <label>プロファイルJSONの絶対パス<input id="hotspot-profile-path" name="filePath" class="profile-path-input" type="text" required placeholder="C:\Projects\app.speedscope.json"></label>
+              <label>プロファイル番号<input name="profileIndex" type="number" min="0" max="100" value="0" required></label>
+              <button id="hotspot-profile-run" class="button button-outline" type="submit">実測結果を取り込む ↗</button>
+            </form>
+            <p class="form-note">ファイルは許可済みのディレクトリに置いてください。計測処理そのものはここでは実行しません。サンプリングは入力・実行環境の影響を受けます。</p>
+          </article>
+          <article class="panel diagnostic-panel">
+            <div class="panel-header"><div><h3>実測プロファイルの重いフレーム</h3><p>Exclusive（自身で消費）とInclusive（呼び出し先を含む）を分けて表示します。</p></div><span id="hotspot-profile-unit" class="subtle-chip">プロファイル未読込</span></div>
+            <div id="hotspot-measured" class="stack-list"><div class="empty-mini">Speedscope sampled JSONを取り込んでください。</div></div>
           </article>
         </section>
 
