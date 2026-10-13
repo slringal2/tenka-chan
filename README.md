@@ -80,6 +80,10 @@ and reports three explicit evidence levels:
 
 - **compiler:** compiler errors/warnings/information from the actual loaded
   compilation, including diagnostics in MSBuild-generated sources.
+- **analyzer:** diagnostic from a DiagnosticAnalyzer explicitly installed
+  in the trusted project. The engine uses the project's AnalyzerOptions
+  and separates analyzer findings from compiler diagnostics. These analyzers
+  are executable managed code: review them before enabling MSBuild trust.
 - **semantic_fact:** an unambiguous C# language behavior; for example,
   \`throw ex;\` within a catch resets the captured exception's stack trace.
   The behavior is certain, but whether it violates the intended contract
