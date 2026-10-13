@@ -43,4 +43,9 @@ public sealed record SampledHotspotReport(
     string SourcePath, string ProfileName, string Unit, int TotalSamples,
     double TotalWeight, int TotalFrames, int LinkedFrames,
     int AmbiguousFrames, IReadOnlyList<SampledFrameCost> Frames,
-    IReadOnlyList<string> Limitations);
+    IReadOnlyList<string> Limitations)
+{
+    public string ProfileType { get; init; } = "sampled";
+    public string ObservationCountKind => ProfileType == "evented"
+        ? "weighted_intervals" : "samples";
+}
