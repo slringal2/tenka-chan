@@ -47,7 +47,10 @@ public sealed class DockerExperimentSmokeTests
                 """);
             var result = await new DockerExecutor(guard, store).RunAsync(
                 receipt.Id, CancellationToken.None);
-            Assert.Equal("tests_passed", result.Status);
+            Assert.True(result.Status == "tests_passed",
+                $"Sandbox returned {result.Status}. Exit={result.ExitCode}; " +
+                $"Failures={System.Text.Json.JsonSerializer.Serialize(result.Tests?.Failures)}; " +
+                $"Stdout={result.Output}; Stderr={result.Stderr}");
             Assert.Equal(0, result.ExitCode);
             Assert.Equal(1, result.Tests?.Passed);
             Assert.Contains(result.Artifacts, a => a.EndsWith(".trx", StringComparison.Ordinal));
