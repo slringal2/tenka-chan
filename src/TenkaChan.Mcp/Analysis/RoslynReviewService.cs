@@ -334,6 +334,12 @@ public sealed class RoslynReviewService : IDisposable
                     var reported = await DeterministicAnalysisEngine.RunAnalyzersAsync(
                         compilation, analyzers, project.AnalyzerOptions, ct);
                     analyzerDiagnostics.AddRange(reported);
+                    if (reported.Any(d => d.Id == "AD0001"))
+                    {
+                        incompleteRuleScanning = true;
+                        additionalNotes.Add("An installed analyzer crashed in project " +
+                            project.Name + "; AD0001 is an analyzer failure, not an application bug.");
+                    }
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
