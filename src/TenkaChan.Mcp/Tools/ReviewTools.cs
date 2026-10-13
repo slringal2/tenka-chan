@@ -58,4 +58,9 @@ public static class ReviewTools
         double thresholdPercent = 5) =>
         Json(PerformanceStatistics.Compare(baseline, candidate,
             baselineEnvironment, candidateEnvironment, unit, thresholdPercent));
+    [McpServerTool(Name = "il_inspect")]
+    [Description("Read managed IL instructions from an allowlisted DLL/EXE without loading or executing it. This is not native JIT assembly.")]
+    public static string InspectIl(IlInspector inspector, string assemblyPath, string typeName,
+        string methodName, int maxInstructions = 250) =>
+        Json(inspector.Inspect(assemblyPath, typeName, methodName, maxInstructions));
 }
