@@ -11,7 +11,8 @@ public sealed record TestRunSummary(int Total, int Passed, int Failed, int Skipp
 
 public sealed record BenchmarkObservation(string CaseId, string Type, string Method,
     string Parameters, int SampleCount, double? MeanNanoseconds,
-    double? MedianNanoseconds, double? AllocatedBytesPerOperation);
+    double? MedianNanoseconds, double? AllocatedBytesPerOperation,
+    string EnvironmentFingerprint = "");
 
 /// <summary>
 /// Parse trusted-format result files written by an untrusted sandbox.
@@ -81,6 +82,7 @@ public static class ExperimentReportParser
             benchmarks.ValueKind != JsonValueKind.Array)
             throw new InvalidDataException("Not a BenchmarkDotNet JSON report.");
 
+        var fingerprint = ReadHostFingerprint(json.RootElement);
         var results = new List<BenchmarkObservation>();
         foreach (var item in benchmarks.EnumerateArray().Take(500))
         {
@@ -108,9 +110,42 @@ public static class ExperimentReportParser
             // means alone; PerformanceStatistics requires independent raw samples.
             var caseId = $"{type}.{method}({parameters})";
             results.Add(new BenchmarkObservation(caseId, type, method, parameters,
-                samples, mean, median, allocated));
+                samples, mean, median, allocated, fingerprint));
         }
         return results;
+    }
+
+
+    private static string ReadHostFingerprint(JsonElement root)
+    {
+        if (!root.TryGetProperty("HostEnvironmentInfo", out var environment) ||
+            environment.ValueKind != JsonValueKind.Object)
+            return "";
+
+        var cpu = ReadEnvironmentString(environment, "ProcessorName");
+        var os = ReadEnvironmentString(environment, "OsVersion");
+        var arch = ReadEnvironmentString(environment, "Architecture");
+        var runtime = ReadEnvironmentString(environment, "RuntimeVersion");
+        if (string.IsNullOrEmpty(runtime)) runtime = ReadEnvironmentString(environment, "ClrVersion");
+        if (string.IsNullOrEmpty(cpu) || string.IsNullOrEmpty(os) ||
+            string.IsNullOrEmpty(arch) || string.IsNullOrEmpty(runtime))
+            return "";
+
+        var sdk = ReadEnvironmentString(environment, "DotNetCliVersion");
+        var config = ReadEnvironmentString(environment, "Configuration");
+        return string.Join("|", os, cpu, arch, runtime, sdk, config);
+    }
+
+    private static string ReadEnvironmentString(JsonElement environment, string key)
+    {
+        if (!environment.TryGetProperty(key, out var element))
+            return "";
+        if (element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty("Value", out var nested))
+            element = nested;
+        return element.ValueKind == JsonValueKind.String
+            ? (element.GetString() ?? "").Trim()
+            : "";
     }
 
     private static int ParseCount(XElement element, string name)
