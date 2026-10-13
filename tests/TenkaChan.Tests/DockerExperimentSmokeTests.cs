@@ -34,6 +34,7 @@ public sealed class DockerExperimentSmokeTests
             """);
 
         ExperimentReceipt? receipt = null;
+        ExperimentReceipt? failingReceipt = null;
         try
         {
             var guard = new WorkspaceGuard([root], false, true);
@@ -55,11 +56,30 @@ public sealed class DockerExperimentSmokeTests
             Assert.Equal(1, result.Tests?.Passed);
             Assert.Contains(result.Artifacts, a => a.EndsWith(".trx", StringComparison.Ordinal));
             Assert.Equal("tests_passed", store.ReadExecutionResult(receipt.Id).Status);
+
+            // Verify an actual failed assertion is retained as evidence
+            // instead of being mistaken for a compilation/runner failure.
+            failingReceipt = store.Create(root, "Calc.csproj", "test", """
+                using Xunit;
+                public class GeneratedNegativeTests
+                {
+                    [Fact] public void FindsBug() => Assert.Equal(999, Calc.Add(2, 3));
+                }
+                """);
+            var failed = await new DockerExecutor(guard, store).RunAsync(
+                failingReceipt.Id, CancellationToken.None);
+            Assert.Equal("tests_failed", failed.Status);
+            Assert.Equal(1, failed.Tests?.Failed);
+            Assert.NotEmpty(failed.Tests!.Failures);
+            Assert.Equal("tests_failed",
+                store.ReadExecutionResult(failingReceipt.Id).Status);
         }
         finally
         {
             if (receipt is not null && Directory.Exists(receipt.Directory))
                 Directory.Delete(receipt.Directory, recursive: true);
+            if (failingReceipt is not null && Directory.Exists(failingReceipt.Directory))
+                Directory.Delete(failingReceipt.Directory, recursive: true);
             Directory.Delete(root, recursive: true);
         }
     }
