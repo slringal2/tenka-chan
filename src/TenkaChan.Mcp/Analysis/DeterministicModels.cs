@@ -30,7 +30,11 @@ public sealed record DeterministicAnalysisSummary(
     int TotalMethodMetrics, int ReturnedMethodMetrics,
     bool FindingsTruncated, bool MethodMetricsTruncated,
     bool IncompleteRuleScanning,
-    string[] Notes);
+    string[] Notes)
+{
+    public int ProjectAnalyzerDiagnostics { get; init; }
+    public int ProjectAnalyzersExecuted { get; init; }
+}
 
 public sealed record DeterministicAnalysisReport(
     DeterministicAnalysisSummary Summary,
@@ -46,6 +50,9 @@ public static class DeterministicRuleCatalog
         new("COMPILER", "C# compiler diagnostic", "compiler", "varies",
             "compiler", "A diagnostic returned by the Roslyn compilation.",
             "Fix errors, then re-run the build and existing tests."),
+        new("ANALYZER", "Configured Roslyn Analyzer diagnostic", "analyzer", "varies",
+            "analyzer", "A diagnostic emitted by an installed project analyzer.",
+            "Consult the analyzer rule and verify the intended behavior."),
         new("PERF1001", "LINQ materialization in loop", "allocation", "info",
             "candidate", "Repeated ToList/ToArray may allocate unnecessarily.",
             "Check semantics and compare allocation/time for real inputs."),
