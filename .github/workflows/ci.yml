@@ -70,6 +70,19 @@ jobs:
           python3 -c 'import json; x=json.load(open("/tmp/tenka-web-deterministic.json")); assert x["summary"]["methodsIndexed"] >= 2, x["summary"]; assert any(f["ruleId"] == "PERF1001" for f in x["findings"]), x["findings"]; assert x["methodMetrics"], x'
           curl --silent --show-error --fail http://127.0.0.1:5077/api/deterministic/report >/tmp/tenka-web-deterministic-cached.json
           python3 -c 'import json; a=json.load(open("/tmp/tenka-web-deterministic.json")); b=json.load(open("/tmp/tenka-web-deterministic-cached.json")); assert a == b'
+          curl --silent --show-error --fail -X POST http://127.0.0.1:5077/api/hotspots/scan \
+            -H 'Content-Type: application/json' -H "X-Tenka-CSRF: $token" \
+            -d '{"maxMethods":10,"maxSites":30}' >/tmp/tenka-web-hotspots.json
+          python3 -c 'import json; x=json.load(open("/tmp/tenka-web-hotspots.json")); assert x["evidenceLevel"] == "static_candidate", x; assert x["totalMethods"] >= 2; assert any(s["category"] == "linq_materialization" for s in x["sites"]), x'
+          export HOTSPOT_PROFILE="$GITHUB_WORKSPACE/tests/Fixtures/UiSample/ci.speedscope.json"
+          profile_payload=$(python3 -c 'import json,os; print(json.dumps({"filePath":os.environ["HOTSPOT_PROFILE"],"profileIndex":0,"maxFrames":20}))')
+          curl --silent --show-error --fail -X POST http://127.0.0.1:5077/api/hotspots/profile/import \
+            -H 'Content-Type: application/json' -H "X-Tenka-CSRF: $token" \
+            --data-binary "$profile_payload" >/tmp/tenka-web-profile.json
+          python3 -c 'import json; x=json.load(open("/tmp/tenka-web-profile.json")); assert x["totalSamples"] == 3, x; assert x["linkedFrames"] >= 1, x; assert any(f["matchedMethodId"] for f in x["frames"]), x'
+          curl --silent --show-error --fail http://127.0.0.1:5077/api/hotspots/report >/tmp/tenka-web-hotspot-cached.json
+          python3 -c 'import json; x=json.load(open("/tmp/tenka-web-hotspot-cached.json")); assert x["staticAnalysis"]["totalSites"] >= 1, x; assert x["sampledProfile"]["totalSamples"] == 3, x'
+
 
           curl --silent --show-error --fail -X POST http://127.0.0.1:5077/api/reviews/start \
             -H 'Content-Type: application/json' -H "X-Tenka-CSRF: $token" \
