@@ -144,11 +144,12 @@ public sealed class DockerExecutor
             // VSTest/TRX often emits ResultSummary outcome="Completed" for
             // successful runs; the authoritative counts are in Counters.
             status = tests is null ? "no_test_report"
-                : tests.Total <= 0 || tests.Passed == 0 ? "no_tests_discovered"
+                : tests.Total <= 0 ? "no_tests_discovered"
                 : tests.Failed > 0 ||
                     string.Equals(tests.Outcome, "Failed", StringComparison.OrdinalIgnoreCase)
                     ? "tests_failed"
                 : exitCode != 0 ? "test_runner_error"
+                : tests.Passed == 0 ? "no_tests_passed"
                 : tests.Passed + tests.Skipped < tests.Total ? "test_report_incomplete"
                 : string.Equals(tests.Outcome, "Completed", StringComparison.OrdinalIgnoreCase) ||
                   string.Equals(tests.Outcome, "Passed", StringComparison.OrdinalIgnoreCase)
