@@ -431,14 +431,15 @@ public sealed class RoslynReviewService : IDisposable
             _methods.Count, metrics.Count,
             ordered.Length > findingLimit, metrics.Count < _methods.Count,
             incompleteRuleScanning,
-            [
+            new string[]
+            {
                 "Compiler diagnostics are compilation facts; rules describe candidates or language semantics, not proven application bugs.",
                 "Complexity scores are syntax heuristics; CFG metrics are optional and do not represent runtime hotness.",
                 "Findings use stable fingerprints for identical project-relative code and rule versions; snapshot IDs are session-specific.",
                 incompleteRuleScanning
                     ? "Some rule or analyzer results may be incomplete; inspect the analyzer notes."
                     : "All loaded documents with a semantic model were evaluated by the built-in rule scanner."
-            ].Concat(additionalNotes).ToArray())
+            }.Concat(additionalNotes).ToArray())
         {
             ProjectAnalyzerDiagnostics = projectAnalyzerDiagnostics,
             ProjectAnalyzersExecuted = projectAnalyzersExecuted
