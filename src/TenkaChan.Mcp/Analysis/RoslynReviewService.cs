@@ -466,6 +466,49 @@ public sealed class RoslynReviewService : IDisposable
     }
 
 
+    public NativeCodeReport CorrelateNativeCode(NativeCodeReport report)
+    {
+        EnsureOpen();
+        var matched = report.Methods.Select(native =>
+        {
+            if (native.DeclaringType.Length == 0 || native.MethodName.Length == 0)
+                return native with { MatchStatus = "jit_signature_unrecognized" };
+            var candidates = _methods.Values.Where(entry =>
+                string.Equals(entry.Symbol.Name, native.MethodName, StringComparison.Ordinal)
+                && (string.Equals(
+                        entry.Symbol.ContainingType.ToDisplayString(
+                            SymbolDisplayFormat.CSharpErrorMessageFormat),
+                        native.DeclaringType, StringComparison.Ordinal)
+                    || string.Equals(
+                        entry.Symbol.ContainingType.ToDisplayString(),
+                        native.DeclaringType, StringComparison.Ordinal)))
+                .Take(2).ToArray();
+            return candidates.Length switch
+            {
+                1 => native with
+                {
+                    RoslynMethodId = candidates[0].Summary.Id,
+                    MatchStatus = "matched_unique_method"
+                },
+                > 1 => native with
+                {
+                    RoslynMethodId = null,
+                    MatchStatus = "ambiguous_overload"
+                },
+                _ => native with
+                {
+                    RoslynMethodId = null,
+                    MatchStatus = "unmatched_method"
+                }
+            };
+        }).ToArray();
+        return report with
+        {
+            Methods = matched,
+            RoslynSnapshotId = CurrentSnapshotId
+        };
+    }
+
     /// <summary>
     /// Static workload-independent ranking, including two-hop call evidence.
     /// Never interprets syntax weight as milliseconds or CPU percentage.
