@@ -20,7 +20,10 @@ public sealed record NativeCodeReport(
     string TargetFramework, string RuntimeImage, string JitFilter,
     string SourceFile, int MethodCount, int InstructionCount,
     bool Truncated, IReadOnlyList<NativeMethodDisassembly> Methods,
-    IReadOnlyList<string> Limitations);
+    IReadOnlyList<string> Limitations)
+{
+    public string? RoslynSnapshotId { get; init; }
+}
 
 /// <summary>
 /// Parses textual RyuJIT generated assembly (not managed IL) emitted by
