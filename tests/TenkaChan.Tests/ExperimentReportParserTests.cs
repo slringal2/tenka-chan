@@ -31,6 +31,27 @@ public sealed class ExperimentReportParserTests
     }
 
     [Fact]
+    public void ReadsStandardVstestCompletedSummaryWithPassedCounters()
+    {
+        var path = WriteTemp(".trx", """
+            <TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+              <ResultSummary outcome="Completed">
+                <Counters total="2" executed="2" passed="2" failed="0"
+                    notExecuted="0" notRunnable="0" />
+              </ResultSummary>
+            </TestRun>
+            """);
+        try
+        {
+            var report = ExperimentReportParser.ReadTrx(path);
+            Assert.Equal("Completed", report.Outcome);
+            Assert.Equal(2, report.Passed);
+            Assert.Equal(0, report.Failed);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
     public void ReadsFailedCasesWithoutTrustingConsoleOutput()
     {
         var path = WriteTemp(".trx", """
