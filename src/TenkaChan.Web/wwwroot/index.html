@@ -264,6 +264,15 @@
             </article>
           </div>
           <article class="panel comparison-panel">
+            <div class="panel-header"><div><h3>JIT機械語の差分を比較</h3><p>同じ実行ハーネスを使った.NET 8以降のJITコード生成結果を比較します。命令差は速度差ではありません。</p></div></div>
+            <form id="native-compare-form" class="comparison-form">
+              <label>BASELINE JIT ID<input name="baselineExperimentId" required placeholder="比較元JIT実験ID"></label>
+              <label>CANDIDATE JIT ID<input name="candidateExperimentId" required placeholder="比較先JIT実験ID"></label>
+              <button class="button button-outline" type="submit">命令を比較 ↗</button>
+            </form>
+            <div id="native-comparison-result"></div>
+          </article>
+          <article class="panel comparison-panel">
             <div class="panel-header"><div><h3>性能差を比較</h3><p>同じワークロード・実行環境で保存したBenchmarkDotNet結果を比較</p></div></div>
             <form class="comparison-form" id="compare-form">
               <label>BASELINE ID<input name="baselineExperimentId" required placeholder="実験ID"></label>
