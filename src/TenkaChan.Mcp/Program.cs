@@ -6,6 +6,7 @@ using ModelContextProtocol.Server;
 using TenkaChan.Mcp.Analysis;
 using TenkaChan.Mcp.Experiments;
 using TenkaChan.Mcp.Security;
+using TenkaChan.Mcp.Review;
 
 var builder = Host.CreateApplicationBuilder(args);
 // stdout is reserved exclusively for the MCP stdio protocol.
@@ -16,6 +17,7 @@ builder.Services.AddSingleton<WorkspaceGuard>();
 builder.Services.AddSingleton<RoslynReviewService>();
 builder.Services.AddSingleton<IlInspector>();
 builder.Services.AddSingleton<ExperimentStore>();
+builder.Services.AddSingleton<ReviewLedger>();
 builder.Services.AddSingleton<DockerExecutor>();
 builder.Services.AddMcpServer()
     .WithStdioServerTransport()
