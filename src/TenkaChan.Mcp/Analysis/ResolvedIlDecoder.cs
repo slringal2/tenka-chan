@@ -66,14 +66,16 @@ internal static class ResolvedIlDecoder
             {
                 case OperandType.InlineNone: rendered = ""; break;
                 case OperandType.ShortInlineBrTarget:
-                    targets.Add(checked(next + (sbyte)operand[0]));
+                    // The operand is signed two's complement. A checked cast
+                    // byte->sbyte would reject valid negative loop backedges.
+                    targets.Add(BranchTarget(next, unchecked((sbyte)operand[0]), bytes.Length));
                     rendered = $"IL_{targets[0]:X4}"; break;
                 case OperandType.InlineBrTarget:
-                    targets.Add(checked(next + BinaryPrimitives.ReadInt32LittleEndian(operand)));
+                    targets.Add(BranchTarget(next, BinaryPrimitives.ReadInt32LittleEndian(operand), bytes.Length));
                     rendered = $"IL_{targets[0]:X4}"; break;
                 case OperandType.InlineSwitch:
                     for (var i = 0; i < count; i++)
-                        targets.Add(checked(next + BinaryPrimitives.ReadInt32LittleEndian(operand.Slice(4 + i * 4, 4))));
+                        targets.Add(BranchTarget(next, BinaryPrimitives.ReadInt32LittleEndian(operand.Slice(4 + i * 4, 4)), bytes.Length));
                     rendered = string.Join(", ", targets.Take(100).Select(t => $"IL_{t:X4}"));
                     if (targets.Count > 100) rendered += " …";
                     break;
@@ -102,7 +104,7 @@ internal static class ResolvedIlDecoder
                 }
                 case OperandType.InlineI: rendered = BinaryPrimitives.ReadInt32LittleEndian(operand).ToString(CultureInfo.InvariantCulture); break;
                 case OperandType.InlineI8: rendered = BinaryPrimitives.ReadInt64LittleEndian(operand).ToString(CultureInfo.InvariantCulture); break;
-                case OperandType.ShortInlineI: rendered = ((sbyte)operand[0]).ToString(CultureInfo.InvariantCulture); break;
+                case OperandType.ShortInlineI: rendered = unchecked((sbyte)operand[0]).ToString(CultureInfo.InvariantCulture); break;
                 case OperandType.ShortInlineVar: rendered = operand[0].ToString(CultureInfo.InvariantCulture); break;
                 case OperandType.InlineVar: rendered = BinaryPrimitives.ReadUInt16LittleEndian(operand).ToString(CultureInfo.InvariantCulture); break;
                 case OperandType.ShortInlineR:
@@ -121,8 +123,16 @@ internal static class ResolvedIlDecoder
         }
         var starts = instructions.Select(i => i.Offset).ToHashSet();
         if (instructions.SelectMany(i => i.BranchTargets).Any(target => !starts.Contains(target)))
-            throw new InvalidDataException("An IL branch points outside the method or into an operand.");
+            throw new InvalidDataException("An IL branch points into an operand instead of an instruction.");
         return instructions;
+    }
+
+    private static int BranchTarget(int next, int displacement, int length)
+    {
+        var target = (long)next + displacement;
+        if (target < 0 || target >= length)
+            throw new InvalidDataException("IL branch target is outside the method body.");
+        return (int)target;
     }
 
     private static void Require(byte[] data, int offset, int count)
