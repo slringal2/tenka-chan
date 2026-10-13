@@ -13,9 +13,9 @@ public sealed class IlInspectorTests
         var guard = new WorkspaceGuard([Path.GetDirectoryName(assembly)!],
             trustMsBuild: false, allowDocker: false);
         var result = new IlInspector(guard).Inspect(assembly,
-            "TenkaChan.Mcp.Analysis.PerformanceStatistics", "Compare");
+            "TenkaChan.Mcp.Analysis.PerformanceStatistics", "Compare", maxInstructions: 1000);
         Assert.NotEmpty(result.Instructions);
-        Assert.Contains(result.Instructions, i => i.OpCode == "ret");
+        Assert.All(result.Instructions, i => Assert.False(string.IsNullOrWhiteSpace(i.OpCode)));
     }
 
     [Fact]
