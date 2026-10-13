@@ -22,6 +22,7 @@ builder.Services.AddSingleton<DashboardState>();
 builder.Services.AddSingleton<ExperimentStore>();
 builder.Services.AddSingleton<DockerExecutor>();
 builder.Services.AddSingleton<BenchmarkRunComparer>();
+builder.Services.AddSingleton<NativeExperimentComparer>();
 builder.Services.AddSingleton<ReviewLedger>();
 builder.Services.AddSingleton<ReviewRunStore>();
 builder.Services.AddSingleton<IReviewContextSource>(
@@ -192,6 +193,11 @@ app.MapPost("/api/hypotheses", (CreateHypothesisRequest request, ReviewLedger le
 app.MapGet("/api/experiments", (ExperimentStore store, int? limit) =>
     Safe(() => Task.FromResult((object)store.ListRecent(limit ?? 80))));
 
+app.MapPost("/api/native/compare", (CompareNativeRequest request,
+    NativeExperimentComparer comparer) =>
+    Safe(() => Task.FromResult((object)comparer.Compare(
+        request.BaselineExperimentId, request.CandidateExperimentId))));
+
 app.MapGet("/api/native/{id}/correlate", (ExperimentStore store,
     DashboardState dashboard, string id, CancellationToken ct) =>
     Safe(async () =>
@@ -273,5 +279,7 @@ public sealed record CreateHypothesisRequest(string SnapshotId, string MethodId,
 public sealed record PrepareExperimentRequest(string RepositoryRoot,
     string ProjectRelativePath, string Kind, string GeneratedCode,
     string? TargetFramework = null, string? JitDisasmFilter = null);
+public sealed record CompareNativeRequest(
+    string BaselineExperimentId, string CandidateExperimentId);
 public sealed record CompareBenchmarksRequest(string BaselineExperimentId,
     string CandidateExperimentId, double? ThresholdPercent);
