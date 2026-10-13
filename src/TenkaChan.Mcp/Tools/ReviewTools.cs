@@ -152,6 +152,12 @@ public static class ReviewTools
     public static string AutonomousReviewHistory(AutonomousReviewRunner runner, int limit = 20) =>
         Json(runner.History(limit));
 
+    [McpServerTool(Name = "native_compare_runs")]
+    [Description("Compare two completed, equivalent JIT harness runs: native code size, instruction families and call/vector patterns. NOT a benchmark or measured speedup.")]
+    public static string NativeCompareRuns(NativeExperimentComparer comparer,
+        string baselineExperimentId, string candidateExperimentId) =>
+        Json(comparer.Compare(baselineExperimentId, candidateExperimentId));
+
     [McpServerTool(Name = "native_disassembly_result")]
     [Description("Return structured RyuJIT native machine instructions and code bytes from a completed kind=jit experiment. Never interprets instruction counts as elapsed time.")]
     public static string NativeDisassemblyResult(ExperimentStore experiments, string experimentId) =>
