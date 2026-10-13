@@ -181,14 +181,14 @@ public sealed class DockerExecutor
         var run = manifest.Kind == "test"
             ? "dotnet test /work/generated/GeneratedTests.csproj -c Release --no-restore " +
               "--logger 'trx;LogFileName=results.trx' --results-directory /artifacts"
-            : "set +e\\n" +
+            : "set +e\n" +
               "dotnet run -c Release --no-restore " +
               "--project /work/generated/GeneratedBenchmarks.csproj -- " +
-              "--filter '*' --exporters FullJSON --artifacts /work/benchmark-output --memory\\n" +
-              "benchmark_exit=$?\\nset -e\\n" +
-              "for report in /work/benchmark-output/results/*-report-full.json; do\\n" +
-              "  if [ -f \\"$report\\" ]; then cp \\"$report\\" /artifacts/; fi\\n" +
-              "done\\nexit \\"$benchmark_exit\\"";
+              "--filter '*' --exporters FullJSON --artifacts /work/benchmark-output --memory\n" +
+              "benchmark_exit=$?\nset -e\n" +
+              "for report in /work/benchmark-output/results/*-report-full.json; do\n" +
+              "  if [ -f \"$report\" ]; then cp \"$report\" /artifacts/; fi\n" +
+              "done\nexit \"$benchmark_exit\"";
 
         // Exact commands are owned by the server, not supplied by the MCP client.
         var script =
