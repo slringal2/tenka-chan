@@ -50,25 +50,25 @@ dotnet run --project src/TenkaChan.Web/TenkaChan.Web.csproj -c Release
 ~~~
 
 Open [http://127.0.0.1:5077](http://127.0.0.1:5077), enter an absolute
-\`.sln\`, \`.slnx\` or \`.csproj\` path **under your allowlisted root**, and press
+`.sln`, `.slnx` or `.csproj` path **under your allowlisted root**, and press
 **読み込む**, then **全体をスキャン**.
 
 On Linux/macOS, export the same environment variables in your shell. Change
-the port using \`TENKA_WEB_PORT\` (1024–65535). The service **always binds
+the port using `TENKA_WEB_PORT` (1024–65535). The service **always binds
 loopback**, regardless of the ASP.NET Core URLs environment setting. API
 writes require a same-origin CSRF token, and the UI renders source-derived
 values as text rather than HTML.
 
 Docker execution is **off by default**. To enable the "実行" action, also
-set \`TENKA_ENABLE_DOCKER=1\`, pre-pull
-\`mcr.microsoft.com/dotnet/sdk:10.0\`, and prewarm your offline NuGet cache.
+set `TENKA_ENABLE_DOCKER=1`, pre-pull
+`mcr.microsoft.com/dotnet/sdk:10.0`, and prewarm your offline NuGet cache.
 The browser asks for confirmation before launching an experiment.
 Review [docs/security.md](docs/security.md) before enabling it.
 
 **Important boundaries:** This is a **local control panel**, not an
 autonomous AI chat UI. It uses the same core code as the MCP server, but
 the workspace index is per process; the SQLite hypothesis ledger and saved
-experiment artifacts are shared when \`TENKA_DATA_DIR\` matches. In-memory
+experiment artifacts are shared when `TENKA_DATA_DIR` matches. In-memory
 Roslyn state is not shared between the Web and MCP processes. The browser
 does not silently execute code or claim that a static rule proves a defect.
 
@@ -85,7 +85,7 @@ and reports three explicit evidence levels:
   and separates analyzer findings from compiler diagnostics. These analyzers
   are executable managed code: review them before enabling MSBuild trust.
 - **semantic_fact:** an unambiguous C# language behavior; for example,
-  \`throw ex;\` within a catch resets the captured exception's stack trace.
+  `throw ex;` within a catch resets the captured exception's stack trace.
   The behavior is certain, but whether it violates the intended contract
   still requires review.
 - **candidate:** a pattern that *might* matter, such as boxing, LINQ
@@ -96,17 +96,17 @@ and reports three explicit evidence levels:
 
 MCP tools:
 
-- \`deterministic_analyze(maxFindings, maxMethodMetrics)\`: analyze an opened
+- `deterministic_analyze(maxFindings, maxMethodMetrics)`: analyze an opened
   solution and return diagnostics, rule matches, traceable source locations,
   stable SHA-256 finding fingerprints and method metrics including optional
   CFG block/branch counts.
-- \`deterministic_rules()\`: list fixed rule IDs, description, default severity,
+- `deterministic_rules()`: list fixed rule IDs, description, default severity,
   evidence level and next verification method.
 
 Browser: select **決定論的解析**, set finding/metric limits, click
 **決定論的解析を実行**, explore the linked findings and export JSON.
-HTTP endpoints: \`POST /api/deterministic/run\`,
-\`GET /api/deterministic/report\` and \`GET /api/deterministic/rules\`.
+HTTP endpoints: `POST /api/deterministic/run`,
+`GET /api/deterministic/report` and `GET /api/deterministic/rules`.
 No model endpoint is called, and no test executable is launched. These
 endpoints require an already-loaded trusted workspace; MSBuild project
 evaluation remains explicitly opt-in because project files can execute
@@ -160,27 +160,27 @@ response is recorded as a method error instead of being presented as a defect.
 
 The original stdio MCP server exposes the same orchestration:
 
-- \`autonomous_review_start(maxMethods, maxMinutes)\`
-- \`autonomous_review_status(runId)\`
-- \`autonomous_review_stop(runId)\`
-- \`autonomous_review_history(limit)\`
+- `autonomous_review_start(maxMethods, maxMinutes)`
+- `autonomous_review_status(runId)`
+- `autonomous_review_stop(runId)`
+- `autonomous_review_history(limit)`
 
-First call \`workspace_open\` before starting through MCP. The run-state JSON
-records are stored in \`TENKA_DATA_DIR/review-runs\` and hypothesis records in
-\`TENKA_DATA_DIR/review-ledger.sqlite\`. An in-progress run is marked
-\`interrupted\` after a process restart. There is a single active run per
+First call `workspace_open` before starting through MCP. The run-state JSON
+records are stored in `TENKA_DATA_DIR/review-runs` and hypothesis records in
+`TENKA_DATA_DIR/review-ledger.sqlite`. An in-progress run is marked
+`interrupted` after a process restart. There is a single active run per
 process. An active run prevents replacement of its Roslyn workspace through
 the provided Web and MCP APIs.
 
 The local model endpoint is restricted to HTTP loopback
-(\`127.0.0.1\`, \`localhost\`, or \`::1\`) with the exact
-\`/v1/chat/completions\` path. The client disables proxying and redirects,
+(`127.0.0.1`, `localhost`, or `::1`) with the exact
+`/v1/chat/completions` path. The client disables proxying and redirects,
 limits response size, and applies a 120-second per-call timeout. Code comments
 and project content are treated as untrusted data in the model prompt;
 this is defense-in-depth, not a formal guarantee against prompt injection.
 
 **Current limit:** the model proposes hypotheses and text-based test ideas,
-not runnable test code. Claims remain \`suspected\` until separately validated
+not runnable test code. Claims remain `suspected` until separately validated
 with a trusted oracle and observed experiment. A completed run means the
 configured number of methods was investigated, **not** that the solution is
 free of bugs or performance regressions.
