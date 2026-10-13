@@ -43,7 +43,7 @@ public sealed class RoslynReviewService : IDisposable
             _warnings.Clear();
             _solution = null;
             _workspace = MSBuildWorkspace.Create();
-            _workspace.WorkspaceFailed += (_, args) =>
+            _workspace.RegisterWorkspaceFailedHandler(args =>
             {
                 if (_warnings.Count < 100) _warnings.Add(args.Diagnostic.Message);
             };
