@@ -12,6 +12,64 @@ server never requires an LLM API key.
 > package cache; full self-directed fuzzing, mutation testing, baseline checkout,
 > profiler traces and **native JIT** disassembly are **not yet implemented**.
 
+## Local Web dashboard
+
+The **ASP.NET Core Web UI** is a separate, optional entry point alongside the
+existing MCP stdio server. It runs on **http://127.0.0.1:5077** and requires no
+JavaScript framework, database server or cloud LLM account.
+
+The browser provides five screens:
+
+- **Dashboard:** open a trusted solution, start Roslyn scans, see project /
+  method counts, compilation diagnostics and candidate categories.
+- **Findings:** search/filter candidate performance, async and correctness rules
+  and jump to the affected method.
+- **Methods:** prioritize methods using syntax-based heuristics, inspect C#
+  source, direct calls, CFG/dataflow, and retrieve candidate boundary inputs.
+- **Evidence:** create and inspect durable hypotheses, their status and
+  supporting records from the SQLite ledger.
+- **Tests and performance:** prepare a detached xUnit/BenchmarkDotNet experiment,
+  explicitly run it in Docker when enabled, view saved TRX/JSON results, and
+  compare compatible benchmark reports.
+
+### Start on Windows PowerShell
+
+Run this with a **trusted** codebase (MSBuild project evaluation can execute
+custom targets on the host when enabled):
+
+~~~powershell
+git clone https://github.com/slringal2/tenka-chan.git
+cd tenka-chan
+
+$env:TENKA_ALLOWED_ROOTS = "C:\Projects"
+$env:TENKA_TRUST_MSBUILD = "1"
+
+dotnet run --project src/TenkaChan.Web/TenkaChan.Web.csproj -c Release
+~~~
+
+Open [http://127.0.0.1:5077](http://127.0.0.1:5077), enter an absolute
+\`.sln\`, \`.slnx\` or \`.csproj\` path **under your allowlisted root**, and press
+**読み込む**, then **全体をスキャン**.
+
+On Linux/macOS, export the same environment variables in your shell. Change
+the port using \`TENKA_WEB_PORT\` (1024–65535). The service **always binds
+loopback**, regardless of the ASP.NET Core URLs environment setting. API
+writes require a same-origin CSRF token, and the UI renders source-derived
+values as text rather than HTML.
+
+Docker execution is **off by default**. To enable the "実行" action, also
+set \`TENKA_ENABLE_DOCKER=1\`, pre-pull
+\`mcr.microsoft.com/dotnet/sdk:10.0\`, and prewarm your offline NuGet cache.
+The browser asks for confirmation before launching an experiment.
+Review [docs/security.md](docs/security.md) before enabling it.
+
+**Important boundaries:** This is a **local control panel**, not an
+autonomous AI chat UI. It uses the same core code as the MCP server, but
+the workspace index is per process; the SQLite hypothesis ledger and saved
+experiment artifacts are shared when \`TENKA_DATA_DIR\` matches. In-memory
+Roslyn state is not shared between the Web and MCP processes. The browser
+does not silently execute code or claim that a static rule proves a defect.
+
 ## Features
 
 | Tool | Function |
@@ -30,6 +88,7 @@ server never requires an LLM API key.
 | `test_plan_suggest` | Propose null/empty/numeric-boundary inputs using Roslyn parameter types, without inventing expected outputs |
 | `experiment_prepare` | Validate C# syntax and build detached xUnit/BenchmarkDotNet project with a project reference |
 | `experiment_run` | Execute prepared code **only in an opt-in, network-disabled Docker container**, recording TRX or BenchmarkDotNet output |
+| `experiments_list` | List recent saved experiments from the same persistent store |
 | `experiment_result` | Reopen structured saved results: test counts, failed test cases and benchmark metrics |
 | `experiment_attach_result` | Attach observed sandbox test evidence to a hypothesis (not an LLM assertion) |
 | `benchmark_compare_runs` | Compare stored benchmark reports when generated benchmark code and host/runtime match |
