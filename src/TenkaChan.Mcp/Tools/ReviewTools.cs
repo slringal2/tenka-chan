@@ -64,6 +64,12 @@ public static class ReviewTools
         Json(ledger.AttachExperimentResult(hypothesisId,
             experiments.ReadExecutionResult(experimentId)));
 
+    [McpServerTool(Name = "benchmark_compare_runs")]
+    [Description("Compare two saved BenchmarkDotNet runs using matching source hashes and runtime fingerprints. Returns descriptive changes, not statistical significance.")]
+    public static string CompareSavedBenchmarks(BenchmarkRunComparer comparer,
+        string baselineExperimentId, string candidateExperimentId, double thresholdPercent = 5) =>
+        Json(comparer.Compare(baselineExperimentId, candidateExperimentId, thresholdPercent));
+
     [McpServerTool(Name = "performance_compare")]
     [Description("Compare independent benchmark samples from the same environment; return exploratory bootstrap interval and candidate regression classification.")]
     public static string Compare(double[] baseline, double[] candidate,
