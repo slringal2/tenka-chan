@@ -8,14 +8,22 @@ namespace TenkaChan.Mcp.Experiments;
 
 public sealed record ExperimentManifest(
     string Id, string Kind, string RepositoryRoot, string ProjectRelativePath,
-    string CreatedUtc, string SourceSha256, string ProjectSha256 = "");
+    string CreatedUtc, string SourceSha256, string ProjectSha256 = "",
+    string TargetFramework = "net10.0", string? JitFilter = null,
+    string RunnerSha256 = "");
 
 public sealed record ExperimentReceipt(string Id, string Kind, string Directory,
-    string SourceDiagnostics, string Message);
+    string SourceDiagnostics, string Message)
+{
+    public string TargetFramework { get; init; } = "net10.0";
+}
 
 public sealed record ExperimentListItem(string Id, string Kind, string CreatedUtc,
     string RepositoryRoot, string ProjectRelativePath, string Status,
-    int? TestsPassed, int? TestsFailed, int Benchmarks);
+    int? TestsPassed, int? TestsFailed, int Benchmarks)
+{
+    public string TargetFramework { get; init; } = "net10.0";
+}
 
 public sealed class ExperimentStore
 {
@@ -31,15 +39,22 @@ public sealed class ExperimentStore
     }
 
     public ExperimentReceipt Create(string repositoryRoot, string projectRelativePath,
-        string kind, string generatedCode)
+        string kind, string generatedCode, string? targetFramework = null,
+        string? jitDisasmFilter = null)
     {
-        if (kind is not ("test" or "benchmark"))
-            throw new ArgumentException("kind must be test or benchmark.");
+        if (kind is not ("test" or "benchmark" or "jit"))
+            throw new ArgumentException("kind must be test, benchmark or jit.");
+        if (kind == "jit")
+            jitDisasmFilter = TargetFrameworkPolicy.ValidateJitFilter(
+                jitDisasmFilter ?? "");
+        else if (jitDisasmFilter is not null)
+            throw new ArgumentException("jitDisasmFilter is valid only for kind=jit.");
         if (string.IsNullOrWhiteSpace(generatedCode) || generatedCode.Length > 60000)
             throw new ArgumentException("generatedCode must contain 1 to 60000 characters.");
         var root = _guard.RequireDirectory(repositoryRoot);
         var project = _guard.RequireProjectWithin(root, projectRelativePath);
         var relative = Path.GetRelativePath(root, project).Replace('\\', '/');
+        var selection = TargetFrameworkPolicy.Resolve(project, targetFramework);
 
         var syntax = CSharpSyntaxTree.ParseText(generatedCode);
         var syntaxErrors = syntax.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error)
@@ -51,23 +66,33 @@ public sealed class ExperimentStore
         var id = Guid.NewGuid().ToString("N");
         var directory = Path.Combine(_storeRoot, "experiments", id);
         Directory.CreateDirectory(directory);
-        var projectName = kind == "test" ? "GeneratedTests.csproj" : "GeneratedBenchmarks.csproj";
+        var projectName = kind switch
+        {
+            "test" => "GeneratedTests.csproj",
+            "benchmark" => "GeneratedBenchmarks.csproj",
+            _ => "GeneratedJit.csproj"
+        };
         var references = new XElement("ItemGroup",
             new XElement("ProjectReference", new XAttribute("Include", "../repo/" + relative)));
-        var packages = kind == "test"
-            ? new XElement("ItemGroup",
+        XElement? packages = kind switch
+        {
+            "test" => new XElement("ItemGroup",
                 new XElement("PackageReference", new XAttribute("Include", "Microsoft.NET.Test.Sdk"), new XAttribute("Version", "17.14.1")),
                 new XElement("PackageReference", new XAttribute("Include", "xunit"), new XAttribute("Version", "2.9.3")),
-                new XElement("PackageReference", new XAttribute("Include", "xunit.runner.visualstudio"), new XAttribute("Version", "3.1.5")))
-            : new XElement("ItemGroup",
-                new XElement("PackageReference", new XAttribute("Include", "BenchmarkDotNet"), new XAttribute("Version", "0.15.8")));
+                new XElement("PackageReference", new XAttribute("Include", "xunit.runner.visualstudio"), new XAttribute("Version", "3.1.5"))),
+            "benchmark" => new XElement("ItemGroup",
+                new XElement("PackageReference", new XAttribute("Include", "BenchmarkDotNet"), new XAttribute("Version", "0.15.8"))),
+            _ => null
+        };
         var proj = new XElement("Project", new XAttribute("Sdk", "Microsoft.NET.Sdk"),
             new XElement("PropertyGroup",
-                new XElement("TargetFramework", "net10.0"),
+                new XElement("TargetFramework", selection.TargetFramework),
                 new XElement("ImplicitUsings", "enable"),
                 new XElement("Nullable", "enable"),
                 new XElement("IsTestProject", kind == "test" ? "true" : "false"),
-                new XElement("OutputType", kind == "test" ? "Library" : "Exe")),
+                new XElement("OutputType", kind == "test" ? "Library" : "Exe"),
+                new XElement("DebugType", "portable"),
+                new XElement("Optimize", "true")),
             references, packages);
         File.WriteAllText(Path.Combine(directory, projectName), proj.ToString());
         File.WriteAllText(Path.Combine(directory, "Generated.cs"), generatedCode);
@@ -79,11 +104,18 @@ public sealed class ExperimentStore
         var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
             System.Text.Encoding.UTF8.GetBytes(generatedCode)));
         var projectSha = Sha256File(Path.Combine(directory, projectName));
+        var runnerHash = kind == "benchmark"
+            ? Sha256File(Path.Combine(directory, "Program.cs")) : "";
         var manifest = new ExperimentManifest(id, kind, root, relative,
-            DateTimeOffset.UtcNow.ToString("O"), digest, projectSha);
+            DateTimeOffset.UtcNow.ToString("O"), digest, projectSha,
+            selection.TargetFramework, jitDisasmFilter, runnerHash);
         File.WriteAllText(Path.Combine(directory, "manifest.json"), JsonSerializer.Serialize(manifest, _json));
         return new ExperimentReceipt(id, kind, directory, "syntax_valid",
-            "Prepared only; not executed. The resulting project requires an isolated Docker runner and prewarmed offline NuGet cache.");
+            $"Prepared {selection.TargetFramework} ({selection.Resolution}); not executed. " +
+            "A matching pre-pulled .NET SDK image and offline package cache are required.")
+        {
+            TargetFramework = selection.TargetFramework
+        };
     }
 
     public (ExperimentManifest Manifest, string Directory) Read(string experimentId)
@@ -100,14 +132,25 @@ public sealed class ExperimentStore
             throw new InvalidDataException("Manifest ID mismatch.");
         _guard.RequireProjectWithin(manifest.RepositoryRoot, manifest.ProjectRelativePath);
         var source = Path.Combine(directory, "Generated.cs");
-        var projectName = manifest.Kind == "test" ? "GeneratedTests.csproj"
-            : manifest.Kind == "benchmark" ? "GeneratedBenchmarks.csproj"
-            : throw new InvalidDataException("Invalid experiment kind.");
+        _ = TargetFrameworkSelection.FromValidated(manifest.TargetFramework, "stored");
+        if (manifest.Kind == "jit")
+            _ = TargetFrameworkPolicy.ValidateJitFilter(manifest.JitFilter ?? "");
+        var projectName = manifest.Kind switch
+        {
+            "test" => "GeneratedTests.csproj",
+            "benchmark" => "GeneratedBenchmarks.csproj",
+            "jit" => "GeneratedJit.csproj",
+            _ => throw new InvalidDataException("Invalid experiment kind.")
+        };
         var project = Path.Combine(directory, projectName);
         if (!File.Exists(source) || !File.Exists(project)
             || !string.Equals(Sha256File(source), manifest.SourceSha256, StringComparison.Ordinal)
             || (manifest.ProjectSha256.Length > 0
-                && !string.Equals(Sha256File(project), manifest.ProjectSha256, StringComparison.Ordinal)))
+                && !string.Equals(Sha256File(project), manifest.ProjectSha256, StringComparison.Ordinal))
+            || (manifest.Kind == "benchmark" && manifest.RunnerSha256.Length > 0 &&
+                (!File.Exists(Path.Combine(directory, "Program.cs")) ||
+                 !string.Equals(Sha256File(Path.Combine(directory, "Program.cs")),
+                     manifest.RunnerSha256, StringComparison.Ordinal))))
             throw new InvalidDataException("Generated experiment files changed after preparation.");
         return (manifest, directory);
     }
@@ -167,7 +210,10 @@ public sealed class ExperimentStore
                     manifest.RepositoryRoot, manifest.ProjectRelativePath,
                     execution?.Status ?? "prepared",
                     execution?.Tests?.Passed, execution?.Tests?.Failed,
-                    execution?.Benchmarks.Count ?? 0));
+                    execution?.Benchmarks.Count ?? 0)
+                {
+                    TargetFramework = manifest.TargetFramework
+                });
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
                 or InvalidDataException or System.Text.Json.JsonException
