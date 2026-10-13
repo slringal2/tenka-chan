@@ -74,8 +74,9 @@ public static class DeterministicAnalysisEngine
             _ => "info"
         };
         return new DeterministicFinding(
-            Fingerprint(project.Name, relative, diagnostic.Id, line, col,
-                diagnostic.GetMessage()),
+            Fingerprint(project.Name, relative,
+                (projectAnalyzer ? "ANALYZER:" : "COMPILER:") + diagnostic.Id,
+                line, col, diagnostic.GetMessage()),
             diagnostic.Id,
             (projectAnalyzer ? "Analyzer diagnostic: " : "Compiler diagnostic: ") + diagnostic.Id,
             projectAnalyzer ? "analyzer" : "compiler", severity,
