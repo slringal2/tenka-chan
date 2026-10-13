@@ -251,7 +251,12 @@ public sealed class RoslynReviewService : IDisposable
         int maxFindings = 1000, int maxMethodMetrics = 300,
         CancellationToken ct = default)
     {
-        EnsureOpen();
+        // Shares the workspace lifetime lock with OpenAsync so concurrent
+        // MCP requests cannot replace the compilation in mid-scan.
+        await _openLock.WaitAsync(ct);
+        try
+        {
+            EnsureOpen();
         var findingLimit = Math.Clamp(maxFindings, 1, 5000);
         var metricLimit = Math.Clamp(maxMethodMetrics, 1, 2000);
         var findings = new List<DeterministicFinding>();
@@ -452,6 +457,8 @@ public sealed class RoslynReviewService : IDisposable
         };
         return new DeterministicAnalysisReport(
             summary, ordered.Take(findingLimit).ToArray(), metrics);
+        }
+        finally { _openLock.Release(); }
     }
 
     public SuggestedTestPlan SuggestTestPlan(string methodId)
