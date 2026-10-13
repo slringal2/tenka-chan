@@ -29,7 +29,10 @@ server never requires an LLM API key.
 | `hypothesis_get` / `hypotheses_list` | Resume evidence review after restarting the MCP process |
 | `test_plan_suggest` | Propose null/empty/numeric-boundary inputs using Roslyn parameter types, without inventing expected outputs |
 | `experiment_prepare` | Validate C# syntax and build detached xUnit/BenchmarkDotNet project with a project reference |
-| `experiment_run` | Execute a prepared project **in a resource-limited, network-disabled Docker container only** |
+| `experiment_run` | Execute prepared code **only in an opt-in, network-disabled Docker container**, recording TRX or BenchmarkDotNet output |
+| `experiment_result` | Reopen structured saved results: test counts, failed test cases and benchmark metrics |
+| `experiment_attach_result` | Attach observed sandbox test evidence to a hypothesis (not an LLM assertion) |
+| `benchmark_compare_runs` | Compare stored benchmark reports when generated benchmark code and host/runtime match |
 | `il_inspect` | Decode managed IL instructions directly from a DLL/EXE without executing it |
 | `performance_compare` | Compare samples from matched environments with an exploratory bootstrap interval |
 
@@ -90,10 +93,18 @@ stays a valid JSON-RPC transport.
    that root**.
 4. Optionally enable the Docker runner and call `experiment_run` using the
    returned experiment ID. The default is **execution disabled**.
+   For xUnit, a valid TRX file with at least one executed test is required to
+   report `tests_passed` or `tests_failed`. Use `experiment_result` to
+   retrieve the saved report, then `experiment_attach_result` to tie the
+   observed result to a hypothesis. Arbitrary `test_execution` evidence in
+   `evidence_add` is rejected.
 5. Write BenchmarkDotNet classes with `[Benchmark]` methods and
-   `[MemoryDiagnoser]`, and prepare `kind="benchmark"`. Compare measured
-   samples with `performance_compare` only when the workload and machine
-   fingerprint actually match.
+   `[MemoryDiagnoser]`, and prepare `kind="benchmark"`. The runner exports
+   BenchmarkDotNet FullJSON when it completes. Use `benchmark_compare_runs`
+   for descriptive mean/Allocation differences from two saved runs of the
+   **same benchmark source** on a matching machine/runtime. Use
+   `performance_compare` with independent raw samples for a more careful
+   exploratory bootstrap estimate. Neither alone proves a regression.
 6. Report confirmed/reproduced behaviors separately from speculative
    performance opportunities.
 
@@ -118,9 +129,16 @@ dropped Linux capabilities, read-only bind mounts and an unprivileged user.
 1. Pre-pull `mcr.microsoft.com/dotnet/sdk:10.0` yourself.
 2. Pre-populate the NuGet global packages folder for the target project,
    xUnit/runner/Test SDK or BenchmarkDotNet. The offline container will not
-   download missing packages.
+   download missing packages. The image is started with `--pull=never`.
 3. Set `TENKA_ENABLE_DOCKER=1` only for projects you intend to execute.
-4. Run `experiment_run`. For long benchmarks, timeouts may be insufficient.
+4. Run `experiment_run`. The test runner is currently synchronous and can
+   exceed an MCP client's request timeout. It has a three-minute test or
+   eight-minute benchmark execution budget; `experiment_result` can retrieve
+   completed runs after reconnecting.
+5. The runner restricts console log retention, records sandbox exit codes,
+   parses TRX test counters, and stores benchmark JSON summaries inside the
+   experiment's artifact folder. A missing or invalid result file is never
+   interpreted as a pass.
 
 Container isolation has limitations (Docker daemon, kernel, mount and
 supply-chain risks). This is not a hardened multi-tenant execution service.
@@ -158,11 +176,18 @@ benchmarks automatically.
 
 ## Review ledger semantics
 
+Execution artifact manifests include hashes of generated C# and project
+configuration; modifying either after preparation is rejected. TRX XML parsing
+prohibits DTDs/external entities. The container's only writable host bind mount
+is its dedicated artifact directory.
+
 The SQLite ledger resides in `TENKA_DATA_DIR/review-ledger.sqlite`. A review
 hypothesis is **not** a confirmed defect. `reported_reproduced` is a
-provenance-gated *claim*: it requires a test_execution record and a separately
-sourced contract record, but does not verify that the recorded test actually
-ran or that the oracle is correct. The reviewer must still inspect evidence.
+provenance-gated *claim*: it requires an actually parsed failing TRX report attached through
+`experiment_attach_result` and a separately sourced contract record.
+This prevents unsupported LLM claims about executing a test, but **does not
+prove that the test's oracle is correct**. Reviewers must still inspect
+the source and the test assertion.
 `review_targets` is a syntactic heuristic, **not** runtime hotness or defect
 probability. `symbol_references` cannot resolve all reflection, dynamic
 dispatch or dependency-injection paths.
