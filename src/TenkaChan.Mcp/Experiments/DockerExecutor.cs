@@ -121,7 +121,7 @@ public sealed class DockerExecutor
                 && tests is null)
             {
                 try { tests = ExperimentReportParser.ReadTrx(file.FullName); }
-                catch (Exception ex) when (ex is InvalidDataException or Xml.XmlException)
+                catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException)
                 {
                     parseErrors.Add("Invalid TRX file: " + ex.Message);
                 }
