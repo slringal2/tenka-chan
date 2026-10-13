@@ -26,6 +26,24 @@ public static class RuleScanner
                     call, "benchmark time and allocated bytes");
             }
 
+            if (InsideAsyncMethod(call)
+                && methodName == "Wait"
+                && symbol?.ContainingType.OriginalDefinition.ToDisplayString()
+                    .StartsWith("System.Threading.Tasks.Task", StringComparison.Ordinal) == true)
+            {
+                Add("ASYNC1002", "async-blocking",
+                    "Task.Wait() inside an async method can block threads; inspect synchronization context and cancellation.",
+                    call, "async concurrency and timeout tests");
+            }
+
+            if (InsideAsyncMethod(call) && methodName == "Sleep"
+                && symbol?.ContainingType.ToDisplayString() == "System.Threading.Thread")
+            {
+                Add("ASYNC1003", "async-blocking",
+                    "Thread.Sleep inside an async method blocks a thread; evaluate Task.Delay semantics.",
+                    call, "latency and concurrency measurements");
+            }
+
             if (InsideLoop(call) && methodName == "Count" && IsLinq(symbol)
                 && call.Parent is BinaryExpressionSyntax binary
                 && (binary.IsKind(SyntaxKind.GreaterThanExpression)
@@ -53,6 +71,14 @@ public static class RuleScanner
         {
             var symbol = model.GetSymbolInfo(created).Symbol as IMethodSymbol;
             if (InsideLoop(created)
+                && symbol?.ContainingType.ToDisplayString() == "System.Net.Http.HttpClient")
+            {
+                Add("PERF1005", "resource",
+                    "HttpClient created inside a loop; investigate handler lifetime and connection reuse.",
+                    created, "network fixture and resource/latency measurements");
+            }
+
+            if (InsideLoop(created)
                 && symbol?.ContainingType.ToDisplayString() == "System.Text.RegularExpressions.Regex")
             {
                 Add("PERF1003", "allocation",
@@ -78,6 +104,27 @@ public static class RuleScanner
             }
         }
 
+        foreach (var statement in root.DescendantNodes().OfType<CatchClauseSyntax>())
+        {
+            if (statement.Block.Statements.Count == 0)
+            {
+                Add("CORRECT1001", "correctness",
+                    "Empty catch block silently swallows exceptions; verify the failure policy.",
+                    statement, "fault-injection tests for exceptional conditions");
+            }
+        }
+
+        foreach (var method in root.DescendantNodes().OfType<MethodDeclarationSyntax>())
+        {
+            if (method.Modifiers.Any(SyntaxKind.AsyncKeyword)
+                && (model.GetDeclaredSymbol(method) as IMethodSymbol)?.ReturnsVoid == true)
+            {
+                Add("ASYNC1004", "async-error-handling",
+                    "async void method may lose awaitable error propagation; check whether this is an event handler.",
+                    method, "exception propagation test");
+            }
+        }
+
         return result.Take(Math.Clamp(maxFindings, 1, 5000)).ToArray();
 
         void Add(string rule, string category, string message, SyntaxNode node, string verification)
@@ -88,6 +135,10 @@ public static class RuleScanner
                 file, line.Line + 1, line.Character + 1, null, verification));
         }
     }
+
+    private static bool InsideAsyncMethod(SyntaxNode node) =>
+        node.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault()
+            ?.Modifiers.Any(SyntaxKind.AsyncKeyword) == true;
 
     private static bool InsideLoop(SyntaxNode node) =>
         node.Ancestors().Any(parent => parent is ForStatementSyntax or ForEachStatementSyntax
