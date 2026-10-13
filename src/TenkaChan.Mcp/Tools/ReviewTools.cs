@@ -3,6 +3,7 @@ using System.Text.Json;
 using ModelContextProtocol.Server;
 using TenkaChan.Mcp.Analysis;
 using TenkaChan.Mcp.Experiments;
+using TenkaChan.Mcp.Review;
 
 namespace TenkaChan.Mcp.Tools;
 
@@ -63,4 +64,52 @@ public static class ReviewTools
     public static string InspectIl(IlInspector inspector, string assemblyPath, string typeName,
         string methodName, int maxInstructions = 250) =>
         Json(inspector.Inspect(assemblyPath, typeName, methodName, maxInstructions));
+
+    [McpServerTool(Name = "review_targets")]
+    [Description("Rank methods by deterministic syntax-based review priority. This score is not a defect probability.")]
+    public static string Targets(RoslynReviewService roslyn, int limit = 50,
+        int offset = 0, string? query = null) =>
+        Json(roslyn.GetReviewTargets(limit, offset, query));
+
+    [McpServerTool(Name = "workspace_diagnostics")]
+    [Description("Collect project compilation diagnostics: errors, warnings, locations and totals.")]
+    public static async Task<string> Diagnostics(RoslynReviewService roslyn,
+        int limit = 200, CancellationToken cancellationToken = default) =>
+        Json(await roslyn.GetCompilationDiagnosticsAsync(limit, cancellationToken));
+
+    [McpServerTool(Name = "symbol_references")]
+    [Description("Use Roslyn SymbolFinder to find references to a method across loaded solution projects.")]
+    public static async Task<string> References(RoslynReviewService roslyn,
+        string methodId, int limit = 100, CancellationToken cancellationToken = default) =>
+        Json(await roslyn.FindReferencesAsync(methodId, limit, cancellationToken));
+
+    [McpServerTool(Name = "hypothesis_create")]
+    [Description("Persist a review hypothesis and explicit failure condition for later verification. Never assumes the claim is true.")]
+    public static string CreateHypothesis(ReviewLedger ledger,
+        string snapshotId, string methodId, string category,
+        string claim, string failureCondition) =>
+        Json(ledger.Create(snapshotId, methodId, category, claim, failureCondition));
+
+    [McpServerTool(Name = "evidence_add")]
+    [Description("Attach sourced evidence to a hypothesis. kind: static_analysis, contract, test_execution, benchmark, profiler, source_inspection, human_review.")]
+    public static string AddEvidence(ReviewLedger ledger, string hypothesisId,
+        string kind, string summary, string provenance, string? artifactId = null) =>
+        Json(ledger.AddEvidence(hypothesisId, kind, summary, provenance, artifactId));
+
+    [McpServerTool(Name = "hypothesis_set_status")]
+    [Description("Record a verdict: suspected, needs_review, reported_reproduced, not_reproduced, refuted. Reported reproduction requires contract and test evidence; it is not formal proof.")]
+    public static string SetHypothesisStatus(ReviewLedger ledger, string hypothesisId,
+        string status, string rationale) =>
+        Json(ledger.SetStatus(hypothesisId, status, rationale));
+
+    [McpServerTool(Name = "hypothesis_get")]
+    [Description("Fetch the complete durable hypothesis record and all evidence.")]
+    public static string GetHypothesis(ReviewLedger ledger, string hypothesisId) =>
+        Json(ledger.Get(hypothesisId));
+
+    [McpServerTool(Name = "hypotheses_list")]
+    [Description("List saved review hypotheses, optionally filtering by status. Survives MCP process restart.")]
+    public static string ListHypotheses(ReviewLedger ledger, string? status = null,
+        int limit = 100) => Json(ledger.List(status, limit));
+
 }
