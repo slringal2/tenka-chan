@@ -18,6 +18,7 @@ builder.Services.AddSingleton<RoslynReviewService>();
 builder.Services.AddSingleton<IlInspector>();
 builder.Services.AddSingleton<ExperimentStore>();
 builder.Services.AddSingleton<BenchmarkRunComparer>();
+builder.Services.AddSingleton<NativeExperimentComparer>();
 builder.Services.AddSingleton<ReviewLedger>();
 builder.Services.AddSingleton<ReviewRunStore>();
 builder.Services.AddSingleton<IReviewContextSource, McpReviewContextSource>();
