@@ -1,0 +1,10 @@
+bin/
+obj/
+.vs/
+.idea/
+TestResults/
+BenchmarkDotNet.Artifacts/
+*.user
+*.suo
+artifacts/
+tenka-data/

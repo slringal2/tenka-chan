@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/TenkaChan.Mcp/TenkaChan.Mcp.csproj" />
+  <Project Path="tests/TenkaChan.Tests/TenkaChan.Tests.csproj" />
+</Solution>
