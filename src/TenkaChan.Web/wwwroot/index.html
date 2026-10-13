@@ -156,7 +156,7 @@
             </article>
           </div>
           <article class="panel diagnostic-panel">
-            <div class="panel-header"><div><h3>実測サンプリングの取り込み</h3><p>dotnet-trace等で採取・変換したSpeedscope sampled JSONを読み込みます。</p></div><span class="subtle-chip">MEASURED / WORKLOAD</span></div>
+            <div class="panel-header"><div><h3>実測サンプリングの取り込み</h3><p>dotnet-trace等で採取・変換したSpeedscope sampled / evented JSONを読み込みます。</p></div><span class="subtle-chip">MEASURED / WORKLOAD</span></div>
             <form id="hotspot-profile-form" class="det-controls">
               <label>プロファイルJSONの絶対パス<input id="hotspot-profile-path" name="filePath" class="profile-path-input" type="text" required placeholder="C:\Projects\app.speedscope.json"></label>
               <label>プロファイル番号<input name="profileIndex" type="number" min="0" max="100" value="0" required></label>
@@ -166,7 +166,7 @@
           </article>
           <article class="panel diagnostic-panel">
             <div class="panel-header"><div><h3>実測プロファイルの重いフレーム</h3><p>Exclusive（自身で消費）とInclusive（呼び出し先を含む）を分けて表示します。</p></div><span id="hotspot-profile-unit" class="subtle-chip">プロファイル未読込</span></div>
-            <div id="hotspot-measured" class="stack-list"><div class="empty-mini">Speedscope sampled JSONを取り込んでください。</div></div>
+            <div id="hotspot-measured" class="stack-list"><div class="empty-mini">SpeedscopeプロファイルJSONを取り込んでください。</div></div>
           </article>
         </section>
 
