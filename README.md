@@ -78,23 +78,23 @@ does not silently execute code or claim that a static rule proves a defect.
 
 ## .NET 8+ optimization targets and RyuJIT machine code
 
-**Target projects:** portable \`net8.0\` and newer. The Tenka-chan MCP/Web
+**Target projects:** portable `net8.0` and newer. The Tenka-chan MCP/Web
 analyzer **host stays on .NET 10**, but an experiment uses the chosen target
 project framework and a matching SDK/runtime container. This distinction
 matters: benchmarking a net8.0 library on a net10.0 runtime would not
 measure its actual .NET 8 JIT behavior.
 
-The target TFM is read from a literal \`TargetFramework\` or
-\`TargetFrameworks\` in the project file. For multi-target projects, the
+The target TFM is read from a literal `TargetFramework` or
+`TargetFrameworks` in the project file. For multi-target projects, the
 lowest supported version is selected unless you explicitly provide
-\`targetFramework\`. When MSBuild imports or variables supply the TFM,
-**pass it explicitly**. \`net8.0-windows\`, Android/iOS targets and
+`targetFramework`. When MSBuild imports or variables supply the TFM,
+**pass it explicitly**. `net8.0-windows`, Android/iOS targets and
 frameworks older than net8.0 are not supported by the Linux experiment
 worker. Future .NET SDK images must be installed locally before use.
 
 ### Real RyuJIT native-code collection
 
-The new \`kind="jit"\` experiment compiles a detached C# **execution
+The new `kind="jit"` experiment compiles a detached C# **execution
 harness**, runs it inside a **network-disabled, unprivileged Docker
 container**, and instructs CoreCLR's RyuJIT to disassemble only the chosen
 class/method. The harness must call your method under representative
@@ -113,12 +113,12 @@ Example MCP arguments for a net8.0 project:
 }
 ~~~
 
-Call \`experiment_prepare\` with these arguments and then, **after
-explicitly enabling Docker**, call \`experiment_run\` with the returned ID.
-Use \`native_disassembly_result\` to inspect generated machine instructions,
+Call `experiment_prepare` with these arguments and then, **after
+explicitly enabling Docker**, call `experiment_run` with the returned ID.
+Use `native_disassembly_result` to inspect generated machine instructions,
 raw encoding bytes, code size, detected call/branch/vector/division families
 and potential allocation or bounds-check helpers. With a matching source
-workspace open, \`native_roslyn_correlate\` attempts to locate the C#
+workspace open, `native_roslyn_correlate` attempts to locate the C#
 declaration by type, method and parameter signature.
 
 You can also use the Web UI's **テストと性能** screen. Select
@@ -129,18 +129,18 @@ recognized instructions and a Roslyn method link if uniquely resolved.
 
 The isolated JIT harness sets:
 
-- \`DOTNET_JitDisasm=<Class:Method>\` and
-  \`DOTNET_JitDisasmWithCodeBytes=1\` to obtain real native instruction text
+- `DOTNET_JitDisasm=<Class:Method>` and
+  `DOTNET_JitDisasmWithCodeBytes=1` to obtain real native instruction text
   and bytes rather than just IL;
-- \`DOTNET_JitStdOutFile=/work/jit-native.txt\` to capture JIT output
+- `DOTNET_JitStdOutFile=/work/jit-native.txt` to capture JIT output
   without mixing it into ordinary stdout;
-- \`DOTNET_TieredCompilation=0\` and \`DOTNET_ReadyToRun=0\` for a
+- `DOTNET_TieredCompilation=0` and `DOTNET_ReadyToRun=0` for a
   controlled, reproducible JIT compilation mode.
 
 Machine code is **runtime-/architecture-/configuration-dependent**.
 The JIT can inline a method, making it disappear from the dump; for a
 focused comparison, consider using
-\`[MethodImpl(MethodImplOptions.NoInlining)]\` on a trusted test fixture.
+`[MethodImpl(MethodImplOptions.NoInlining)]` on a trusted test fixture.
 The parsed machine code is not a measured latency or memory-allocation
 result. Comparing instructions is useful for investigating why
 BenchmarkDotNet and workload profiles show a difference, not replacing
@@ -151,6 +151,20 @@ Without JIT native-to-IL sequence mappings and the appropriate PDB,
 no reliable exact machine-instruction-to-IL-offset/C#-line correspondence
 can be asserted. Unknown or overloaded methods are left unmatched unless
 their parameter signatures can be resolved unambiguously.
+
+### Compare native code generation across .NET runtimes
+
+For two completed `jit` experiments, use the MCP tool
+`native_compare_runs(baselineExperimentId,candidateExperimentId)`
+or the dedicated Web UI comparison form. The tool requires an identical
+generated invocation harness and JIT selector, then reports code size,
+instruction count, instruction-family and native-call changes. You can,
+for example, compare an application's .NET 8 code generation with its
+.NET 10 variant; both measurements must target the same architecture.
+
+These are **code generation differences**, not benchmark speedups. A
+reliable performance comparison still requires matched workloads and
+proper repeated timing/allocation measurements.
 
 ### Reproduce the runtime environment
 
@@ -165,7 +179,7 @@ $env:TENKA_NUGET_PACKAGES = "$env:USERPROFILE\.nuget\packages"
 ~~~
 
 The selected SDK image must already exist on the machine; the worker
-uses \`--pull=never\` and \`--network none\`. Cross-version runtime
+uses `--pull=never` and `--network none`. Cross-version runtime
 experiments should use the same architecture/workload if you wish to
 compare their code generation.
 
@@ -189,19 +203,19 @@ The **性能ホットスポット** screen separates two very different question
 
 MCP:
 
-- \`performance_hotspots(maxMethods,maxSites)\` returns static method rankings,
+- `performance_hotspots(maxMethods,maxSites)` returns static method rankings,
   individual source-linked cost candidates, and direct call edges.
-- \`performance_profile_import(filePath,profileIndex,maxFrames)\` reads
+- `performance_profile_import(filePath,profileIndex,maxFrames)` reads
   a **local .json file inside TENKA_ALLOWED_ROOTS**. The import does not
   launch the application or execute the profiler.
-- \`performance_profile_current()\` returns the last imported profile.
+- `performance_profile_current()` returns the last imported profile.
 
-Web API: \`POST /api/hotspots/scan\`,
-\`POST /api/hotspots/profile/import\`, \`GET /api/hotspots/report\`.
+Web API: `POST /api/hotspots/scan`,
+`POST /api/hotspots/profile/import`, `GET /api/hotspots/report`.
 
 ### Capture a representative .NET workload
 
-Use the supported \`dotnet-trace\` tool separately, while running your
+Use the supported `dotnet-trace` tool separately, while running your
 application with normal inputs. Recent versions offer .NET runtime
 sampled-thread-time tracing:
 
@@ -218,7 +232,7 @@ exclusive CPU usage. This version imports **sampled and evented** Speedscope pro
 sampled mode, weights come from stack samples; in evented mode,
 durations between matched open/close events are accumulated. Evented
 durations can reflect elapsed/thread time instead of on-CPU time. Copy the
-sampled JSON into a directory covered by \`TENKA_ALLOWED_ROOTS\`, open the
+sampled JSON into a directory covered by `TENKA_ALLOWED_ROOTS`, open the
 target solution and import it in **性能ホットスポット**. Never send traces
 containing secrets or user data to untrusted third-party services.
 
@@ -226,7 +240,7 @@ Only a measured representative trace can answer which frame actually
 consumed most sampled time. A static risk score might be high for a method
 that was never called. Conversely, hot code can be computationally costly
 without containing suspicious syntax. The imported weight unit is
-retained as seconds, milliseconds, bytes, or samples (\`none\`); no
+retained as seconds, milliseconds, bytes, or samples (`none`); no
 unwarranted conversion to CPU time is performed.
 
 Profile import is read-only, bounded to a 25 MB JSON file and 200,000
