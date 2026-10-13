@@ -10,12 +10,13 @@ namespace TenkaChan.Mcp.Review;
 public sealed class McpReviewContextSource(RoslynReviewService roslyn)
     : IReviewContextSource
 {
+    private IReadOnlyList<RuleFinding> _findings = [];
     public async Task<ReviewContext> GetContextAsync(
         int maxMethods, CancellationToken cancellationToken)
     {
         var targets = roslyn.GetReviewTargets(maxMethods, 0);
-        var rules = await roslyn.ScanAsync(1000, cancellationToken);
-        return new ReviewContext(roslyn.CurrentSnapshotId, targets, rules);
+        _findings = await roslyn.ScanAsync(1000, cancellationToken);
+        return new ReviewContext(roslyn.CurrentSnapshotId, targets, _findings);
     }
 
     public async Task<ReviewMethodContext> GetMethodAsync(
@@ -24,8 +25,7 @@ public sealed class McpReviewContextSource(RoslynReviewService roslyn)
         var inspection = await roslyn.InspectAsync(
             methodId, includeCallers: true, cancellationToken);
         var plan = roslyn.SuggestTestPlan(methodId);
-        var findings = await roslyn.ScanAsync(1000, cancellationToken);
         return new ReviewMethodContext(inspection, plan,
-            findings.Where(x => x.MethodId == methodId).Take(12).ToArray());
+            _findings.Where(x => x.MethodId == methodId).Take(12).ToArray());
     }
 }
