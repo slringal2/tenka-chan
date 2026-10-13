@@ -117,7 +117,7 @@ public sealed class ExperimentStore
         // dedicated artifacts directory; repository and generated source remain RO.
         if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
         {
-            Directory.SetUnixFileMode(artifacts,
+            File.SetUnixFileMode(artifacts,
                 UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
                 | UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
                 | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute);
