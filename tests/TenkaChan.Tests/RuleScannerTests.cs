@@ -12,7 +12,7 @@ public sealed class RuleScannerTests
         var tree = CSharpSyntaxTree.ParseText(source, path: "Case.cs");
         var assemblyPaths = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
             .Split(Path.PathSeparator);
-        var refs = assemblyPaths.Select(MetadataReference.CreateFromFile).ToArray();
+        var refs = assemblyPaths.Select(path => MetadataReference.CreateFromFile(path)).ToArray();
         var compilation = CSharpCompilation.Create("rule-fixture", [tree], refs,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         Assert.DoesNotContain(compilation.GetDiagnostics(),

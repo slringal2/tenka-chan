@@ -148,9 +148,21 @@ public sealed class RoslynReviewService : IDisposable
         {
             try
             {
-                if (model.GetOperation(entry.Syntax.Body, ct) is IBlockOperation op)
+                // The block operation is often a child of an IMethodBodyOperation.
+                // ControlFlowGraph.Create requires a root operation with Parent == null.
+                var operation = model.GetOperation(entry.Syntax, ct)
+                    ?? model.GetOperation(entry.Syntax.Body, ct);
+                while (operation?.Parent is not null)
+                    operation = operation.Parent;
+
+                var graph = operation switch
                 {
-                    var graph = ControlFlowGraph.Create(op, ct);
+                    IMethodBodyOperation methodBody => ControlFlowGraph.Create(methodBody, ct),
+                    IBlockOperation blockBody => ControlFlowGraph.Create(blockBody, ct),
+                    _ => ControlFlowGraph.Create(entry.Syntax, model, ct)
+                };
+                if (graph is not null)
+                {
                     foreach (var block in graph.Blocks.Take(250))
                     {
                         blocks.Add(new FlowBlock(
@@ -161,6 +173,7 @@ public sealed class RoslynReviewService : IDisposable
                             block.BranchValue is null ? null : Truncate(block.BranchValue.Syntax.ToString(), 350)));
                     }
                 }
+                if (graph is null) note = "CFG unavailable: Roslyn returned no executable root operation.";
                 var flow = model.AnalyzeDataFlow(entry.Syntax.Body);
                 if (flow.Succeeded)
                 {
