@@ -237,6 +237,12 @@ public sealed class RoslynReviewService : IDisposable
     }
 
 
+    public SuggestedTestPlan SuggestTestPlan(string methodId)
+    {
+        var method = RequireMethod(methodId);
+        return BoundaryTestAdvisor.Suggest(method.Summary, method.Symbol);
+    }
+
     public IReadOnlyList<ReviewTarget> GetReviewTargets(int limit = 50, int offset = 0,
         string? query = null)
     {
