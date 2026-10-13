@@ -87,6 +87,69 @@ public sealed class SpeedscopeHotspotParserTests
     }
 
     [Fact]
+    public void SupportsEventedProfilesAndComputesExclusiveDurations()
+    {
+        const string evented = """
+            {
+              "shared":{"frames":[
+                {"name":"Sample.Engine.Run()"},
+                {"name":"Sample.Engine.Hot()"},
+                {"name":"Sample.Engine.Cold()"}]},
+              "profiles":[{
+                "type":"evented","name":"duration-profile",
+                "unit":"milliseconds","startValue":0,"endValue":8,
+                "events":[
+                  {"type":"O","at":0,"frame":0},
+                  {"type":"O","at":1,"frame":1},
+                  {"type":"C","at":4,"frame":1},
+                  {"type":"O","at":4,"frame":2},
+                  {"type":"C","at":7,"frame":2},
+                  {"type":"C","at":8,"frame":0}
+                ]
+              }]
+            }
+            """;
+        var profile = SpeedscopeHotspotParser.Parse(evented, "evented.json",
+        [
+            new("run", "Sample.Engine.Run"),
+            new("hot", "Sample.Engine.Hot"),
+            new("cold", "Sample.Engine.Cold")
+        ]);
+        Assert.Equal("evented", profile.ProfileType);
+        Assert.Equal("weighted_intervals", profile.ObservationCountKind);
+        Assert.Equal(8, profile.TotalWeight);
+        var run = Assert.Single(profile.Frames, f => f.MatchedMethodId == "run");
+        var hot = Assert.Single(profile.Frames, f => f.MatchedMethodId == "hot");
+        var cold = Assert.Single(profile.Frames, f => f.MatchedMethodId == "cold");
+        Assert.Equal(8, run.InclusiveWeight);
+        Assert.Equal(2, run.ExclusiveWeight);
+        Assert.Equal(3, hot.ExclusiveWeight);
+        Assert.Equal(3, cold.ExclusiveWeight);
+        Assert.Equal(37.5, hot.ExclusivePercent);
+    }
+
+    [Fact]
+    public void RejectsUnbalancedOrOutOfOrderEventedProfile()
+    {
+        const string bad = """
+            {
+              "shared":{"frames":[{"name":"A"},{"name":"B"}]},
+              "profiles":[{
+                "type":"evented","name":"bad","unit":"seconds",
+                "startValue":0,"endValue":2,
+                "events":[
+                  {"type":"O","at":0,"frame":0},
+                  {"type":"O","at":1,"frame":1},
+                  {"type":"C","at":2,"frame":0}
+                ]
+              }]
+            }
+            """;
+        Assert.Throws<InvalidDataException>(() =>
+            SpeedscopeHotspotParser.Parse(bad, "bad.json", []));
+    }
+
+    [Fact]
     public void SupportsProfileSelectionAndLimits()
     {
         var result = SpeedscopeHotspotParser.Parse(Source, "trace.json", Methods,
