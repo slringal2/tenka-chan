@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.RegularExpressions;
 using TenkaChan.Mcp.Analysis;
 using TenkaChan.Mcp.Security;
@@ -31,8 +30,7 @@ internal static class NativeBinaryArtifacts
         guard.RequireDirectory(directory);
         var records = new List<NativeBinaryArtifact>();
         long total = 0;
-        foreach (var path in Directory.EnumerateFiles(directory, "binary-*", SearchOption.TopDirectoryOnly)
-            .OrderBy(p => p, StringComparer.Ordinal))
+        foreach (var path in Directory.EnumerateFiles(directory, "binary-*", SearchOption.TopDirectoryOnly).OrderBy(p => p, StringComparer.Ordinal))
         {
             var name = Path.GetFileName(path);
             if (!ValidName(name)) continue;
@@ -63,21 +61,20 @@ internal static class NativeBinaryArtifacts
         @"^binary-[A-Za-z0-9_][A-Za-z0-9_.-]{0,220}\.(dll|pdb)$", RegexOptions.CultureInvariant);
 }
 
-/// <summary>
-/// A durable single-use marker prevents concurrent reruns or stale artifacts
-/// being attributed to a new execution. Retry by preparing a new experiment.
-/// </summary>
+/// <summary>Durable single-use IDs prevent concurrent runs and reuse of stale evidence.</summary>
 internal static class ExperimentExecutionReservation
 {
     public static FileStream Acquire(string directory, string artifacts)
     {
-        if (File.Exists(Path.Combine(directory, "execution-report.json")) ||
-            Directory.EnumerateFileSystemEntries(artifacts).Any())
+        if (File.Exists(Path.Combine(directory, "execution-report.json")) || Directory.EnumerateFileSystemEntries(artifacts).Any())
             throw new InvalidOperationException("Experiment already has execution evidence. Prepare a new experiment for a fresh run.");
         try
         {
+            // Atomic CreateNew is the exclusion mechanism. Read sharing is
+            // intentional: the read-only container may copy generated files
+            // on Windows, but a second CreateNew still cannot succeed.
             return new FileStream(Path.Combine(directory, "execution-started.lock"),
-                FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                FileMode.CreateNew, FileAccess.Write, FileShare.Read);
         }
         catch (IOException ex)
         {
