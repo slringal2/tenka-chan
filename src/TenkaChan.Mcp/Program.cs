@@ -14,6 +14,7 @@ builder.Logging.AddConsole(options =>
 
 builder.Services.AddSingleton<WorkspaceGuard>();
 builder.Services.AddSingleton<RoslynReviewService>();
+builder.Services.AddSingleton<IlInspector>();
 builder.Services.AddSingleton<ExperimentStore>();
 builder.Services.AddSingleton<DockerExecutor>();
 builder.Services.AddMcpServer()
