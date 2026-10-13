@@ -12,7 +12,7 @@ public sealed class DeterministicScopeTests
         var tree = CSharpSyntaxTree.ParseText(source, path: "Scopes.cs");
         var refs = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
             .Split(Path.PathSeparator)
-            .Select(MetadataReference.CreateFromFile).ToArray();
+            .Select(path => MetadataReference.CreateFromFile(path)).ToArray();
         var compilation = CSharpCompilation.Create("Scopes", [tree], refs,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         Assert.DoesNotContain(compilation.GetDiagnostics(),
