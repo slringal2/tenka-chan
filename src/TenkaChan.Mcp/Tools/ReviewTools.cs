@@ -4,7 +4,6 @@ using ModelContextProtocol.Server;
 using TenkaChan.Mcp.Analysis;
 using TenkaChan.Mcp.Experiments;
 using TenkaChan.Mcp.Review;
-using TenkaChan.Mcp.Review;
 
 namespace TenkaChan.Mcp.Tools;
 
@@ -12,7 +11,7 @@ namespace TenkaChan.Mcp.Tools;
 public static class ReviewTools
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
-    private static string Json(object data) => JsonSerializer.Serialize(data, JsonOptions);
+    private static string Json(object? data) => JsonSerializer.Serialize(data, JsonOptions);
 
     [McpServerTool(Name = "workspace_open")]
     [Description("Open a trusted .NET solution/project via Roslyn MSBuildWorkspace. Requires TENKA_ALLOWED_ROOTS and TENKA_TRUST_MSBUILD=1.")]
