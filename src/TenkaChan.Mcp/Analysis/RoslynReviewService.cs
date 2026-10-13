@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Collections.Immutable;
+using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.FlowAnalysis;
@@ -257,6 +259,9 @@ public sealed class RoslynReviewService : IDisposable
         var compilerErrors = 0;
         var compilerWarnings = 0;
         var compilerInfos = 0;
+        var projectAnalyzerDiagnostics = 0;
+        var projectAnalyzersExecuted = 0;
+        var additionalNotes = new List<string>();
         var incompleteRuleScanning = false;
 
         var entries = _methods.Values.ToArray();
@@ -314,6 +319,33 @@ public sealed class RoslynReviewService : IDisposable
 
             var compilation = await project.GetCompilationAsync(ct);
             if (compilation is null) continue;
+
+            var analyzerDiagnostics = new List<Diagnostic>();
+            try
+            {
+                var analyzers = project.AnalyzerReferences
+                    .SelectMany(reference => reference.GetAnalyzers(LanguageNames.CSharp))
+                    .Where(analyzer => analyzer is not null)
+                    .DistinctBy(analyzer => analyzer.GetType().AssemblyQualifiedName)
+                    .ToImmutableArray();
+                projectAnalyzersExecuted += analyzers.Length;
+                if (analyzers.Length > 0)
+                {
+                    var reported = await DeterministicAnalysisEngine.RunAnalyzersAsync(
+                        compilation, analyzers, project.AnalyzerOptions, ct);
+                    analyzerDiagnostics.AddRange(reported);
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException
+                or System.Reflection.ReflectionTypeLoadException or IOException)
+            {
+                incompleteRuleScanning = true;
+                additionalNotes.Add("Installed analyzers could not be evaluated for project "
+                    + project.Name + ": " + ex.GetType().Name);
+            }
+            projectAnalyzerDiagnostics += analyzerDiagnostics.Count;
+
             foreach (var diagnostic in compilation.GetDiagnostics(ct))
             {
                 ct.ThrowIfCancellationRequested();
@@ -338,6 +370,27 @@ public sealed class RoslynReviewService : IDisposable
                 }
                 findings.Add(DeterministicAnalysisEngine.FromDiagnostic(
                     diagnostic, project, text, methodId));
+            }
+
+            foreach (var diagnostic in analyzerDiagnostics)
+            {
+                ct.ThrowIfCancellationRequested();
+                var path = diagnostic.Location.IsInSource
+                    ? diagnostic.Location.GetLineSpan().Path : null;
+                var document = path is null ? null : documents.FirstOrDefault(
+                    d => string.Equals(d.FilePath, path, OperatingSystem.IsWindows()
+                        ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal));
+                var text = path is not null && texts.TryGetValue(path, out var sourceText)
+                    ? sourceText : null;
+                string? methodId = null;
+                if (document is not null && text is not null &&
+                    byDocument.TryGetValue(document.Id, out var methodsAtFile))
+                    methodId = methodsAtFile.FirstOrDefault(
+                        e => e.Syntax.Span.Contains(diagnostic.Location.SourceSpan.Start))
+                        ?.Summary.Id;
+
+                findings.Add(DeterministicAnalysisEngine.FromDiagnostic(
+                    diagnostic, project, text, methodId, projectAnalyzer: true));
             }
         }
 
@@ -383,9 +436,13 @@ public sealed class RoslynReviewService : IDisposable
                 "Complexity scores are syntax heuristics; CFG metrics are optional and do not represent runtime hotness.",
                 "Findings use stable fingerprints for identical project-relative code and rule versions; snapshot IDs are session-specific.",
                 incompleteRuleScanning
-                    ? "At least one document reached the per-document rule cap; findings may be incomplete."
+                    ? "Some rule or analyzer results may be incomplete; inspect the analyzer notes."
                     : "All loaded documents with a semantic model were evaluated by the built-in rule scanner."
-            ]);
+            ].Concat(additionalNotes).ToArray())
+        {
+            ProjectAnalyzerDiagnostics = projectAnalyzerDiagnostics,
+            ProjectAnalyzersExecuted = projectAnalyzersExecuted
+        };
         return new DeterministicAnalysisReport(
             summary, ordered.Take(findingLimit).ToArray(), metrics);
     }
