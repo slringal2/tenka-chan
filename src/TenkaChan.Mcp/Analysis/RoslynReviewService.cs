@@ -49,6 +49,20 @@ public sealed class RoslynReviewService : IDisposable
             _solution = Path.GetExtension(safePath).Equals(".csproj", StringComparison.OrdinalIgnoreCase)
                 ? (await _workspace.OpenProjectAsync(safePath, cancellationToken: ct)).Solution
                 : await _workspace.OpenSolutionAsync(safePath, cancellationToken: ct);
+            // Reject project documents outside configured allowed roots (linked files too).
+            // MSBuild evaluation already requires explicit trust and is not sandboxed.
+            foreach (var project in _solution.Projects.Where(p => p.Language == LanguageNames.CSharp))
+            {
+                if (project.FilePath is null)
+                    throw new UnauthorizedAccessException("C# project without an on-disk path is unsupported.");
+                _guard.RequireFile(project.FilePath, ".csproj");
+                foreach (var document in project.Documents)
+                {
+                    if (document.FilePath is null)
+                        throw new UnauthorizedAccessException("C# document without an on-disk path is unsupported.");
+                    _guard.RequireFile(document.FilePath, ".cs");
+                }
+            }
             _snapshotId = Guid.NewGuid().ToString("N");
 
             foreach (var project in _solution.Projects.Where(x => x.Language == LanguageNames.CSharp))
