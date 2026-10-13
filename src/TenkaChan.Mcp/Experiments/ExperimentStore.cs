@@ -13,6 +13,10 @@ public sealed record ExperimentManifest(
 public sealed record ExperimentReceipt(string Id, string Kind, string Directory,
     string SourceDiagnostics, string Message);
 
+public sealed record ExperimentListItem(string Id, string Kind, string CreatedUtc,
+    string RepositoryRoot, string ProjectRelativePath, string Status,
+    int? TestsPassed, int? TestsFailed, int Benchmarks);
+
 public sealed class ExperimentStore
 {
     private readonly WorkspaceGuard _guard;
@@ -139,6 +143,41 @@ public sealed class ExperimentStore
         {
             if (File.Exists(temporary)) File.Delete(temporary);
         }
+    }
+
+    public IReadOnlyList<ExperimentListItem> ListRecent(int limit = 50)
+    {
+        var experimentsPath = Path.Combine(_storeRoot, "experiments");
+        if (!Directory.Exists(experimentsPath)) return [];
+        var results = new List<ExperimentListItem>();
+        foreach (var dir in Directory.EnumerateDirectories(experimentsPath)
+            .OrderByDescending(Directory.GetCreationTimeUtc)
+            .Take(Math.Clamp(limit, 1, 100) * 5))
+        {
+            if (results.Count >= Math.Clamp(limit, 1, 100)) break;
+            if ((new DirectoryInfo(dir).Attributes & FileAttributes.ReparsePoint) != 0) continue;
+            var id = Path.GetFileName(dir);
+            if (!Guid.TryParseExact(id, "N", out _)) continue;
+            try
+            {
+                var (manifest, directory) = Read(id);
+                var reportPath = Path.Combine(directory, "execution-report.json");
+                var execution = File.Exists(reportPath) ? ReadExecutionResult(id) : null;
+                results.Add(new ExperimentListItem(manifest.Id, manifest.Kind, manifest.CreatedUtc,
+                    manifest.RepositoryRoot, manifest.ProjectRelativePath,
+                    execution?.Status ?? "prepared",
+                    execution?.Tests?.Passed, execution?.Tests?.Failed,
+                    execution?.Benchmarks.Count ?? 0));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                or InvalidDataException or System.Text.Json.JsonException
+                or ArgumentException)
+            {
+                // An old, invalid, or no-longer-allowlisted experiment cannot
+                // appear as a valid artifact in the dashboard.
+            }
+        }
+        return results.OrderByDescending(x => x.CreatedUtc, StringComparer.Ordinal).ToArray();
     }
 
     public ExecutionResult ReadExecutionResult(string experimentId)

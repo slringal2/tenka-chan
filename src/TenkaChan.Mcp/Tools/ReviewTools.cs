@@ -52,6 +52,11 @@ public static class ReviewTools
         string experimentId, CancellationToken cancellationToken = default) =>
         Json(await executor.RunAsync(experimentId, cancellationToken));
 
+    [McpServerTool(Name = "experiments_list")]
+    [Description("List recent prepared and executed tests/benchmarks from the persistent experiment store.")]
+    public static string ExperimentsList(ExperimentStore experiments, int limit = 50) =>
+        Json(experiments.ListRecent(limit));
+
     [McpServerTool(Name = "experiment_result")]
     [Description("Retrieve a persisted, structured Docker execution report including TRX test counters or BenchmarkDotNet metrics.")]
     public static string Result(ExperimentStore experiments, string experimentId) =>
