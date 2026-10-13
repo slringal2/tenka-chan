@@ -24,7 +24,7 @@ public sealed class DockerBenchmarkSmokeTests
             </Project>
             """);
         File.WriteAllText(Path.Combine(root, "Calc.cs"),
-            "public static class Calc { public static int Add(int a, int b) => a+b; }");
+            "public static class Calc { public static int Sum(int[] data) { int total=0; foreach (var v in data) total += (v * 31) ^ (v >> 1); return total; } }");
 
         ExperimentReceipt? receipt = null;
         try
@@ -37,9 +37,9 @@ public sealed class DockerBenchmarkSmokeTests
                 [MemoryDiagnoser]
                 public class GeneratedBenchmark
                 {
-                    private int _value = 1;
+                    private int[] _data = System.Linq.Enumerable.Range(0, 1024).ToArray();
                     [Benchmark]
-                    public int Add() => Calc.Add(_value, 3);
+                    public int Sum() => Calc.Sum(_data);
                 }
                 """);
 
@@ -50,7 +50,7 @@ public sealed class DockerBenchmarkSmokeTests
                 $"stderr={result.Stderr}; stdout={result.Output}");
             Assert.NotEmpty(result.Benchmarks);
             Assert.True(result.Benchmarks.Any(
-                b => b.Method == "Add" && b.MeanNanoseconds is > 0),
+                b => b.Method == "Sum" && b.MeanNanoseconds is > 0),
                 "No valid timing values. Observed=" +
                 System.Text.Json.JsonSerializer.Serialize(result.Benchmarks) +
                 "; Stdout=" + result.Output + "; Stderr=" + result.Stderr);
