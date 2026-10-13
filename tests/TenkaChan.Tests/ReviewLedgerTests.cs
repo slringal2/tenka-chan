@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using TenkaChan.Mcp.Review;
+using TenkaChan.Mcp.Experiments;
 using Xunit;
 
 namespace TenkaChan.Tests;
@@ -26,8 +27,7 @@ public sealed class ReviewLedgerTests
             Assert.Throws<InvalidOperationException>(() =>
                 ledger.SetStatus(hypothesis.Id, "reported_reproduced", "Test not executed"));
 
-            ledger.AddEvidence(hypothesis.Id, "test_execution", "Test failed on revision A",
-                "run:fixture-001", "EXP-001");
+            ledger.AttachExperimentResult(hypothesis.Id, FailedResult());
             ledger.SetStatus(hypothesis.Id, "reported_reproduced", "Test failed; independently check source");
             var reopened = new ReviewLedger(path);
             var saved = reopened.Get(hypothesis.Id);
@@ -52,12 +52,36 @@ public sealed class ReviewLedgerTests
             var ledger = new ReviewLedger(Path.Combine(folder, "reviews.sqlite"));
             var entry = ledger.Create("snapshot", "symbol", "performance", "Slower", "time > baseline");
             ledger.AddEvidence(entry.Id, "contract", "Imagined speed limit", "llm:assumed");
-            ledger.AddEvidence(entry.Id, "test_execution", "Slow sample", "bench:sample");
+            ledger.AttachExperimentResult(entry.Id, FailedResult());
             Assert.Throws<InvalidOperationException>(() =>
                 ledger.SetStatus(entry.Id, "reported_reproduced", "LLM-only oracle"));
             Assert.Throws<ArgumentException>(() =>
                 ledger.AddEvidence(entry.Id, "made_up_evidence", "random", "source"));
             Assert.Equal("suspected", ledger.Get(entry.Id).Hypothesis.Status);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void RejectsManuallyFabricatedTestEvidenceAndPassingProof()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "tenka-ledger-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var ledger = new ReviewLedger(Path.Combine(folder, "reviews.sqlite"));
+            var hypothesis = ledger.Create("s", "m", "correctness", "Potentially wrong", "bad result");
+            Assert.Throws<InvalidOperationException>(() =>
+                ledger.AddEvidence(hypothesis.Id, "test_execution",
+                    "I claim this was tested", "run:fake"));
+            ledger.AddEvidence(hypothesis.Id, "contract", "Documented contract", "spec:real");
+            ledger.AttachExperimentResult(hypothesis.Id, PassedResult());
+            Assert.Throws<InvalidOperationException>(() =>
+                ledger.SetStatus(hypothesis.Id, "reported_reproduced", "A passed test does not reproduce a bug"));
         }
         finally
         {
@@ -87,4 +111,15 @@ public sealed class ReviewLedgerTests
             Directory.Delete(folder, recursive: true);
         }
     }
+
+    private static ExecutionResult FailedResult() => new(
+        "fixture-failed-01", "test", "tests_failed", 1, "start", "end",
+        new TestRunSummary(2, 1, 1, 0, "Failed",
+            [new TestCaseObservation("BadInput", "Failed", "Expected != actual")]),
+        [], [], "", "", "fixture");
+
+    private static ExecutionResult PassedResult() => new(
+        "fixture-passed-01", "test", "tests_passed", 0, "start", "end",
+        new TestRunSummary(1, 1, 0, 0, "Passed", []),
+        [], [], "", "", "fixture");
 }
