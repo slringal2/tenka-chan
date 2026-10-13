@@ -49,8 +49,11 @@ public sealed class DockerBenchmarkSmokeTests
                 $"Docker benchmark status={result.Status}, exit={result.ExitCode}; " +
                 $"stderr={result.Stderr}; stdout={result.Output}");
             Assert.NotEmpty(result.Benchmarks);
-            Assert.Contains(result.Benchmarks,
-                b => b.Method == "Add" && b.MeanNanoseconds is > 0);
+            Assert.True(result.Benchmarks.Any(
+                b => b.Method == "Add" && b.MeanNanoseconds is > 0),
+                "No valid timing values. Observed=" +
+                System.Text.Json.JsonSerializer.Serialize(result.Benchmarks) +
+                "; Stdout=" + result.Output + "; Stderr=" + result.Stderr);
             Assert.Equal("benchmark_completed",
                 store.ReadExecutionResult(receipt.Id).Status);
         }
