@@ -123,6 +123,8 @@ jobs:
         env:
           TENKA_BENCHMARK_SMOKE: '1'
           TENKA_NUGET_PACKAGES: /home/runner/.nuget/packages
+      - name: Prewarm net8.0 xUnit dependencies for offline container
+        run: dotnet restore tests/Fixtures/Net8XunitCache/Net8XunitCache.csproj
       - name: Test .NET 8 xUnit execution and native RyuJIT machine code capture
         run: dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj --configuration Release --no-build --filter FullyQualifiedName~DockerNet8AndJitSmokeTests
         env:
