@@ -11,14 +11,19 @@ namespace TenkaChan.Mcp.Tools;
 public static class ReviewTools
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
-    private static string Json(object data) => JsonSerializer.Serialize(data, JsonOptions);
+    private static string Json(object? data) => JsonSerializer.Serialize(data, JsonOptions);
 
     [McpServerTool(Name = "workspace_open")]
     [Description("Open a trusted .NET solution/project via Roslyn MSBuildWorkspace. Requires TENKA_ALLOWED_ROOTS and TENKA_TRUST_MSBUILD=1.")]
     public static async Task<string> Open(RoslynReviewService roslyn,
+        AutonomousReviewRunner runner,
         [Description("Absolute path to a .sln, .slnx or .csproj")] string path,
-        CancellationToken cancellationToken) =>
-        Json(await roslyn.OpenAsync(path, cancellationToken));
+        CancellationToken cancellationToken)
+    {
+        if (runner.IsActive)
+            throw new InvalidOperationException("Stop active review before replacing workspace.");
+        return Json(await roslyn.OpenAsync(path, cancellationToken));
+    }
 
     [McpServerTool(Name = "symbols_find")]
     [Description("Find method symbols by signature or file path within the loaded solution.")]
@@ -82,6 +87,31 @@ public static class ReviewTools
         double thresholdPercent = 5) =>
         Json(PerformanceStatistics.Compare(baseline, candidate,
             baselineEnvironment, candidateEnvironment, unit, thresholdPercent));
+
+    [McpServerTool(Name = "autonomous_review_start")]
+    [Description("Start a bounded local-LLM review of high-priority Roslyn methods. Saves unverified hypotheses; never runs generated code.")]
+    public static async Task<string> StartAutonomousReview(
+        AutonomousReviewRunner runner, int maxMethods = 10, int maxMinutes = 15,
+        CancellationToken cancellationToken = default) =>
+        Json(await runner.StartAsync(new AutonomousReviewOptions(maxMethods, maxMinutes),
+            cancellationToken));
+
+    [McpServerTool(Name = "autonomous_review_status")]
+    [Description("Read a running or completed autonomous review by ID, or the current run if no ID is provided.")]
+    public static string AutonomousReviewStatus(AutonomousReviewRunner runner,
+        string? runId = null) =>
+        Json(runId is null ? (object?)runner.Current : runner.Get(runId));
+
+    [McpServerTool(Name = "autonomous_review_stop")]
+    [Description("Cancel an active local-LLM review by its run ID.")]
+    public static string StopAutonomousReview(AutonomousReviewRunner runner, string runId) =>
+        Json(runner.Stop(runId));
+
+    [McpServerTool(Name = "autonomous_review_history")]
+    [Description("List prior persisted autonomous review runs, including unfinished runs marked interrupted after restart.")]
+    public static string AutonomousReviewHistory(AutonomousReviewRunner runner, int limit = 20) =>
+        Json(runner.History(limit));
+
     [McpServerTool(Name = "il_inspect")]
     [Description("Read managed IL instructions from an allowlisted DLL/EXE without loading or executing it. This is not native JIT assembly.")]
     public static string InspectIl(IlInspector inspector, string assemblyPath, string typeName,

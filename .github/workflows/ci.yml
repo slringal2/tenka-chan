@@ -23,18 +23,28 @@ jobs:
         env:
           TENKA_TRUST_MSBUILD: '1'
           TENKA_WEB_PORT: '5077'
+          TENKA_LLM_MODEL: 'ci-fixture'
+          TENKA_LLM_ENDPOINT: 'http://127.0.0.1:18081/v1/chat/completions'
         run: |
           set -euo pipefail
           export TENKA_ALLOWED_ROOTS="$GITHUB_WORKSPACE/tests/Fixtures/UiSample"
           dotnet run --project src/TenkaChan.Web/TenkaChan.Web.csproj --configuration Release --no-build --no-launch-profile >/tmp/tenka-web.log 2>&1 &
           web_pid=$!
-          trap 'kill "$web_pid" 2>/dev/null || true' EXIT
+          python3 tests/Fixtures/fake_llm_server.py >/tmp/tenka-fake-llm.log 2>&1 &
+          llm_pid=$!
+          trap 'kill "$web_pid" "$llm_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 25); do
+            if curl --silent --fail http://127.0.0.1:18081/health >/dev/null; then break; fi
+            sleep 0.2
+          done
+          curl --silent --show-error --fail http://127.0.0.1:18081/health >/dev/null
           for attempt in $(seq 1 50); do
             if curl --silent --fail http://127.0.0.1:5077/api/session >/tmp/tenka-web-session.json; then break; fi
             sleep 1
           done
           if [ ! -s /tmp/tenka-web-session.json ]; then cat /tmp/tenka-web.log; exit 1; fi
-          curl --silent --fail http://127.0.0.1:5077/ | grep -q 'DEEP REVIEW CONSOLE'
+          curl --silent --show-error --fail http://127.0.0.1:5077/ >/tmp/tenka-web-index.html
+          grep -q 'DEEP REVIEW CONSOLE' /tmp/tenka-web-index.html
           token=$(python3 -c 'import json; print(json.load(open("/tmp/tenka-web-session.json"))["csrfToken"])')
           status=$(curl --silent -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:5077/api/workspace/scan -H 'Content-Type: application/json' -d '{}')
           test "$status" = '403'
@@ -52,6 +62,19 @@ jobs:
           python3 -c 'import json; x=json.load(open("/tmp/tenka-web-methods.json")); assert len(x) >= 2, x'
           curl --silent --show-error --fail 'http://127.0.0.1:5077/api/findings?limit=10' >/tmp/tenka-web-findings.json
           python3 -c 'import json; x=json.load(open("/tmp/tenka-web-findings.json")); assert x["total"] >= 1, x'
+          curl --silent --show-error --fail -X POST http://127.0.0.1:5077/api/reviews/start \
+            -H 'Content-Type: application/json' -H "X-Tenka-CSRF: $token" \
+            -d '{"maxMethods":2,"maxMinutes":1}' >/tmp/tenka-web-review-start.json
+          review_id=$(python3 -c 'import json; print(json.load(open("/tmp/tenka-web-review-start.json"))["runId"])')
+          for attempt in $(seq 1 80); do
+            curl --silent --show-error --fail "http://127.0.0.1:5077/api/reviews/$review_id" >/tmp/tenka-web-review-status.json
+            if python3 -c 'import json,sys; s=json.load(open("/tmp/tenka-web-review-status.json")); sys.exit(0 if s["status"] in ("completed","completed_with_errors","failed","cancelled","timed_out") else 1)'; then break; fi
+            sleep 0.25
+          done
+          python3 -c 'import json; x=json.load(open("/tmp/tenka-web-review-status.json")); assert x["status"] == "completed", x; assert x["completedMethods"] == 2, x; assert x["hypothesisCount"] >= 1, x'
+          curl --silent --show-error --fail http://127.0.0.1:5077/api/hypotheses >/tmp/tenka-web-review-hypotheses.json
+          python3 -c 'import json; x=json.load(open("/tmp/tenka-web-review-hypotheses.json")); assert x and all(h["status"] == "suspected" for h in x), x'
+
 
   docker-smoke:
     if: github.event_name == 'pull_request'

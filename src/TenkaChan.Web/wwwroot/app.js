@@ -59,7 +59,7 @@ async function withButton(button, operation) {
 
 function showView(view) {
   const routes = { overview: "Dashboard", findings: "Findings", methods: "Methods",
-    evidence: "Evidence", experiments: "Experiments" };
+    evidence: "Evidence", autoreview: "AI Review", experiments: "Experiments" };
   if (!Object.hasOwn(routes, view)) return;
   state.view = view;
   document.querySelectorAll(".view").forEach(item => { item.hidden = item.id !== "view-" + view; });
@@ -73,6 +73,10 @@ function showView(view) {
   if (view === "findings") loadFindings(false).catch(error => toast(error.message, true));
   if (view === "methods") loadTargets().catch(error => toast(error.message, true));
   if (view === "evidence") loadHypotheses().catch(error => toast(error.message, true));
+  if (view === "autoreview") {
+    refreshReview().catch(error => toast(error.message, true));
+    loadReviewHistory().catch(error => toast(error.message, true));
+  }
   if (view === "experiments") loadExperiments().catch(error => toast(error.message, true));
   window.scrollTo(0, 0);
 }
@@ -443,6 +447,137 @@ async function compareBenchmarks(event) {
   });
 }
 
+
+let reviewPolling = false;
+let lastReviewStatus = null;
+
+function activeReview(status) {
+  return status && ["queued", "running", "cancelling"].includes(status.status);
+}
+
+function renderReview(status) {
+  if (status) state.review = status;
+  const current = state.review;
+  const running = activeReview(current);
+  const total = current?.totalMethods ?? 0;
+  const completed = current?.completedMethods ?? 0;
+  const percent = total ? Math.round(completed * 100 / total) : 0;
+
+  $("auto-status").textContent = current?.status ?? "未開始";
+  $("auto-completed").textContent = completed + " / " + total;
+  $("auto-progress-percent").textContent = percent + "%";
+  $("auto-progress-bar").style.width = percent + "%";
+  $("auto-hypotheses").textContent = count(current?.hypothesisCount ?? 0);
+  $("auto-errors").textContent = count(current?.errorCount ?? 0);
+  $("auto-current").textContent = current?.currentMethod ||
+    (current?.status === "completed" ? "すべての調査を終了しました。" : "待機中");
+  $("auto-run-id").textContent = current ? "RUN ID: " + current.runId : "";
+  $("auto-start").disabled = running || !state.overview?.loaded;
+  $("auto-stop").disabled = !running || current?.status === "cancelling";
+  if ($("open-button")) $("open-button").disabled = running;
+  if ($("scan-button")) $("scan-button").disabled = running || !state.overview?.loaded;
+
+  const root = $("auto-activity");
+  clear(root);
+  const activity = current?.activity ?? [];
+  if (!activity.length) {
+    empty(root, "レビューを開始すると履歴が表示されます。");
+  } else {
+    for (const entry of activity.slice(-45).reverse()) {
+      const row = el("div", "activity-item");
+      add(row, el("span", "activity-time", new Date(entry.timeUtc).toLocaleTimeString("ja-JP")));
+      const details = el("div");
+      add(details, el("strong", "", entry.kind));
+      add(details, el("small", "", clip(entry.message, 350)));
+      if (entry.hypothesisId) {
+        const link = el("button", "text-link", "仮説を見る ↗");
+        link.addEventListener("click", () => openHypothesis(entry.hypothesisId));
+        add(details, link);
+      }
+      add(row, details);
+      add(root, row);
+    }
+  }
+}
+
+async function refreshReview() {
+  if (reviewPolling) return;
+  reviewPolling = true;
+  try {
+    const status = await api("/reviews/current");
+    if (status?.runId !== state.review?.runId ||
+        status?.status !== lastReviewStatus ||
+        status?.completedMethods !== state.review?.completedMethods) {
+      if (status) state.review = status;
+      lastReviewStatus = status?.status || null;
+      renderReview(status);
+      if (status && !activeReview(status) && state.view === "autoreview")
+        await loadReviewHistory();
+    }
+  } finally { reviewPolling = false; }
+}
+
+async function loadReviewHistory() {
+  const history = await api("/reviews?limit=20");
+  const root = $("auto-history");
+  clear(root);
+  if (!history.length) return empty(root, "履歴はありません。");
+  for (const run of history) {
+    const button = el("button", "item-row clickable");
+    const content = el("div");
+    add(content, el("strong", "", run.model + " / " + run.status));
+    add(content, el("small", "", new Date(run.startedUtc).toLocaleString("ja-JP") +
+      " • " + run.completedMethods + "/" + run.totalMethods +
+      " methods • " + run.hypothesisCount + " hypotheses"));
+    button.append(content, badge(run.status, run.status !== "completed"));
+    button.addEventListener("click", async () => {
+      try {
+        const detail = await api("/reviews/" + encodeURIComponent(run.runId));
+        state.review = detail;
+        renderReview(detail);
+      } catch (error) { toast(error.message, true); }
+    });
+    add(root, button);
+  }
+}
+
+async function startReview(event) {
+  event.preventDefault();
+  const button = $("auto-start");
+  if (button.disabled) return;
+  button.disabled = true;
+  try {
+    if (!state.overview?.loaded)
+      throw new Error("先にC#プロジェクトを読み込んでください。");
+    const form = event.currentTarget;
+    const values = Object.fromEntries(new FormData(form));
+    const maxMethods = Number(values.maxMethods);
+    const maxMinutes = Number(values.maxMinutes);
+    if (!Number.isInteger(maxMethods) || maxMethods < 1 || maxMethods > 30 ||
+        !Number.isInteger(maxMinutes) || maxMinutes < 1 || maxMinutes > 30)
+      throw new Error("対象メソッド数と時間は1〜30で指定してください。");
+    const status = await api("/reviews/start", {
+      method: "POST", body: { maxMethods, maxMinutes }
+    });
+    state.review = status;
+    renderReview(status);
+    toast("自律レビューを開始しました。");
+    await loadReviewHistory();
+  } catch (error) { toast(error.message, true); }
+  finally { renderReview(state.review); }
+}
+
+async function stopReview() {
+  const status = state.review;
+  if (!activeReview(status)) return;
+  await withButton($("auto-stop"), async () => {
+    const result = await api("/reviews/" + encodeURIComponent(status.runId) + "/stop",
+      { method: "POST", body: {} });
+    state.review = result;
+    renderReview(result);
+    toast("レビューの停止を要求しました。");
+  });
+}
 async function initialize() {
   document.querySelectorAll(".nav-item").forEach(button =>
     button.addEventListener("click", () => showView(button.dataset.view)));
@@ -520,11 +655,18 @@ async function initialize() {
       await loadExperiments();
     });
   });
+  $("auto-review-form").addEventListener("submit", startReview);
+  $("auto-stop").addEventListener("click", stopReview);
+  $("auto-history-refresh").addEventListener("click", () =>
+    loadReviewHistory().catch(error => toast(error.message, true)));
   $("compare-form").addEventListener("submit", compareBenchmarks);
 
   try {
     state.session = await api("/session");
     state.csrf = state.session.csrfToken;
+    $("auto-model").textContent = state.session.model || "local";
+    $("auto-endpoint").textContent = state.session.llmEndpoint || "127.0.0.1";
+
     $("runtime-status").textContent = "ローカルサーバー接続済み";
     $("docker-note").textContent = state.session.dockerEnabled
       ? "Docker実行が有効です。生成コードは隔離コンテナ内で実行されます。"
@@ -532,6 +674,13 @@ async function initialize() {
     await loadOverview();
     await loadExperiments();
     if (state.overview?.loaded) await loadTargets();
+    await refreshReview();
+    if (state.review) await loadReviewHistory();
+    window.setInterval(() => {
+      if (activeReview(state.review))
+        refreshReview().catch(error => toast(error.message, true));
+    }, 2000);
+
   } catch (error) {
     document.querySelector(".runtime-dot")?.classList.add("offline");
     $("runtime-status").textContent = "接続できません";

@@ -19,6 +19,10 @@ builder.Services.AddSingleton<IlInspector>();
 builder.Services.AddSingleton<ExperimentStore>();
 builder.Services.AddSingleton<BenchmarkRunComparer>();
 builder.Services.AddSingleton<ReviewLedger>();
+builder.Services.AddSingleton<ReviewRunStore>();
+builder.Services.AddSingleton<IReviewContextSource, McpReviewContextSource>();
+builder.Services.AddSingleton<IReviewReasoner, LocalLlmReviewReasoner>();
+builder.Services.AddSingleton<AutonomousReviewRunner>();
 builder.Services.AddSingleton<DockerExecutor>();
 builder.Services.AddMcpServer()
     .WithStdioServerTransport()

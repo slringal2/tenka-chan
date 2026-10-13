@@ -29,6 +29,9 @@ public sealed class RoslynReviewService : IDisposable
 
     public RoslynReviewService(WorkspaceGuard guard) => _guard = guard;
 
+    public string CurrentSnapshotId => _solution is not null
+        ? _snapshotId : throw new InvalidOperationException("Call workspace_open first.");
+
     public async Task<SolutionSummary> OpenAsync(string path, CancellationToken ct = default)
     {
         if (!_guard.TrustMsBuild)
