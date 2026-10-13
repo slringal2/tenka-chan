@@ -466,6 +466,14 @@ public sealed class RoslynReviewService : IDisposable
     }
 
 
+    public NativeCodeReport CorrelateNativeCode(NativeCodeReport report)
+    {
+        EnsureOpen();
+        var symbols = _methods.Values.Select(e =>
+            new NativeRoslynCandidate(e.Summary, e.Symbol)).ToArray();
+        return NativeMethodCorrelator.Correlate(report, symbols, CurrentSnapshotId);
+    }
+
     /// <summary>
     /// Static workload-independent ranking, including two-hop call evidence.
     /// Never interprets syntax weight as milliseconds or CPU percentage.

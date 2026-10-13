@@ -84,9 +84,12 @@ public static class ReviewTools
     [Description("Syntax-check generated xUnit test or BenchmarkDotNet C# code; write a detached verification project. Never touches the original repository.")]
     public static string Prepare(ExperimentStore experiments,
         string repositoryRoot, string projectRelativePath,
-        [Description("test or benchmark")] string kind,
-        [Description("Full standalone C# source for the generated tests/benchmarks")] string generatedCode) =>
-        Json(experiments.Create(repositoryRoot, projectRelativePath, kind, generatedCode));
+        [Description("test, benchmark or jit")] string kind,
+        [Description("Standalone C# source for the generated experiment or a JIT execution harness")] string generatedCode,
+        [Description("Optional explicit portable TFM net8.0 or later; otherwise infer from project .csproj")] string? targetFramework = null,
+        [Description("Required for kind=jit: RyuJIT class:method filter, e.g. Calc:Sum")] string? jitDisasmFilter = null) =>
+        Json(experiments.Create(repositoryRoot, projectRelativePath,
+            kind, generatedCode, targetFramework, jitDisasmFilter));
 
     [McpServerTool(Name = "experiment_run")]
     [Description("Opt-in run of a prepared experiment in offline resource-limited Docker. Blocked unless TENKA_ENABLE_DOCKER=1.")]
@@ -148,6 +151,27 @@ public static class ReviewTools
     [Description("List prior persisted autonomous review runs, including unfinished runs marked interrupted after restart.")]
     public static string AutonomousReviewHistory(AutonomousReviewRunner runner, int limit = 20) =>
         Json(runner.History(limit));
+
+    [McpServerTool(Name = "native_compare_runs")]
+    [Description("Compare two completed, equivalent JIT harness runs: native code size, instruction families and call/vector patterns. NOT a benchmark or measured speedup.")]
+    public static string NativeCompareRuns(NativeExperimentComparer comparer,
+        string baselineExperimentId, string candidateExperimentId) =>
+        Json(comparer.Compare(baselineExperimentId, candidateExperimentId));
+
+    [McpServerTool(Name = "native_disassembly_result")]
+    [Description("Return structured RyuJIT native machine instructions and code bytes from a completed kind=jit experiment. Never interprets instruction counts as elapsed time.")]
+    public static string NativeDisassemblyResult(ExperimentStore experiments, string experimentId) =>
+        Json(experiments.ReadExecutionResult(experimentId).NativeDisassembly);
+
+    [McpServerTool(Name = "native_roslyn_correlate")]
+    [Description("Match JIT method signatures to uniquely named Roslyn symbols in the loaded project. This is method-level matching, NOT exact native-instruction-to-C#-line mapping.")]
+    public static string NativeRoslynCorrelate(ExperimentStore experiments,
+        RoslynReviewService roslyn, string experimentId)
+    {
+        var native = experiments.ReadExecutionResult(experimentId).NativeDisassembly
+            ?? throw new InvalidOperationException("Experiment has no native JIT disassembly.");
+        return Json(roslyn.CorrelateNativeCode(native));
+    }
 
     [McpServerTool(Name = "il_inspect")]
     [Description("Read managed IL instructions from an allowlisted DLL/EXE without loading or executing it. This is not native JIT assembly.")]

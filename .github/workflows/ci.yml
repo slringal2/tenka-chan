@@ -110,6 +110,7 @@ jobs:
       - run: dotnet restore TenkaChan.slnx
       - run: dotnet build TenkaChan.slnx --configuration Release --no-restore
       - run: docker pull mcr.microsoft.com/dotnet/sdk:10.0
+      - run: docker pull mcr.microsoft.com/dotnet/sdk:8.0
       - name: Test generated xUnit code in network-disabled Docker
         run: dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj --configuration Release --no-build --filter FullyQualifiedName~DockerExperimentSmokeTests
         env:
@@ -121,4 +122,11 @@ jobs:
         run: dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj --configuration Release --no-build --filter FullyQualifiedName~DockerBenchmarkSmokeTests
         env:
           TENKA_BENCHMARK_SMOKE: '1'
+          TENKA_NUGET_PACKAGES: /home/runner/.nuget/packages
+      - name: Prewarm net8.0 xUnit dependencies for offline container
+        run: dotnet restore tests/Fixtures/Net8XunitCache/Net8XunitCache.csproj
+      - name: Test .NET 8 xUnit execution and native RyuJIT machine code capture
+        run: dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj --configuration Release --no-build --filter FullyQualifiedName~DockerNet8AndJitSmokeTests
+        env:
+          TENKA_NET8_DOCKER_SMOKE: '1'
           TENKA_NUGET_PACKAGES: /home/runner/.nuget/packages

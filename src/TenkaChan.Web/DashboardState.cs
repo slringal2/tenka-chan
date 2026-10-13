@@ -125,6 +125,18 @@ public sealed class DashboardState(RoslynReviewService roslyn) : IReviewContextS
         finally { _gate.Release(); }
     }
 
+    public async Task<NativeCodeReport> CorrelateNativeAsync(
+        NativeCodeReport native, CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            EnsureOpen();
+            return roslyn.CorrelateNativeCode(native);
+        }
+        finally { _gate.Release(); }
+    }
+
     public DeterministicAnalysisReport? DeterministicReport => _deterministic;
 
     public async Task<DeterministicAnalysisReport> AnalyzeDeterministicAsync(

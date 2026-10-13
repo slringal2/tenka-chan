@@ -45,3 +45,20 @@ The Docker image must already exist locally (`--pull=never`). Cancellation
 attempts to terminate the Docker client and explicitly remove the named
 container. Still, Docker isolation and GitHub-hosted CI are not guarantees
 against kernel/container escape vulnerabilities or malicious build inputs.
+
+## Native JIT experiment safety
+
+A `kind=jit` harness is **executable, untrusted C# code**. It uses the
+same explicit `TENKA_ENABLE_DOCKER=1` gate and isolated Docker worker as
+generated tests and benchmarks, never the MCP/Web host. The RyuJIT method
+selector must be a limited `Class:Method` pattern, not `*`.
+The worker captures at most 5 MB of native JIT output and stores the
+machine-code report under the experiment UUID. Avoid exposing that
+artifact if disassembly reveals sensitive implementation details.
+The worker disables tiered JIT and ReadyToRun to reduce interpretation
+ambiguity, not to claim production runtime equivalence.
+
+Experiments targeting net8.0 and later run inside the matching pre-pulled
+.NET SDK image. Each image has its own framework runtime/JIT behavior.
+MSBuild project evaluation on the host remains gated by
+`TENKA_TRUST_MSBUILD` and is not a secure sandbox.

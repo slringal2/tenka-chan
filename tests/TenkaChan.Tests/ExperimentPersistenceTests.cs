@@ -53,7 +53,7 @@ public sealed class ExperimentPersistenceTests
     {
         var root = Path.Combine(Path.GetTempPath(), "tenka-storage-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        File.WriteAllText(Path.Combine(root, "Sample.csproj"), "<Project />");
+        File.WriteAllText(Path.Combine(root, "Sample.csproj"), "<Project><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>");
         ExperimentReceipt? receipt = null;
         try
         {

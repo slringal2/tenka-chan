@@ -22,6 +22,7 @@ builder.Services.AddSingleton<DashboardState>();
 builder.Services.AddSingleton<ExperimentStore>();
 builder.Services.AddSingleton<DockerExecutor>();
 builder.Services.AddSingleton<BenchmarkRunComparer>();
+builder.Services.AddSingleton<NativeExperimentComparer>();
 builder.Services.AddSingleton<ReviewLedger>();
 builder.Services.AddSingleton<ReviewRunStore>();
 builder.Services.AddSingleton<IReviewContextSource>(
@@ -192,12 +193,27 @@ app.MapPost("/api/hypotheses", (CreateHypothesisRequest request, ReviewLedger le
 app.MapGet("/api/experiments", (ExperimentStore store, int? limit) =>
     Safe(() => Task.FromResult((object)store.ListRecent(limit ?? 80))));
 
+app.MapPost("/api/native/compare", (CompareNativeRequest request,
+    NativeExperimentComparer comparer) =>
+    Safe(() => Task.FromResult((object)comparer.Compare(
+        request.BaselineExperimentId, request.CandidateExperimentId))));
+
+app.MapGet("/api/native/{id}/correlate", (ExperimentStore store,
+    DashboardState dashboard, string id, CancellationToken ct) =>
+    Safe(async () =>
+    {
+        var report = store.ReadExecutionResult(id).NativeDisassembly
+            ?? throw new InvalidOperationException("No native JIT report in this experiment.");
+        return (object)await dashboard.CorrelateNativeAsync(report, ct);
+    }));
+
 app.MapGet("/api/experiments/{id}", (ExperimentStore store, string id) =>
     Safe(() => Task.FromResult((object)store.ReadExecutionResult(id))));
 
 app.MapPost("/api/experiments/prepare", (PrepareExperimentRequest request, ExperimentStore store) =>
     Safe(() => Task.FromResult((object)store.Create(request.RepositoryRoot,
-        request.ProjectRelativePath, request.Kind, request.GeneratedCode))));
+        request.ProjectRelativePath, request.Kind, request.GeneratedCode,
+        request.TargetFramework, request.JitDisasmFilter))));
 
 app.MapPost("/api/experiments/{id}/run", (DockerExecutor executor, string id, CancellationToken ct) =>
     Safe(async () => (object)await executor.RunAsync(id, ct)));
@@ -261,6 +277,9 @@ public sealed record OpenWorkspaceRequest(string Path);
 public sealed record CreateHypothesisRequest(string SnapshotId, string MethodId,
     string Category, string Claim, string FailureCondition);
 public sealed record PrepareExperimentRequest(string RepositoryRoot,
-    string ProjectRelativePath, string Kind, string GeneratedCode);
+    string ProjectRelativePath, string Kind, string GeneratedCode,
+    string? TargetFramework = null, string? JitDisasmFilter = null);
+public sealed record CompareNativeRequest(
+    string BaselineExperimentId, string CandidateExperimentId);
 public sealed record CompareBenchmarksRequest(string BaselineExperimentId,
     string CandidateExperimentId, double? ThresholdPercent);

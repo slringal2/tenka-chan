@@ -90,3 +90,19 @@ The `il_inspect` tool reads managed IL using PEReader/MetadataReader without exe
   rejected.
 - Benchmark pair comparisons are **descriptive only**. No statistical
   significance or Git commit regression is asserted from aggregated means.
+
+## Managed IL, JIT native assembly, and runtime measurements
+
+The IL inspector uses PEReader and returns managed IL bytes/opcodes without
+executing the target assembly. The separate opt-in `jit` experiment
+executes a provided call harness inside the network-disabled matching
+.NET 8+ container and captures **RyuJIT-emitted native bytes**. The
+parser distinguishes native instruction families and suspicious helper
+calls. A Roslyn correlation stage associates native methods with
+unambiguous source declarations. Exact per-instruction C#/IL mapping
+is not implied.
+
+BenchmarkDotNet/real workload samples remain the source for performance
+measurements; the native instruction report is supporting code-generation
+evidence, not a speed or allocation measurement. Tests cover both a
+controlled .NET 8 runtime JIT capture and the parser's limitations.

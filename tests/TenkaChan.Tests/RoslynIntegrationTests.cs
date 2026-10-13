@@ -52,6 +52,19 @@ public sealed class RoslynIntegrationTests
             var details = await service.InspectAsync(add.Id);
             Assert.Contains("return a + b", details.Source);
             Assert.NotEmpty(details.Blocks);
+            var native = NativeJitDisassemblyParser.Parse("""
+                ; Assembly listing for method Fixture.Demo:Add(int,int):int (FullOpts)
+                ; Emitting BLENDED_CODE for X64
+                       33C0                 xor eax, eax
+                       C3                   ret
+                ; Total bytes of code 3
+                """, "net8.0", "sdk:8.0", "Demo:Add");
+            var correlation = service.CorrelateNativeCode(native);
+            var compiled = Assert.Single(correlation.Methods);
+            Assert.Equal(add.Id, compiled.RoslynMethodId);
+            Assert.Equal("matched_method_signature", compiled.MatchStatus);
+            Assert.Equal(summary.SnapshotId, correlation.RoslynSnapshotId);
+
             var plan = service.SuggestTestPlan(add.Id);
             Assert.True(plan.ExternallyCallable);
             Assert.Equal("unresolved", plan.OracleStatus);

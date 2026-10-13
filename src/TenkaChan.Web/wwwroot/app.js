@@ -351,8 +351,11 @@ async function loadExperiments() {
   for (const item of entries) {
     const row = el("div", "item-row");
     const left = el("div");
-    add(left, el("strong", "", (item.kind === "test" ? "Test" : "Benchmark") + " · " + shortId(item.id)));
-    add(left, el("small", "", item.projectRelativePath + " • " + item.status +
+    const typeName = item.kind === "test" ? "Test" :
+      item.kind === "jit" ? "RyuJIT Native" : "Benchmark";
+    add(left, el("strong", "", typeName + " · " + shortId(item.id)));
+    add(left, el("small", "", (item.targetFramework || "net10.0") + " • " +
+      item.projectRelativePath + " • " + item.status +
       (item.testsPassed !== null ? " • 成功 " + item.testsPassed + " / 失敗 " + item.testsFailed : "")));
     add(row, left);
     const actions = el("div", "item-actions");
@@ -420,12 +423,116 @@ async function openExperiment(id) {
       }
       detailSection(root, "BenchmarkDotNet", rows);
     }
+    if (result.nativeDisassembly) {
+      let code = result.nativeDisassembly;
+      if (state.overview?.loaded) {
+        try { code = await api("/native/" + encodeURIComponent(id) + "/correlate"); }
+        catch (error) { toast("Roslyn対応付けは未取得: " + error.message, true); }
+      }
+      renderNativeDisassembly(root, code);
+    }
     if (result.output) detailSection(root, "Console output", el("pre", "", clip(result.output, 16000)));
     if (result.stderr) detailSection(root, "Standard error", clip(result.stderr, 6000));
     detailSection(root, "Evidence note", result.note);
     $("experiment-dialog").showModal();
   } catch (error) { toast(error.message, true); }
 }
+function renderNativeDisassembly(root, report) {
+  detailSection(root, "RyuJIT native instructions", tags([
+    "Target " + report.targetFramework,
+    "Runtime image " + report.runtimeImage,
+    "Selector " + report.jitFilter,
+    "Methods " + report.methodCount,
+    "Instructions " + report.instructionCount,
+    report.truncated ? "TRUNCATED" : "complete within parser limits"
+  ]));
+  add(root, el("div", "json-note",
+    "コンパイルされた機械語の観察結果です。命令数やSIMD命令の存在だけで実行速度は断定できません。" +
+    "C#の行／ILオフセットへの正確な1対1対応は未実装です。"));
+  for (const method of report.methods ?? []) {
+    detailSection(root, "Native method " + method.jitSignature,
+      tags(["Architecture " + method.architecture,
+            "Mode " + (method.jitMode || "unknown"),
+            "Code size " + (method.codeSizeBytes ?? "unknown") + " bytes",
+            method.matchStatus]));
+    if (method.roslynMethodId) {
+      detailSection(root, "Source declaration",
+        (method.roslynSignature || "") + " — " +
+        (method.roslynSourcePath || "") + ":" + (method.roslynSourceLine ?? "—"));
+      const link = el("button", "button button-outline", "Roslynメソッド詳細へ ↗");
+      link.addEventListener("click", () => {
+        $("experiment-dialog").close();
+        openMethod(method.roslynMethodId);
+      });
+      detailSection(root, "C# correspondence", link);
+    }
+    const counts = Object.entries(method.instructionFamilies || {})
+      .map(([family, countValue]) => family + ": " + countValue);
+    detailSection(root, "Instruction families", tags(counts));
+    const listing = el("pre", "native-code");
+    listing.textContent = (method.instructions || []).slice(0, 1200).map(instruction =>
+      (instruction.nativeOffset === null ? "????" :
+        instruction.nativeOffset.toString(16).padStart(4, "0")) + "  " +
+      (instruction.encodedBytes || "").padEnd(22) + "  " +
+      instruction.mnemonic.padEnd(12) + " " + instruction.operands).join("\n");
+    detailSection(root, "Machine code (" + (method.instructions?.length || 0) + " instructions)", listing);
+    if (method.signals?.length) {
+      const evidence = el("div", "stack-list");
+      for (const signal of method.signals.slice(0, 30)) {
+        const line = el("div", "item-row");
+        const body = el("div");
+        add(body, el("strong", "", signal.kind + " · " + signal.evidence));
+        add(body, el("small", "", signal.interpretation));
+        add(line, body);
+        add(evidence, line);
+      }
+      detailSection(root, "Generated-code performance signals", evidence);
+    }
+  }
+  for (const note of report.limitations ?? [])
+    detailSection(root, "Interpretation limit", note);
+}
+
+async function compareNativeCode(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  await withButton(form.querySelector("button"), async () => {
+    const comparison = await api("/native/compare", {
+      method: "POST", body: Object.fromEntries(new FormData(form))
+    });
+    const holder = $("native-comparison-result");
+    clear(holder);
+    const block = el("div", "compare-card");
+    add(block, el("strong", "", comparison.status + " • " +
+      comparison.baselineFramework + " → " + comparison.candidateFramework));
+    add(block, el("small", "",
+      "機械語の差分です。命令数やコードサイズだけでは実行時間を判断できません。"));
+    for (const method of comparison.methods) {
+      const entry = el("div", "item-row");
+      const content = el("div");
+      add(content, el("strong", "", method.jitSignature));
+      const size = method.byteDelta === null ? "不明" :
+        (method.byteDelta > 0 ? "+" : "") + method.byteDelta + " bytes";
+      const countDelta = method.candidateInstructionCount -
+        method.baselineInstructionCount;
+      add(content, el("small", "",
+        "Native code " + (method.baselineCodeBytes ?? "—") + " → " +
+        (method.candidateCodeBytes ?? "—") + " bytes (" + size + ")" +
+        " • instruction Δ " + (countDelta > 0 ? "+" : "") + countDelta));
+      const families = method.families.filter(f => f.delta !== 0)
+        .map(f => f.family + ": " + (f.delta > 0 ? "+" : "") + f.delta);
+      if (families.length) add(content, el("small", "", families.join(" · ")));
+      for (const observation of method.observations)
+        add(content, el("small", "", observation));
+      add(entry, content);
+      add(block, entry);
+    }
+    for (const note of comparison.limitations)
+      add(block, el("small", "", note));
+    add(holder, block);
+  });
+}
+
 async function compareBenchmarks(event) {
   event.preventDefault();
   const form = event.currentTarget;
@@ -945,6 +1052,10 @@ async function initialize() {
     const form = event.currentTarget;
     withButton(form.querySelector("button[type=submit]"), async () => {
       const body = Object.fromEntries(new FormData(form));
+      if (!String(body.targetFramework || "").trim()) delete body.targetFramework;
+      if (body.kind !== "jit") delete body.jitDisasmFilter;
+      if (body.kind === "jit" && !String(body.jitDisasmFilter || "").trim())
+        throw new Error("JIT実験では、対象メソッドを Calculator:Sum の形式で指定してください。");
       const receipt = await api("/experiments/prepare", { method: "POST", body });
       toast("実験を準備しました: " + shortId(receipt.id));
       form.querySelector("textarea").value = "";
@@ -959,6 +1070,14 @@ async function initialize() {
   $("hotspot-profile-form").addEventListener("submit", importSampledHotspot);
   $("det-form").addEventListener("submit", runDeterministic);
   $("det-export").addEventListener("click", exportDeterministic);
+  const updateExperimentMode = () => {
+    const isJit = $("experiment-kind").value === "jit";
+    $("experiment-jit-label").hidden = !isJit;
+    $("experiment-jit-filter").required = isJit;
+  };
+  $("experiment-kind").addEventListener("change", updateExperimentMode);
+  updateExperimentMode();
+  $("native-compare-form").addEventListener("submit", compareNativeCode);
   $("compare-form").addEventListener("submit", compareBenchmarks);
 
   try {
