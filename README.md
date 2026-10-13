@@ -18,10 +18,11 @@ The **ASP.NET Core Web UI** is a separate, optional entry point alongside the
 existing MCP stdio server. It runs on **http://127.0.0.1:5077** and requires no
 JavaScript framework, database server or cloud LLM account.
 
-The browser provides six screens:
+The browser provides seven screens:
 
 - **Dashboard:** open a trusted solution, start Roslyn scans, see project /
   method counts, compilation diagnostics and candidate categories.
+- **Deterministic analysis:** compiler/semantic evidence, method metrics, source links and JSON export without a model.
 - **Findings:** search/filter candidate performance, async and correctness rules
   and jump to the affected method.
 - **Methods:** prioritize methods using syntax-based heuristics, inspect C#
@@ -70,6 +71,59 @@ the workspace index is per process; the SQLite hypothesis ledger and saved
 experiment artifacts are shared when \`TENKA_DATA_DIR\` matches. In-memory
 Roslyn state is not shared between the Web and MCP processes. The browser
 does not silently execute code or claim that a static rule proves a defect.
+
+## Deterministic C# analysis (no LLM required)
+
+Start with this mode if you want a reproducible, objective inspection before
+asking a model for suggestions. The deterministic engine is driven by **Roslyn**
+and reports three explicit evidence levels:
+
+- **compiler:** compiler errors/warnings/information from the actual loaded
+  compilation, including diagnostics in MSBuild-generated sources.
+- **semantic_fact:** an unambiguous C# language behavior; for example,
+  \`throw ex;\` within a catch resets the captured exception's stack trace.
+  The behavior is certain, but whether it violates the intended contract
+  still requires review.
+- **candidate:** a pattern that *might* matter, such as boxing, LINQ
+  materialization, a blocking async call or resource churn. Performance is
+  **not established** until benchmarked under a realistic workload.
+
+### Tools and HTTP API
+
+MCP tools:
+
+- \`deterministic_analyze(maxFindings, maxMethodMetrics)\`: analyze an opened
+  solution and return diagnostics, rule matches, traceable source locations,
+  stable SHA-256 finding fingerprints and method metrics including optional
+  CFG block/branch counts.
+- \`deterministic_rules()\`: list fixed rule IDs, description, default severity,
+  evidence level and next verification method.
+
+Browser: select **決定論的解析**, set finding/metric limits, click
+**決定論的解析を実行**, explore the linked findings and export JSON.
+HTTP endpoints: \`POST /api/deterministic/run\`,
+\`GET /api/deterministic/report\` and \`GET /api/deterministic/rules\`.
+No model endpoint is called, and no test executable is launched. These
+endpoints require an already-loaded trusted workspace; MSBuild project
+evaluation remains explicitly opt-in because project files can execute
+custom targets on the host.
+
+**Scope and reproducibility:** The finding fingerprint is derived from
+the fixed rules version, project name, project-relative source path,
+rule/diagnostic ID, location and supporting excerpt or compiler message.
+The in-memory Roslyn snapshot ID is intentionally ephemeral. Findings
+are stable across reloading identical source and compilation settings;
+paths that move between projects, changed compiler versions, changed
+diagnostic messages or line shifts can change fingerprints. Rules and
+compiler diagnostics are evaluated across loaded C# documents, and the
+report explicitly marks when a finding or method-metric output limit is
+reached. The generated-code diagnostics are intentionally preserved.
+
+Metrics such as syntactic complexity are **review prioritization hints**,
+not performance measurements or defect probabilities. Static call graphs
+may omit reflection, dynamic dispatch and framework routing. The
+deterministic engine does not yet perform complete interprocedural
+symbolic execution, constraint solving, or formal verification.
 
 ## Autonomous local-LLM review
 
@@ -133,6 +187,7 @@ free of bugs or performance regressions.
 | --- | --- |
 | `autonomous_review_start` / `autonomous_review_status` | Bounded local-LLM method investigation and current run state |
 | `autonomous_review_stop` / `autonomous_review_history` | Cancel a run and retrieve persisted history |
+| `deterministic_analyze` / `deterministic_rules` | Reproducible Roslyn analysis and rule catalog, no LLM required |
 | `workspace_open` | Evaluate a trusted .sln, .slnx or .csproj with MSBuildWorkspace and index C# methods |
 | `symbols_find` | Find methods by signature/path |
 | `symbol_inspect` | Get source, calls/callers, CFG, dataflow and compilation diagnostics |
