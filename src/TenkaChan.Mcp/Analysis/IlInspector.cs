@@ -1,5 +1,3 @@
-using System.Reflection;
-using System.Reflection.Emit;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
 using System.Reflection.PortableExecutable;
@@ -12,91 +10,36 @@ public sealed record IlMethodReport(string Assembly, string Type, string Method,
     IReadOnlyList<IlInstruction> Instructions, bool Truncated, string Note);
 
 /// <summary>
-/// Parses IL directly from PE metadata; never loads or executes the inspected assembly.
-/// Does not claim to represent tiered JIT machine code.
+/// Compatibility facade. Ambiguous type names/overloads are errors; use
+/// assembly_methods and binary_source_inspect with a token for exact selection.
 /// </summary>
-public sealed class IlInspector
+public sealed class IlInspector(WorkspaceGuard guard)
 {
-    private static readonly IReadOnlyDictionary<ushort, OpCode> Opcodes =
-        typeof(OpCodes).GetFields(BindingFlags.Public | BindingFlags.Static)
-            .Where(f => f.FieldType == typeof(OpCode))
-            .Select(f => (OpCode)f.GetValue(null)!)
-            .ToDictionary(op => unchecked((ushort)op.Value));
-    private readonly WorkspaceGuard _guard;
-
-    public IlInspector(WorkspaceGuard guard) => _guard = guard;
-
-    public IlMethodReport Inspect(string assemblyPath, string typeName, string methodName,
-        int maxInstructions = 250)
+    public IlMethodReport Inspect(string assemblyPath, string typeName, string methodName, int maxInstructions = 250)
     {
-        var ext = Path.GetExtension(assemblyPath).ToLowerInvariant();
-        if (ext is not (".dll" or ".exe"))
-            throw new ArgumentException("Expected .dll or .exe assembly.");
-        var path = _guard.RequireFile(assemblyPath, ext);
-        using var file = File.OpenRead(path);
-        using var pe = new PEReader(file);
-        if (!pe.HasMetadata)
-            throw new InvalidDataException("Not a managed metadata assembly.");
+        var catalog = new BinarySourceInspector(guard).Methods(assemblyPath, methodName, 2000);
+        if (catalog.Truncated)
+            throw new InvalidOperationException("Too many matching names. Use assembly_methods and an exact MethodDef token.");
+        var candidates = catalog.Methods.Where(m => m.Name == methodName &&
+            (m.Type == typeName || m.Type.Split('.').Last() == typeName)).ToArray();
+        if (candidates.Length == 0) throw new KeyNotFoundException("Type or method not found.");
+        if (candidates.Length != 1)
+            throw new InvalidOperationException("Ambiguous method. Select a token via assembly_methods: " +
+                string.Join("; ", candidates.Take(8).Select(m => $"0x{m.MetadataToken:X8} {m.Signature}")));
+        var selected = candidates[0];
+        var bytes = BoundedBinaryFile.Read(catalog.AssemblyPath, 64_000_000);
+        if (BinarySourceInspector.Hash(bytes) != catalog.AssemblySha256)
+            throw new InvalidDataException("Assembly changed during selection.");
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var pe = new PEReader(stream);
         var metadata = pe.GetMetadataReader();
-        foreach (var typeHandle in metadata.TypeDefinitions)
-        {
-            var type = metadata.GetTypeDefinition(typeHandle);
-            var name = metadata.GetString(type.Name);
-            var qualified = metadata.GetString(type.Namespace);
-            var full = string.IsNullOrEmpty(qualified) ? name : qualified + "." + name;
-            if (typeName != name && typeName != full) continue;
-            foreach (var handle in type.GetMethods())
-            {
-                var definition = metadata.GetMethodDefinition(handle);
-                var method = metadata.GetString(definition.Name);
-                if (method != methodName) continue;
-                if (definition.RelativeVirtualAddress == 0)
-                    throw new InvalidOperationException("Method has no IL body (abstract/extern).");
-                var body = pe.GetMethodBody(definition.RelativeVirtualAddress);
-                var bytes = body.GetILBytes() ?? Array.Empty<byte>();
-                var instructions = Decode(bytes, Math.Clamp(maxInstructions, 1, 1000), out var truncated);
-                return new IlMethodReport(path, full, method,
-                    MetadataTokens.GetToken(handle), instructions, truncated,
-                    "IL is not native JIT assembly. Metadata tokens/branch operands are shown as raw bytes; verify semantics and benchmark separately.");
-            }
-        }
-        throw new KeyNotFoundException("Type or method not found (overloads: first matching method only).");
-    }
-
-    private static List<IlInstruction> Decode(byte[] bytes, int limit, out bool truncated)
-    {
-        var instructions = new List<IlInstruction>();
-        var cursor = 0;
-        while (cursor < bytes.Length && instructions.Count < limit)
-        {
-            var offset = cursor;
-            var first = bytes[cursor++];
-            var value = first == 0xFE && cursor < bytes.Length
-                ? (ushort)(0xFE00 | bytes[cursor++])
-                : (ushort)first;
-            if (!Opcodes.TryGetValue(value, out var op))
-                throw new InvalidDataException($"Unknown IL opcode at 0x{offset:X4}.");
-            var size = op.OperandType switch
-            {
-                OperandType.InlineNone => 0,
-                OperandType.ShortInlineI or OperandType.ShortInlineBrTarget or OperandType.ShortInlineVar => 1,
-                OperandType.InlineVar => 2,
-                OperandType.InlineI or OperandType.InlineBrTarget or OperandType.InlineField or
-                OperandType.InlineMethod or OperandType.InlineSig or OperandType.InlineString or
-                OperandType.InlineTok or OperandType.InlineType or OperandType.ShortInlineR => 4,
-                OperandType.InlineI8 or OperandType.InlineR => 8,
-                OperandType.InlineSwitch => cursor + 4 <= bytes.Length
-                    ? checked(4 + 4 * BitConverter.ToInt32(bytes, cursor))
-                    : throw new InvalidDataException("Truncated switch operand."),
-                _ => throw new InvalidDataException("Unsupported operand type.")
-            };
-            if (size < 0 || size > bytes.Length - cursor)
-                throw new InvalidDataException("Truncated or invalid IL operand.");
-            var operandHex = Convert.ToHexString(bytes.AsSpan(cursor, size));
-            cursor += size;
-            instructions.Add(new IlInstruction(offset, op.Name ?? value.ToString("X"), operandHex));
-        }
-        truncated = cursor < bytes.Length;
-        return instructions;
+        var method = metadata.GetMethodDefinition(MetadataTokens.MethodDefinitionHandle(selected.MetadataToken & 0xFFFFFF));
+        if (method.RelativeVirtualAddress == 0) throw new InvalidOperationException("Method has no IL body (abstract/extern).");
+        var all = ResolvedIlDecoder.Decode(pe.GetMethodBody(method.RelativeVirtualAddress).GetILBytes() ?? [], metadata, []);
+        var instructions = all.Take(Math.Clamp(maxInstructions, 1, 1000))
+            .Select(i => new IlInstruction(i.Offset, i.OpCode, i.OperandHex)).ToArray();
+        return new IlMethodReport(catalog.AssemblyPath, selected.Type, selected.Name, selected.MetadataToken,
+            instructions, all.Count > instructions.Length,
+            "IL, not native machine code. For resolved operands and checksum-verified Portable PDB source ranges, use binary_source_inspect with this token.");
     }
 }
