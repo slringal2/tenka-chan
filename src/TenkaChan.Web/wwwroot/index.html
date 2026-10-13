@@ -22,6 +22,7 @@
         <button class="nav-item" data-view="findings"><span class="nav-icon">◇</span><span>検出候補</span><span class="nav-count" id="nav-findings">—</span></button>
         <button class="nav-item" data-view="methods"><span class="nav-icon">⌘</span><span>メソッド解析</span></button>
         <button class="nav-item" data-view="evidence"><span class="nav-icon">◉</span><span>仮説・証拠</span></button>
+        <button class="nav-item" data-view="autoreview"><span class="nav-icon">✧</span><span>AI自律レビュー</span></button>
         <button class="nav-item" data-view="experiments"><span class="nav-icon">◈</span><span>テストと性能</span></button>
       </nav>
       <div class="sidebar-spacer"></div>
@@ -110,6 +111,42 @@
                 <button type="submit" class="button button-primary">仮説を保存する →</button>
               </form>
             </article>
+          </div>
+        </section>
+
+        <section class="view" id="view-autoreview" hidden>
+          <div class="page-heading"><div class="eyebrow">AUTONOMOUS / LOCAL LLM</div><h1>AI自律レビュー</h1><p>Roslynによる意味解析とローカルLLMを使って、高優先度のメソッドを順番に調査します。</p></div>
+          <div class="review-hero">
+            <div>
+              <span class="subtle-chip">LOCAL LLM · READ-ONLY ANALYSIS</span>
+              <h2>調査を始める。</h2>
+              <p>LLMが提案する内容は「未検証の仮説」として記録します。勝手にコードを書き換えたり、生成テストを実行したりしません。</p>
+            </div>
+            <div class="review-hero-orb" aria-hidden="true">✧</div>
+          </div>
+          <div class="two-column review-layout">
+            <article class="panel">
+              <div class="panel-header"><div><h3>ローカルLLM設定</h3><p>環境変数で設定したOpenAI互換APIを使用</p></div></div>
+              <div class="model-settings"><div class="model-entry"><span>MODEL</span><strong id="auto-model">—</strong></div><div class="model-entry"><span>ENDPOINT</span><code id="auto-endpoint">—</code></div></div>
+              <form id="auto-review-form" class="form-stack">
+                <label>調査対象メソッド数（1〜30）<input name="maxMethods" type="number" min="1" max="30" step="1" value="10" required></label>
+                <label>最大実行時間（分、1〜30）<input name="maxMinutes" type="number" min="1" max="30" step="1" value="15" required></label>
+                <div class="review-buttons"><button class="button button-primary" id="auto-start" type="submit">レビューを開始 →</button><button class="button button-outline" id="auto-stop" type="button" disabled>停止する ■</button></div>
+              </form>
+              <p class="form-note">開始前にSolutionを読み込んでください。スキャンは任意ですが、実行するとLLMへ関連する静的解析ルールも渡せます。</p>
+            </article>
+            <article class="panel">
+              <div class="panel-header"><div><h3>現在の実行状況</h3><p>2秒ごとに進捗を更新します</p></div><span class="subtle-chip" id="auto-status">未開始</span></div>
+              <div class="auto-progress-main"><span id="auto-completed">0 / 0</span><span id="auto-progress-percent">0%</span></div>
+              <div class="auto-progress-track"><span id="auto-progress-bar"></span></div>
+              <div class="auto-stat-grid"><div><span>生成した仮説</span><strong id="auto-hypotheses">0</strong></div><div><span>エラー</span><strong id="auto-errors">0</strong></div></div>
+              <div class="auto-current-method"><span>CURRENT METHOD</span><div id="auto-current">レビューは実行されていません。</div></div>
+              <div class="auto-run-id" id="auto-run-id"></div>
+            </article>
+          </div>
+          <div class="two-column review-layout">
+            <article class="panel"><div class="panel-header"><div><h3>実行ログ</h3><p>モデルの出力と各メソッドの進行状況</p></div></div><div id="auto-activity" class="activity-list"><div class="empty-mini">レビューを開始すると履歴が表示されます。</div></div></article>
+            <article class="panel"><div class="panel-header"><div><h3>過去のレビュー</h3><p>再起動後も記録を確認できます</p></div><button class="text-link" id="auto-history-refresh">更新 ↻</button></div><div id="auto-history" class="stack-list"><div class="empty-mini">履歴はありません。</div></div></article>
           </div>
         </section>
 
