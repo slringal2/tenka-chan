@@ -85,6 +85,30 @@ public static class PerformanceHotspotAnalyzer
                     }
                 }
 
+                if (depth > 0 && n is VariableDeclaratorSyntax variable &&
+                    variable.Initializer?.Value is { } initializer &&
+                    model.GetDeclaredSymbol(variable, cancellationToken) is ILocalSymbol local &&
+                    local.Type.SpecialType == SpecialType.System_Object &&
+                    model.GetTypeInfo(initializer, cancellationToken).Type?.IsValueType == true)
+                {
+                    AddSite("boxing_per_iteration", initializer, depth, 6,
+                        "A value type is converted to object inside a loop.",
+                        "Inspect IL for box and confirm allocation with a representative benchmark.");
+                    allocationCandidates++;
+                }
+
+                if (depth > 0 && n is AssignmentExpressionSyntax boxingAssignment &&
+                    boxingAssignment.IsKind(SyntaxKind.SimpleAssignmentExpression) &&
+                    model.GetTypeInfo(boxingAssignment.Left, cancellationToken).Type?.SpecialType
+                        == SpecialType.System_Object &&
+                    model.GetTypeInfo(boxingAssignment.Right, cancellationToken).Type?.IsValueType == true)
+                {
+                    AddSite("boxing_per_iteration", boxingAssignment.Right, depth, 6,
+                        "A value type is assigned to object inside a loop.",
+                        "Inspect IL for box and confirm allocation with a representative benchmark.");
+                    allocationCandidates++;
+                }
+
                 if (depth > 0 && n is AssignmentExpressionSyntax assignment &&
                     assignment.IsKind(SyntaxKind.AddAssignmentExpression) &&
                     model.GetTypeInfo(assignment.Left, cancellationToken).Type?.SpecialType
@@ -154,7 +178,7 @@ public static class PerformanceHotspotAnalyzer
                         }
                     }
                     if (typeName == "System.Collections.Generic.List<T>" &&
-                        methodName is "Contains" or "IndexOf" or "Find" or "FindIndex")
+                        methodName is ("Contains" or "IndexOf" or "Find" or "FindIndex"))
                     {
                         AddSite("list_linear_search", call, depth, 10,
                             "A List<T> search in a loop may repeat linear scans.",
@@ -174,6 +198,21 @@ public static class PerformanceHotspotAnalyzer
                             "Measure real workload latency, throughput and batching options.");
                         blockingCandidates++;
                     }
+                }
+
+                // A single sort/regex/serialization call may be expensive even
+                // outside loops. Cost is unknown, so this remains a candidate.
+                if ((typeName is "System.Array" && methodName == "Sort") ||
+                    (typeName is "System.Text.Json.JsonSerializer" &&
+                        methodName is "Serialize" or "Deserialize") ||
+                    (typeName == "System.Text.RegularExpressions.Regex" &&
+                        methodName is "Replace" or "Matches"))
+                {
+                    AddSite("whole_collection_work", call, depth,
+                        depth > 0 ? 8 : 4,
+                        "Operation may process an entire collection or text payload.",
+                        "Measure representative payload sizes and runtime CPU/allocation costs.");
+                    enumerationCandidates++;
                 }
 
                 if (!bySymbol.TryGetValue(method.OriginalDefinition, out var callee))
@@ -223,7 +262,8 @@ public static class PerformanceHotspotAnalyzer
             }
         }
 
-        var allById = rankings.ToDictionary(x => x.Method.Id, StringComparer.Ordinal);
+        var outbound = edges.GroupBy(e => e.CallerId)
+            .ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.Ordinal);
         var scores = rankings.ToDictionary(x => x.Method.Id, x => x.LocalScore,
             StringComparer.Ordinal);
         // Bounded two-hop propagation of callee evidence. It is deliberately
@@ -233,9 +273,10 @@ public static class PerformanceHotspotAnalyzer
             var next = new Dictionary<string, double>(StringComparer.Ordinal);
             foreach (var method in rankings)
             {
-                var incoming = edges.Where(e => e.CallerId == method.Method.Id)
-                    .Sum(e => Math.Min(35, scores[e.CalleeId] * 0.23) *
-                        (e.Depth > 0 ? 1.8 : 1.0));
+                var incoming = outbound.TryGetValue(method.Method.Id, out var calls)
+                    ? calls.Sum(e => Math.Min(35, scores[e.CalleeId] * 0.23) *
+                        (e.Depth > 0 ? 1.8 : 1.0))
+                    : 0;
                 next[method.Method.Id] = Math.Min(2000, method.LocalScore + incoming);
             }
             scores = next;
