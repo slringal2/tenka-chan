@@ -41,7 +41,7 @@ public sealed class BenchmarkRunComparerTests
     {
         var root = Path.Combine(Path.GetTempPath(), "tenka-compare-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        File.WriteAllText(Path.Combine(root, "Example.csproj"), "<Project />");
+        File.WriteAllText(Path.Combine(root, "Example.csproj"), "<Project><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>");
         ExperimentReceipt? first = null, second = null;
         try
         {
@@ -64,7 +64,7 @@ public sealed class BenchmarkRunComparerTests
     {
         var root = Path.Combine(Path.GetTempPath(), "tenka-compare-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        File.WriteAllText(Path.Combine(root, "Example.csproj"), "<Project />");
+        File.WriteAllText(Path.Combine(root, "Example.csproj"), "<Project><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>");
         ExperimentReceipt? first = null, second = null;
         try
         {
