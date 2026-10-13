@@ -1,4 +1,5 @@
 using TenkaChan.Mcp.Analysis;
+using TenkaChan.Mcp.Review;
 
 namespace TenkaChan.Web;
 
@@ -9,7 +10,7 @@ public sealed record FindingsPage(int Total, int Offset, int Limit, IReadOnlyLis
 /// the Roslyn workspace are serialized because workspace_open replaces its
 /// underlying symbol index; concurrent reads during that operation are unsafe.
 /// </summary>
-public sealed class DashboardState(RoslynReviewService roslyn)
+public sealed class DashboardState(RoslynReviewService roslyn) : IReviewContextSource
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private SolutionSummary? _solution;
@@ -126,6 +127,35 @@ public sealed class DashboardState(RoslynReviewService roslyn)
     {
         await _gate.WaitAsync(ct);
         try { return _diagnostics; }
+        finally { _gate.Release(); }
+    }
+
+
+    public async Task<ReviewContext> GetContextAsync(int maxMethods, CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            EnsureOpen();
+            var targets = roslyn.GetReviewTargets(maxMethods, 0, null);
+            // A prior explicit scan is optional: the LLM can review methods
+            // using Roslyn semantics even before rules have been scanned.
+            return new ReviewContext(_solution!.SnapshotId, targets, _findings);
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task<ReviewMethodContext> GetMethodAsync(string methodId, CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            EnsureOpen();
+            var inspection = await roslyn.InspectAsync(methodId, includeCallers: true, ct);
+            var plan = roslyn.SuggestTestPlan(methodId);
+            var rules = _findings.Where(x => x.MethodId == methodId).Take(12).ToArray();
+            return new ReviewMethodContext(inspection, plan, rules);
+        }
         finally { _gate.Release(); }
     }
 
