@@ -313,3 +313,19 @@ button.item-row:hover,.item-row.clickable:hover { background:#1b3037; border-col
   .det-controls { flex-direction: column; align-items: stretch; }
   .det-controls input { width: 100%; }
 }
+
+
+/* Performance hotspot triage */
+#view-hotspots .metrics { margin-bottom: 18px; }
+#view-hotspots .two-column { align-items: start; }
+#hotspot-methods, #hotspot-sites { overflow: auto; max-height: 720px; }
+#hotspot-measured { overflow: auto; max-height: 610px; }
+#view-hotspots .profile-path-input { width: min(500px, 100%); }
+#hotspot-measured .status-pill { white-space: nowrap; color: #a5f1df; }
+#hotspot-sites .item-row small, #hotspot-methods .item-row small {
+  white-space: normal; line-height: 1.75;
+}
+#view-hotspots .item-row { width: 100%; }
+@media (max-width: 760px) {
+  #view-hotspots .profile-path-input { width: 100%; }
+}
