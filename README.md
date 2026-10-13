@@ -118,9 +118,10 @@ dotnet-trace convert workload.nettrace --format Speedscope
 
 Use an on-CPU profiler for CPU attribution where possible. Some EventPipe
 thread-time samples include waiting threads and cannot be interpreted as
-exclusive CPU usage. Inspect the converted file's profile type: **this
-version imports sampled profiles only**; evented Speedscope traces must
-first be converted to sampled stacks by a compatible tool. Copy the
+exclusive CPU usage. This version imports **sampled and evented** Speedscope profiles. In
+sampled mode, weights come from stack samples; in evented mode,
+durations between matched open/close events are accumulated. Evented
+durations can reflect elapsed/thread time instead of on-CPU time. Copy the
 sampled JSON into a directory covered by \`TENKA_ALLOWED_ROOTS\`, open the
 target solution and import it in **性能ホットスポット**. Never send traces
 containing secrets or user data to untrusted third-party services.
@@ -132,9 +133,9 @@ without containing suspicious syntax. The imported weight unit is
 retained as seconds, milliseconds, bytes, or samples (\`none\`); no
 unwarranted conversion to CPU time is performed.
 
-The sampled import is read-only, bounded to a 25 MB JSON file and
-200,000 samples, and it validates stack frame indices and nonnegative,
-finite sample weights.
+Profile import is read-only, bounded to a 25 MB JSON file and 200,000
+samples/events, and validates frame indices, weights and balanced event
+stacks. No profiler executable is invoked by the import tool.
 
 ## Deterministic C# analysis (no LLM required)
 
