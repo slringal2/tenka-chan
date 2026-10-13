@@ -163,7 +163,7 @@ public sealed class AutonomousReviewRunnerTests
     private sealed class FakeReasoner : IReviewReasoner
     {
         public string ModelName => "fake-local";
-        public virtual async Task<ReviewModelOutput> AnalyzeAsync(
+        public async Task<ReviewModelOutput> AnalyzeAsync(
             ReviewMethodContext context, CancellationToken token)
         {
             await Task.Delay(1, token);
