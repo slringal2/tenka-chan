@@ -43,7 +43,8 @@ jobs:
             sleep 1
           done
           if [ ! -s /tmp/tenka-web-session.json ]; then cat /tmp/tenka-web.log; exit 1; fi
-          curl --silent --fail http://127.0.0.1:5077/ | grep -q 'DEEP REVIEW CONSOLE'
+          curl --silent --show-error --fail http://127.0.0.1:5077/ >/tmp/tenka-web-index.html
+          grep -q 'DEEP REVIEW CONSOLE' /tmp/tenka-web-index.html
           token=$(python3 -c 'import json; print(json.load(open("/tmp/tenka-web-session.json"))["csrfToken"])')
           status=$(curl --silent -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:5077/api/workspace/scan -H 'Content-Type: application/json' -d '{}')
           test "$status" = '403'
