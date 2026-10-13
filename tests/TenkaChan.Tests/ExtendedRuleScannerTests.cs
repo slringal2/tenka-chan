@@ -62,7 +62,7 @@ public sealed class ExtendedRuleScannerTests
                 }
             }
             """);
-        Assert.Single(findings.Where(f => f.RuleId == "PERF1005"));
+        Assert.Single(findings, f => f.RuleId == "PERF1005");
     }
 
     [Fact]
