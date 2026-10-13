@@ -10,7 +10,9 @@ server never requires an LLM API key.
 > The MCP tools generate *candidate* findings, not proven defects.
 > Generated test and benchmark execution is opt-in and requires a prewarmed
 > package cache; full self-directed fuzzing, mutation testing, baseline checkout,
-> profiler traces and **native JIT** disassembly are **not yet implemented**.
+> automatic profiler capture and exact per-instruction C#/IL mappings are
+> **not yet implemented**. Native RyuJIT instructions can now be collected
+> with an explicitly authorized, sandboxed JIT harness.
 
 ## Local Web dashboard
 
@@ -31,7 +33,7 @@ The browser provides eight screens:
 - **Evidence:** create and inspect durable hypotheses, their status and
   supporting records from the SQLite ledger.
 - **Autonomous AI review:** bounded local-LLM investigation, cancellation, live progress and persisted run logs.
-- **Tests and performance:** prepare a detached xUnit/BenchmarkDotNet experiment,
+- **Tests and performance:** prepare detached xUnit, BenchmarkDotNet, or RyuJIT native machine-code experiments,
   explicitly run it in Docker when enabled, view saved TRX/JSON results, and
   compare compatible benchmark reports.
 
@@ -61,8 +63,9 @@ writes require a same-origin CSRF token, and the UI renders source-derived
 values as text rather than HTML.
 
 Docker execution is **off by default**. To enable the "実行" action, also
-set `TENKA_ENABLE_DOCKER=1`, pre-pull
-`mcr.microsoft.com/dotnet/sdk:10.0`, and prewarm your offline NuGet cache.
+set `TENKA_ENABLE_DOCKER=1`, pre-pull the **matching SDK image** for
+the target (`sdk:8.0`, `sdk:9.0`, `sdk:10.0`, etc.) and prewarm
+the experiment's offline NuGet cache.
 The browser asks for confirmation before launching an experiment.
 Review [docs/security.md](docs/security.md) before enabling it.
 
@@ -72,6 +75,99 @@ the workspace index is per process; the SQLite hypothesis ledger and saved
 experiment artifacts are shared when `TENKA_DATA_DIR` matches. In-memory
 Roslyn state is not shared between the Web and MCP processes. The browser
 does not silently execute code or claim that a static rule proves a defect.
+
+## .NET 8+ optimization targets and RyuJIT machine code
+
+**Target projects:** portable \`net8.0\` and newer. The Tenka-chan MCP/Web
+analyzer **host stays on .NET 10**, but an experiment uses the chosen target
+project framework and a matching SDK/runtime container. This distinction
+matters: benchmarking a net8.0 library on a net10.0 runtime would not
+measure its actual .NET 8 JIT behavior.
+
+The target TFM is read from a literal \`TargetFramework\` or
+\`TargetFrameworks\` in the project file. For multi-target projects, the
+lowest supported version is selected unless you explicitly provide
+\`targetFramework\`. When MSBuild imports or variables supply the TFM,
+**pass it explicitly**. \`net8.0-windows\`, Android/iOS targets and
+frameworks older than net8.0 are not supported by the Linux experiment
+worker. Future .NET SDK images must be installed locally before use.
+
+### Real RyuJIT native-code collection
+
+The new \`kind="jit"\` experiment compiles a detached C# **execution
+harness**, runs it inside a **network-disabled, unprivileged Docker
+container**, and instructs CoreCLR's RyuJIT to disassemble only the chosen
+class/method. The harness must call your method under representative
+conditions; otherwise there may be no JIT output.
+
+Example MCP arguments for a net8.0 project:
+
+~~~json
+{
+  "repositoryRoot": "C:\\Projects\\Example",
+  "projectRelativePath": "src\\Example\\Example.csproj",
+  "kind": "jit",
+  "targetFramework": "net8.0",
+  "jitDisasmFilter": "Calculator:Sum",
+  "generatedCode": "using System; public static class Entry { public static int Main() { var input = new int[] {1,2,3,4,5}; Console.WriteLine(Calculator.Sum(input)); return 0; } }"
+}
+~~~
+
+Call \`experiment_prepare\` with these arguments and then, **after
+explicitly enabling Docker**, call \`experiment_run\` with the returned ID.
+Use \`native_disassembly_result\` to inspect generated machine instructions,
+raw encoding bytes, code size, detected call/branch/vector/division families
+and potential allocation or bounds-check helpers. With a matching source
+workspace open, \`native_roslyn_correlate\` attempts to locate the C#
+declaration by type, method and parameter signature.
+
+You can also use the Web UI's **テストと性能** screen. Select
+**RyuJIT ネイティブ命令解析**, specify the target framework and method,
+paste an invocation harness, prepare the experiment, and explicitly run
+it. The saved execution report renders assembly bytes alongside
+recognized instructions and a Roslyn method link if uniquely resolved.
+
+The isolated JIT harness sets:
+
+- \`DOTNET_JitDisasm=<Class:Method>\` and
+  \`DOTNET_JitDisasmWithCodeBytes=1\` to obtain real native instruction text
+  and bytes rather than just IL;
+- \`DOTNET_JitStdOutFile=/work/jit-native.txt\` to capture JIT output
+  without mixing it into ordinary stdout;
+- \`DOTNET_TieredCompilation=0\` and \`DOTNET_ReadyToRun=0\` for a
+  controlled, reproducible JIT compilation mode.
+
+Machine code is **runtime-/architecture-/configuration-dependent**.
+The JIT can inline a method, making it disappear from the dump; for a
+focused comparison, consider using
+\`[MethodImpl(MethodImplOptions.NoInlining)]\` on a trusted test fixture.
+The parsed machine code is not a measured latency or memory-allocation
+result. Comparing instructions is useful for investigating why
+BenchmarkDotNet and workload profiles show a difference, not replacing
+those measurements.
+
+**Mapping precision:** Roslyn correlation is at the **method level**.
+Without JIT native-to-IL sequence mappings and the appropriate PDB,
+no reliable exact machine-instruction-to-IL-offset/C#-line correspondence
+can be asserted. Unknown or overloaded methods are left unmatched unless
+their parameter signatures can be resolved unambiguously.
+
+### Reproduce the runtime environment
+
+~~~powershell
+docker pull mcr.microsoft.com/dotnet/sdk:8.0
+docker pull mcr.microsoft.com/dotnet/sdk:9.0
+docker pull mcr.microsoft.com/dotnet/sdk:10.0
+
+$env:TENKA_ENABLE_DOCKER = "1"
+# Optional: explicitly supply the host NuGet package cache
+$env:TENKA_NUGET_PACKAGES = "$env:USERPROFILE\.nuget\packages"
+~~~
+
+The selected SDK image must already exist on the machine; the worker
+uses \`--pull=never\` and \`--network none\`. Cross-version runtime
+experiments should use the same architecture/workload if you wish to
+compare their code generation.
 
 ## Finding real performance hotspots
 
