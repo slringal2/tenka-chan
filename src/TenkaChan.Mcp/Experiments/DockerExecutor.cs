@@ -158,7 +158,11 @@ public sealed class DockerExecutor
         else
         {
             status = exitCode != 0 ? "benchmark_failed"
-                : measurements.Count == 0 ? "benchmark_unverified"
+                : measurements.Count == 0 ||
+                  measurements.All(m => m.MeanNanoseconds is not > 0 || m.SampleCount <= 0)
+                    ? "benchmark_unverified"
+                : measurements.Any(m => m.MeanNanoseconds is not > 0 || m.SampleCount <= 0)
+                    ? "benchmark_partial"
                 : "benchmark_completed";
         }
 
