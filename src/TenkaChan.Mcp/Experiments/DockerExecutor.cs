@@ -186,6 +186,7 @@ public sealed class DockerExecutor
             ? "dotnet test /work/generated/GeneratedTests.csproj -c Release --no-restore " +
               "--logger 'trx;LogFileName=results.trx' --results-directory /artifacts"
             : "set +e\n" +
+              "cd /work/generated\n" +
               "dotnet run -c Release --no-restore " +
               "--project /work/generated/GeneratedBenchmarks.csproj -- " +
               "--filter '*' --exporters FullJSON --artifacts /work/benchmark-output --memory\n" +
