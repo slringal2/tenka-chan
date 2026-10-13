@@ -178,6 +178,15 @@ public static class PerformanceHotspotAnalyzer
                         }
                     }
                     if (typeName == "System.Collections.Generic.List<T>" &&
+                        methodName == "ToArray")
+                    {
+                        AddSite("collection_copy_per_iteration", call, depth, 9,
+                            "List<T>.ToArray copies the collection on each iteration.",
+                            "Check whether the copy is required; measure bytes allocated per iteration.");
+                        allocationCandidates++;
+                        enumerationCandidates++;
+                    }
+                    if (typeName == "System.Collections.Generic.List<T>" &&
                         methodName is ("Contains" or "IndexOf" or "Find" or "FindIndex"))
                     {
                         AddSite("list_linear_search", call, depth, 10,
