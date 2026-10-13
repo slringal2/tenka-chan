@@ -44,7 +44,7 @@ public sealed class PerformanceHotspotAnalyzerTests
                     var text = "";
                     foreach (var item in items) {
                         for (var i = 0; i < 10; i++) {
-                            var copy = items.ToArray();
+                            var copy = items.Where(value => value > 0).ToArray();
                             object boxed = item;
                             if (items.Contains(item)) value += Helper(item);
                             text += item.ToString();
