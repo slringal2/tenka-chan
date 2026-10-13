@@ -14,7 +14,12 @@ public sealed record NativeMethodDisassembly(
     IReadOnlyList<NativeInstruction> Instructions,
     IReadOnlyList<NativePerformanceSignal> Signals,
     IReadOnlyDictionary<string, int> InstructionFamilies,
-    string? RoslynMethodId = null, string MatchStatus = "not_matched");
+    string? RoslynMethodId = null, string MatchStatus = "not_matched")
+{
+    public string? RoslynSourcePath { get; init; }
+    public int? RoslynSourceLine { get; init; }
+    public string? RoslynSignature { get; init; }
+}
 
 public sealed record NativeCodeReport(
     string TargetFramework, string RuntimeImage, string JitFilter,
