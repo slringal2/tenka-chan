@@ -37,6 +37,22 @@ public static class ReviewTools
         string methodId, bool includeCallers = false, CancellationToken cancellationToken = default) =>
         Json(await roslyn.InspectAsync(methodId, includeCallers, cancellationToken));
 
+    [McpServerTool(Name = "deterministic_analyze")]
+    [Description("Analyze a loaded .NET solution deterministically using Roslyn compiler diagnostics, semantic rules, and bounded method/CFG metrics. No LLM is used.")]
+    public static async Task<string> DeterministicAnalyze(
+        RoslynReviewService roslyn, int maxFindings = 500, int maxMethodMetrics = 100,
+        CancellationToken cancellationToken = default) =>
+        Json(await roslyn.AnalyzeDeterministicAsync(
+            maxFindings, maxMethodMetrics, cancellationToken));
+
+    [McpServerTool(Name = "deterministic_rules")]
+    [Description("List deterministic rule IDs, descriptions, severity, evidence levels and recommended independent verification.")]
+    public static string DeterministicRules() => Json(new
+    {
+        version = DeterministicRuleCatalog.Version,
+        rules = DeterministicRuleCatalog.Rules
+    });
+
     [McpServerTool(Name = "review_scan")]
     [Description("Run conservative Roslyn optimization and async-blocking candidate rules. Findings require independent validation.")]
     public static async Task<string> Scan(RoslynReviewService roslyn,
