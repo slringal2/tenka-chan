@@ -114,6 +114,33 @@ app.MapPost("/api/workspace/scan", (DashboardState dashboard,
         return await dashboard.ScanAsync(ct);
     }));
 
+app.MapGet("/api/hotspots/report", (DashboardState dashboard) =>
+    Results.Ok(new
+    {
+        staticAnalysis = dashboard.StaticHotspotReport,
+        sampledProfile = dashboard.MeasuredHotspotReport
+    }));
+
+app.MapPost("/api/hotspots/scan", (HotspotScanRequest request,
+    DashboardState dashboard, AutonomousReviewRunner runner,
+    CancellationToken ct) => Safe(async () =>
+{
+    if (runner.IsActive)
+        throw new InvalidOperationException("Stop active LLM review before scanning hotspots.");
+    return (object)await dashboard.ScanHotspotsAsync(
+        request.MaxMethods, request.MaxSites, ct);
+}));
+
+app.MapPost("/api/hotspots/profile/import", (HotspotProfileRequest request,
+    DashboardState dashboard, AutonomousReviewRunner runner,
+    CancellationToken ct) => Safe(async () =>
+{
+    if (runner.IsActive)
+        throw new InvalidOperationException("Stop active LLM review before importing a profile.");
+    return (object)await dashboard.ImportHotspotProfileAsync(
+        request.FilePath, request.ProfileIndex, request.MaxFrames, ct);
+}));
+
 app.MapGet("/api/deterministic/rules", () =>
     Results.Ok(new { version = DeterministicRuleCatalog.Version,
         rules = DeterministicRuleCatalog.Rules }));
@@ -224,6 +251,9 @@ async Task<IResult> Safe(Func<Task<object>> operation)
     }
 }
 
+public sealed record HotspotScanRequest(int MaxMethods = 100, int MaxSites = 300);
+public sealed record HotspotProfileRequest(string FilePath, int ProfileIndex = 0,
+    int MaxFrames = 100);
 public sealed record DeterministicRunRequest(int MaxFindings = 500,
     int MaxMethodMetrics = 100);
 public sealed record StartAutonomousReviewRequest(int MaxMethods = 10, int MaxMinutes = 15);
