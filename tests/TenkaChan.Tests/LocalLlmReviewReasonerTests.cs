@@ -37,7 +37,7 @@ public sealed class LocalLlmReviewReasonerTests
         var output = LlmHypothesisParser.Parse(text);
         Assert.Equal(3, output.Hypotheses.Count);
         Assert.Equal("Unverified.", output.Notes);
-        Assert.Single(output.Hypotheses.Where(x => x.Category == "correctness"));
+        Assert.Single(output.Hypotheses, x => x.Category == "correctness");
     }
 
     [Fact]
