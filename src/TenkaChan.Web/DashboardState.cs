@@ -16,6 +16,7 @@ public sealed class DashboardState(RoslynReviewService roslyn) : IReviewContextS
     private SolutionSummary? _solution;
     private RuleFinding[] _findings = [];
     private CompilationDiagnosticsReport? _diagnostics;
+    private DeterministicAnalysisReport? _deterministic;
     private string? _path;
     private DateTimeOffset? _lastOpened;
     private DateTimeOffset? _lastScanned;
@@ -40,6 +41,8 @@ public sealed class DashboardState(RoslynReviewService roslyn) : IReviewContextS
                 .Select(x => new { category = x.Key, count = x.Count() }).ToArray(),
             diagnosticErrors = _diagnostics?.ErrorCount ?? 0,
             diagnosticWarnings = _diagnostics?.WarningCount ?? 0,
+            deterministicFindingCount = _deterministic?.Summary.TotalFindings ?? 0,
+            deterministicComplete = _deterministic is not null,
             scanned = _lastScanned is not null,
             lastOpened = _lastOpened,
             lastScanned = _lastScanned
@@ -55,6 +58,7 @@ public sealed class DashboardState(RoslynReviewService roslyn) : IReviewContextS
             _solution = null;
             _findings = [];
             _diagnostics = null;
+            _deterministic = null;
             _path = null;
             _lastOpened = null;
             _lastScanned = null;
@@ -82,6 +86,22 @@ public sealed class DashboardState(RoslynReviewService roslyn) : IReviewContextS
                 diagnosticErrors = diagnostics.ErrorCount,
                 diagnosticWarnings = diagnostics.WarningCount,
                 scannedAt = _lastScanned };
+        }
+        finally { _gate.Release(); }
+    }
+
+    public DeterministicAnalysisReport? DeterministicReport => _deterministic;
+
+    public async Task<DeterministicAnalysisReport> AnalyzeDeterministicAsync(
+        int maxFindings, int maxMethods, CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            EnsureOpen();
+            _deterministic = await roslyn.AnalyzeDeterministicAsync(
+                maxFindings, maxMethods, ct);
+            return _deterministic;
         }
         finally { _gate.Release(); }
     }
