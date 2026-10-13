@@ -34,3 +34,10 @@ jobs:
         env:
           TENKA_DOCKER_SMOKE: '1'
           TENKA_NUGET_PACKAGES: /home/runner/.nuget/packages
+      - name: Prewarm BenchmarkDotNet packages on trusted CI host
+        run: dotnet restore tests/Fixtures/BenchmarkCache/BenchmarkCache.csproj
+      - name: Test BenchmarkDotNet FullJSON from network-disabled Docker
+        run: dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj --configuration Release --no-build --filter FullyQualifiedName~DockerBenchmarkSmokeTests
+        env:
+          TENKA_BENCHMARK_SMOKE: '1'
+          TENKA_NUGET_PACKAGES: /home/runner/.nuget/packages
