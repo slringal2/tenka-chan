@@ -74,7 +74,7 @@ public sealed class RoslynReviewService : IDisposable
             }
             var projects = _solution.Projects.Select(p =>
                 new ProjectSummary(p.Name, p.FilePath,
-                    p.ParseOptions?.PreprocessorSymbolNames() is { } ? null : null,
+                    null, // Target framework is not safely inferable from ParseOptions.
                     p.DocumentIds.Count)).ToArray();
             return new SolutionSummary(_snapshotId, _methods.Count, projects, _warnings.ToArray());
         }
@@ -116,7 +116,8 @@ public sealed class RoslynReviewService : IDisposable
                 foreach (var invocation in other.Syntax.DescendantNodes().OfType<InvocationExpressionSyntax>())
                 {
                     var invoked = otherModel.GetSymbolInfo(invocation, ct).Symbol;
-                    if (SymbolEqualityComparer.Default.Equals(invoked, entry.Symbol))
+                    if (SymbolEqualityComparer.Default.Equals(
+                        (invoked as IMethodSymbol)?.OriginalDefinition, entry.Symbol.OriginalDefinition))
                     {
                         callers.Add(other.Summary.Signature);
                         break;
@@ -187,13 +188,20 @@ public sealed class RoslynReviewService : IDisposable
                 var model = await document.GetSemanticModelAsync(ct);
                 if (root is null || model is null) continue;
                 var findings = RuleScanner.Scan(root, model, document.FilePath ?? document.Name, max - result.Count);
+                var methodsInDocument = _methods.Values
+                    .Where(entry => entry.Document.Id == document.Id).ToArray();
                 result.AddRange(findings.Select(f => f with
                 {
-                    MethodId = _methods.Values.FirstOrDefault(entry =>
-                        entry.Document.Id == document.Id && entry.Syntax.Span.Contains(
-                            root.DescendantNodes().FirstOrDefault(n =>
-                                n.GetLocation().GetLineSpan().StartLinePosition.Line + 1 == f.Line)?.Span
-                                ?? default))?.Summary.Id
+                    MethodId = methodsInDocument
+                        .Where(entry =>
+                        {
+                            var span = entry.Syntax.GetLocation().GetLineSpan();
+                            var line = f.Line - 1;
+                            return span.StartLinePosition.Line <= line
+                                && span.EndLinePosition.Line >= line;
+                        })
+                        .OrderBy(entry => entry.Syntax.Span.Length)
+                        .FirstOrDefault()?.Summary.Id
                 }));
             }
         }
@@ -223,9 +231,3 @@ public sealed class RoslynReviewService : IDisposable
     }
 }
 
-internal static class RoslynExtensions
-{
-    // Explicitly never infer a target framework from ParseOptions alone.
-    public static IEnumerable<string>? PreprocessorSymbolNames(
-        this ParseOptions options) => null;
-}
