@@ -52,6 +52,11 @@ public sealed class RoslynIntegrationTests
             var details = await service.InspectAsync(add.Id);
             Assert.Contains("return a + b", details.Source);
             Assert.NotEmpty(details.Blocks);
+            var plan = service.SuggestTestPlan(add.Id);
+            Assert.True(plan.ExternallyCallable);
+            Assert.Equal("unresolved", plan.OracleStatus);
+            Assert.Contains(plan.Inputs, input => input.CSharpExpressions.Contains("int.MinValue"));
+
             var references = await service.FindReferencesAsync(add.Id);
             Assert.Contains(references, location => location.Preview.Contains("Add(value, 1)"));
 
