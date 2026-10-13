@@ -1,6 +1,6 @@
 # Architecture v0.1
 
-\`\`\`text
+```text
 MCP client / local LLM
          |
     MCP stdio host
@@ -16,7 +16,7 @@ symbol index, CFG,                    DockerExecutor
 dataflow, diagnostics                 network-off worker
                                          |
                               xUnit / BenchmarkDotNet
-\`\`\`
+```
 
 ## Deliberate boundaries
 
@@ -26,7 +26,7 @@ dataflow, diagnostics                 network-off worker
 - Tests and benchmarks are only run after an explicit call and environment
   opt-in, and only within Docker.
 - Source/experiment references are bounded by explicitly allowed directories.
-- \`workspace_open\` evaluates project files via MSBuild and requires an
+- `workspace_open` evaluates project files via MSBuild and requires an
   explicit trust switch. It must never be used on unknown code without a
   stronger isolation boundary.
 - Snapshot IDs only live for the current MCP server lifetime. Durable
@@ -34,25 +34,25 @@ dataflow, diagnostics                 network-off worker
 
 ## Finding categories
 
-- PERF1001: LINQ materialization (\`ToList\`/\`ToArray\`) inside a loop.
-- PERF1002: string \`+=\` in a loop.
-- PERF1003: \`new Regex(...)\` inside a loop.
-- PERF1004: LINQ \`Count()\` used in a comparison inside a loop.
-- ASYNC1001: \`Task<T>.Result\` accessed in an async method.
+- PERF1001: LINQ materialization (`ToList`/`ToArray`) inside a loop.
+- PERF1002: string `+=` in a loop.
+- PERF1003: `new Regex(...)` inside a loop.
+- PERF1004: LINQ `Count()` used in a comparison inside a loop.
+- ASYNC1001: `Task<T>.Result` accessed in an async method.
 
 These are intentionally not high-confidence bug findings. Rules rely on
 resolved semantic symbols and may skip code with unresolved references.
 
 ## Experiment lifecycle
 
-\`\`\`text
+```text
 LLM hypothesis (external to this server)
   -> experiment_prepare(kind,test/benchmark,generatedCode)
   -> Roslyn C# syntax parse -> manifest + generated project
   -> OPTIONAL experiment_run(id) -> offline Docker
   -> independent result interpretation
   -> performance_compare(matched sample series)
-\`\`\`
+```
 
 A syntax-valid generated test can still contain compilation or behavioral
 errors. Passing a test proves only the asserted behavior for that input.
