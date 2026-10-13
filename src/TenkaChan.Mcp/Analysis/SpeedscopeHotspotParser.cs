@@ -10,7 +10,7 @@ namespace TenkaChan.Mcp.Analysis;
 public sealed record ProfileMethodIdentity(string MethodId, string QualifiedMember);
 
 /// <summary>
-/// Import speedscope 'sampled' JSON exported from a representative workload,
+/// Import speedscope sampled/evented JSON exported from a representative workload,
 /// e.g. by dotnet-trace conversion or another compatible profiler.
 /// No target code or profiler process is started by this parser.
 /// </summary>
@@ -61,9 +61,11 @@ public static class SpeedscopeHotspotParser
             throw new ArgumentOutOfRangeException(nameof(profileIndex));
         var profile = profiles[profileIndex];
         if (!profile.TryGetProperty("type", out var kind) ||
-            kind.GetString() != "sampled")
+            kind.ValueKind != JsonValueKind.String ||
+            kind.GetString() is not ("sampled" or "evented"))
             throw new InvalidDataException(
-                "Only speedscope sampled profiles are supported. Convert evented profiles first.");
+                "Only speedscope sampled and evented profiles are supported.");
+        var profileType = kind.GetString()!;
         var name = profile.TryGetProperty("name", out var nameProp) &&
             nameProp.ValueKind == JsonValueKind.String
                 ? (nameProp.GetString() ?? "profile") : "profile";
@@ -74,14 +76,6 @@ public static class SpeedscopeHotspotParser
         if (unit is not ("seconds" or "milliseconds" or "microseconds" or
             "nanoseconds" or "bytes" or "none"))
             throw new InvalidDataException("Unexpected speedscope unit.");
-        if (!profile.TryGetProperty("samples", out var stacks) ||
-            !profile.TryGetProperty("weights", out var weights) ||
-            stacks.ValueKind != JsonValueKind.Array ||
-            weights.ValueKind != JsonValueKind.Array ||
-            stacks.GetArrayLength() != weights.GetArrayLength() ||
-            stacks.GetArrayLength() > 200000)
-            throw new InvalidDataException("Invalid sampled profile stacks/weights.");
-
         var names = frames.EnumerateArray().Select(frame =>
         {
             if (frame.ValueKind != JsonValueKind.Object ||
@@ -93,37 +87,111 @@ public static class SpeedscopeHotspotParser
         }).ToArray();
         var data = names.Select(name => new Accumulator(name)).ToArray();
         var total = 0d;
-        for (var i = 0; i < weights.GetArrayLength(); i++)
+        var observationsCount = 0;
+        if (profileType == "sampled")
         {
-            var weightNode = weights[i];
-            if (!weightNode.TryGetDouble(out var weight) ||
-                !double.IsFinite(weight) || weight < 0)
-                throw new InvalidDataException("Non-finite or negative sample weight.");
-            total += weight;
-            if (!double.IsFinite(total))
-                throw new InvalidDataException("Profile weight sum overflow.");
-            var stackNode = stacks[i];
-            if (stackNode.ValueKind != JsonValueKind.Array ||
-                stackNode.GetArrayLength() > 1000)
-                throw new InvalidDataException("Invalid stack frame depth.");
-            var unique = new HashSet<int>();
-            var leaf = -1;
-            foreach (var frameNode in stackNode.EnumerateArray())
+            if (!profile.TryGetProperty("samples", out var stacks) ||
+                !profile.TryGetProperty("weights", out var weights) ||
+                stacks.ValueKind != JsonValueKind.Array ||
+                weights.ValueKind != JsonValueKind.Array ||
+                stacks.GetArrayLength() != weights.GetArrayLength() ||
+                stacks.GetArrayLength() > 200000)
+                throw new InvalidDataException("Invalid sampled profile stacks/weights.");
+            observationsCount = stacks.GetArrayLength();
+
+            for (var i = 0; i < observationsCount; i++)
             {
-                if (!frameNode.TryGetInt32(out var index) ||
-                    index < 0 || index >= names.Length)
-                    throw new InvalidDataException("Invalid speedscope frame index.");
-                if (unique.Add(index))
+                var weightNode = weights[i];
+                if (weightNode.ValueKind != JsonValueKind.Number ||
+                    !weightNode.TryGetDouble(out var weight) ||
+                    !double.IsFinite(weight) || weight < 0)
+                    throw new InvalidDataException("Non-finite or negative sample weight.");
+                total += weight;
+                if (!double.IsFinite(total))
+                    throw new InvalidDataException("Profile weight sum overflow.");
+                var stackNode = stacks[i];
+                if (stackNode.ValueKind != JsonValueKind.Array ||
+                    stackNode.GetArrayLength() > 1000)
+                    throw new InvalidDataException("Invalid stack frame depth.");
+                var unique = new HashSet<int>();
+                var leaf = -1;
+                foreach (var frameNode in stackNode.EnumerateArray())
                 {
-                    data[index].Inclusive += weight;
-                    data[index].Samples++;
+                    if (frameNode.ValueKind != JsonValueKind.Number ||
+                        !frameNode.TryGetInt32(out var index) ||
+                        index < 0 || index >= names.Length)
+                        throw new InvalidDataException("Invalid speedscope frame index.");
+                    if (unique.Add(index))
+                    {
+                        data[index].Inclusive += weight;
+                        data[index].Samples++;
+                    }
+                    leaf = index;
                 }
-                leaf = index;
+                if (leaf >= 0) data[leaf].Exclusive += weight;
             }
-            if (leaf >= 0) data[leaf].Exclusive += weight;
+        }
+        else
+        {
+            if (!profile.TryGetProperty("events", out var events) ||
+                events.ValueKind != JsonValueKind.Array ||
+                events.GetArrayLength() > 200000)
+                throw new InvalidDataException("Invalid evented profile events.");
+            if (!ReadNonNegativeNumber(profile, "startValue", out var startValue) ||
+                !ReadNonNegativeNumber(profile, "endValue", out var endValue) ||
+                endValue < startValue)
+                throw new InvalidDataException("Invalid evented profile boundaries.");
+
+            var stack = new List<int>();
+            var previous = startValue;
+            foreach (var ev in events.EnumerateArray())
+            {
+                if (ev.ValueKind != JsonValueKind.Object ||
+                    !ReadNonNegativeNumber(ev, "at", out var time) ||
+                    time < previous || time > endValue ||
+                    !ev.TryGetProperty("type", out var evType) ||
+                    evType.ValueKind != JsonValueKind.String ||
+                    !ev.TryGetProperty("frame", out var frameNode) ||
+                    frameNode.ValueKind != JsonValueKind.Number ||
+                    !frameNode.TryGetInt32(out var frame) ||
+                    frame < 0 || frame >= names.Length)
+                    throw new InvalidDataException("Invalid evented profile event.");
+                var delta = time - previous;
+                if (delta > 0)
+                {
+                    AddInterval(data, stack, delta);
+                    total += delta;
+                    observationsCount++;
+                }
+
+                switch (evType.GetString())
+                {
+                    case "O":
+                        if (stack.Count >= 1000)
+                            throw new InvalidDataException("Evented call stack exceeds maximum depth.");
+                        stack.Add(frame);
+                        break;
+                    case "C":
+                        if (stack.Count == 0 || stack[^1] != frame)
+                            throw new InvalidDataException("Non-LIFO evented call stack.");
+                        stack.RemoveAt(stack.Count - 1);
+                        break;
+                    default: throw new InvalidDataException("Unknown evented frame operation.");
+                }
+                previous = time;
+            }
+
+            if (stack.Count != 0)
+                throw new InvalidDataException("Unbalanced evented call stack.");
+            if (endValue > previous)
+            {
+                // An interval after the final close is treated as unassigned.
+                total += endValue - previous;
+                observationsCount++;
+            }
         }
         if (total <= 0)
-            throw new InvalidDataException("No positive sample weights.");
+            throw new InvalidDataException("No positive profile weights/durations.");
 
         var mappings = methods.Where(m => !string.IsNullOrWhiteSpace(m.QualifiedMember))
             .GroupBy(m => m.QualifiedMember.Replace('+', '.'),
@@ -150,18 +218,45 @@ public static class SpeedscopeHotspotParser
         }
 
         return new SampledHotspotReport(sourcePath, name, unit,
-            stacks.GetArrayLength(), Math.Round(total, 6), observations.Count,
+            observationsCount, Math.Round(total, 6), observations.Count,
             linked, ambiguous,
             observations.OrderByDescending(x => x.ExclusiveWeight)
                 .ThenByDescending(x => x.InclusiveWeight)
                 .ThenBy(x => x.FrameName, StringComparer.Ordinal)
                 .Take(limit).ToArray(),
             [
-                "These are sampled workload observations, not proof of a regression. Representative inputs and process settings matter.",
-                "Self/exclusive weight is attributed to the last stack frame; inclusive weight counts each frame once per sample (recursion collapsed).",
+                "This is a workload observation, not proof of a regression. Representative inputs, instrumentation and process settings matter.",
+                "Sampled profiles use weighted stacks; evented profiles attribute observed durations between balanced open/close events. Recursion is collapsed for inclusive attribution.",
                 "Method links require an unambiguous fully-qualified member name; generated methods, overloads, generic mangling and async state machines may remain unmatched.",
-                "Weights can be time, bytes, or sample counts depending on the profile unit; do not infer wall-clock time when unit is none."
-            ]);
+                "Units can be time, bytes, or sample counts. Sampled-thread-time may include waiting threads and is not necessarily on-CPU time."
+            ])
+        {
+            ProfileType = profileType
+        };
+    }
+
+
+    private static bool ReadNonNegativeNumber(JsonElement obj, string property, out double value)
+    {
+        value = 0;
+        return obj.TryGetProperty(property, out var candidate) &&
+            candidate.ValueKind == JsonValueKind.Number &&
+            candidate.TryGetDouble(out value) &&
+            double.IsFinite(value) && value >= 0;
+    }
+
+    private static void AddInterval(Accumulator[] data, List<int> stack, double weight)
+    {
+        var unique = new HashSet<int>();
+        foreach (var frame in stack)
+        {
+            if (unique.Add(frame))
+            {
+                data[frame].Inclusive += weight;
+                data[frame].Samples++;
+            }
+        }
+        if (stack.Count > 0) data[stack[^1]].Exclusive += weight;
     }
 
     private static bool FrameMatches(string frame, string fullyQualifiedMember)
