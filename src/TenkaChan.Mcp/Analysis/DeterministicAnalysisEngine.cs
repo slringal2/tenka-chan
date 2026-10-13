@@ -76,14 +76,14 @@ public static class DeterministicAnalysisEngine
         return new DeterministicFinding(
             Fingerprint(project.Name, relative,
                 (projectAnalyzer ? "ANALYZER:" : "COMPILER:") + diagnostic.Id,
-                line, col, diagnostic.GetMessage()),
+                line, col, diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture)),
             diagnostic.Id,
             (projectAnalyzer ? "Analyzer diagnostic: " : "Compiler diagnostic: ") + diagnostic.Id,
             projectAnalyzer ? "analyzer" : "compiler", severity,
             projectAnalyzer ? "analyzer" : "compiler",
             projectAnalyzer ? "roslyn_project_analyzer" : "roslyn_compiler",
             project.Name, path, relative, line, col, methodId,
-            diagnostic.GetMessage(), excerpt,
+            diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture), excerpt,
             projectAnalyzer
                 ? "Review the installed analyzer's rule documentation and verify the issue."
                 : severity == "error"
