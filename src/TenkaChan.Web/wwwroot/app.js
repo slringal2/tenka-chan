@@ -689,6 +689,9 @@ function renderDeterministic() {
   add(notes, el("div", "diagnostic-item",
     summary.documentsAnalyzed + " documents / " + summary.methodsIndexed + " methods"));
   add(notes, el("div", "diagnostic-item",
+    count(summary.projectAnalyzersExecuted ?? 0) + " installed analyzers / " +
+    count(summary.projectAnalyzerDiagnostics ?? 0) + " analyzer diagnostics"));
+  add(notes, el("div", "diagnostic-item",
     "指摘 " + summary.returnedFindings + " / " + summary.totalFindings + " 件、" +
     "メソッド計測 " + summary.returnedMethodMetrics + " / " +
     summary.totalMethodMetrics + " 件"));
