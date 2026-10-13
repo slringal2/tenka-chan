@@ -30,7 +30,9 @@ public sealed class DockerNet8AndJitSmokeTests
             Assert.Equal("net8.0", receipt.TargetFramework);
             var execution = await new DockerExecutor(guard, store)
                 .RunAsync(receipt.Id, CancellationToken.None);
-            Assert.Equal("tests_passed", execution.Status);
+            Assert.True(execution.Status == "tests_passed",
+                $"Expected a .NET 8 TRX pass; status={execution.Status} exit={execution.ExitCode}; " +
+                $"stdout={execution.Output}; stderr={execution.Stderr}");
             Assert.Equal("net8.0", execution.TargetFramework);
             Assert.Equal(1, execution.Tests?.Passed);
         });
