@@ -68,3 +68,25 @@ errors. Passing a test proves only the asserted behavior for that input.
 5. Add property-based testing, fuzzing and mutation testing with seed replay.
 
 The `il_inspect` tool reads managed IL using PEReader/MetadataReader without executing target assemblies. Native JIT disassembly remains future work.
+
+
+## Structured experiment verification
+
+- `experiment_prepare` writes generated source, a detached project and SHA-256
+  hashes for both generated files. A later source/project edit invalidates the
+  experiment manifest.
+- `experiment_run` has explicit opt-in and Docker-only command templates,
+  read-only source/packages mounts and a single writable artifacts directory.
+  The container has no network and cannot pull images at runtime.
+- Generated xUnit tests must write a TRX result report. Zero discovered tests,
+  missing reports, failed tests and infrastructure failures are distinct states.
+- BenchmarkDotNet FullJSON summaries expose means, medians, samples and
+  allocations. Run comparisons require identical generated benchmark source
+  and a matching environment fingerprint.
+- Logs are bounded and saved result records survive MCP process restart.
+  `experiment_result` retrieves a completed record.
+- `experiment_attach_result` can associate parsed failing-test evidence
+  with the SQLite review ledger. Arbitrary `test_execution` evidence is
+  rejected.
+- Benchmark pair comparisons are **descriptive only**. No statistical
+  significance or Git commit regression is asserted from aggregated means.

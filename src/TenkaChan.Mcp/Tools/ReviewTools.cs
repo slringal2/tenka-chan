@@ -52,6 +52,24 @@ public static class ReviewTools
         string experimentId, CancellationToken cancellationToken = default) =>
         Json(await executor.RunAsync(experimentId, cancellationToken));
 
+    [McpServerTool(Name = "experiment_result")]
+    [Description("Retrieve a persisted, structured Docker execution report including TRX test counters or BenchmarkDotNet metrics.")]
+    public static string Result(ExperimentStore experiments, string experimentId) =>
+        Json(experiments.ReadExecutionResult(experimentId));
+
+    [McpServerTool(Name = "experiment_attach_result")]
+    [Description("Attach observed TRX test outcomes from a stored sandbox execution to a review hypothesis; raw LLM-submitted test evidence is disallowed.")]
+    public static string AttachResult(ExperimentStore experiments, ReviewLedger ledger,
+        string hypothesisId, string experimentId) =>
+        Json(ledger.AttachExperimentResult(hypothesisId,
+            experiments.ReadExecutionResult(experimentId)));
+
+    [McpServerTool(Name = "benchmark_compare_runs")]
+    [Description("Compare two saved BenchmarkDotNet runs using matching source hashes and runtime fingerprints. Returns descriptive changes, not statistical significance.")]
+    public static string CompareSavedBenchmarks(BenchmarkRunComparer comparer,
+        string baselineExperimentId, string candidateExperimentId, double thresholdPercent = 5) =>
+        Json(comparer.Compare(baselineExperimentId, candidateExperimentId, thresholdPercent));
+
     [McpServerTool(Name = "performance_compare")]
     [Description("Compare independent benchmark samples from the same environment; return exploratory bootstrap interval and candidate regression classification.")]
     public static string Compare(double[] baseline, double[] candidate,
@@ -96,7 +114,7 @@ public static class ReviewTools
         Json(ledger.Create(snapshotId, methodId, category, claim, failureCondition));
 
     [McpServerTool(Name = "evidence_add")]
-    [Description("Attach sourced evidence to a hypothesis. kind: static_analysis, contract, test_execution, benchmark, profiler, source_inspection, human_review.")]
+    [Description("Attach sourced evidence to a hypothesis: static_analysis, contract, benchmark, profiler, source_inspection, human_review. Test execution evidence must come from experiment_attach_result.")]
     public static string AddEvidence(ReviewLedger ledger, string hypothesisId,
         string kind, string summary, string provenance, string? artifactId = null) =>
         Json(ledger.AddEvidence(hypothesisId, kind, summary, provenance, artifactId));

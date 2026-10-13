@@ -17,6 +17,7 @@ builder.Services.AddSingleton<WorkspaceGuard>();
 builder.Services.AddSingleton<RoslynReviewService>();
 builder.Services.AddSingleton<IlInspector>();
 builder.Services.AddSingleton<ExperimentStore>();
+builder.Services.AddSingleton<BenchmarkRunComparer>();
 builder.Services.AddSingleton<ReviewLedger>();
 builder.Services.AddSingleton<DockerExecutor>();
 builder.Services.AddMcpServer()

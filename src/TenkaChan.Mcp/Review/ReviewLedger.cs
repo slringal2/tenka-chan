@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using TenkaChan.Mcp.Experiments;
 
 namespace TenkaChan.Mcp.Review;
 
@@ -29,7 +30,7 @@ public sealed class ReviewLedger
 
     private static readonly HashSet<string> AllowedEvidenceKinds = new(StringComparer.Ordinal)
     {
-        "static_analysis", "contract", "test_execution", "benchmark",
+        "static_analysis", "contract", "test_execution", "test_observation", "benchmark",
         "profiler", "source_inspection", "human_review"
     };
 
@@ -124,6 +125,33 @@ public sealed class ReviewLedger
     public ReviewEvidence AddEvidence(string hypothesisId, string kind,
         string summary, string provenance, string? artifactId = null)
     {
+        if (kind is "test_execution" or "test_observation")
+            throw new InvalidOperationException(
+                "Test evidence must be attached from an observed sandbox execution via experiment_attach_result.");
+        return AddEvidenceCore(hypothesisId, kind, summary, provenance, artifactId);
+    }
+
+    public ReviewEvidence AttachExperimentResult(string hypothesisId, ExecutionResult result)
+    {
+        if (result.Kind != "test" || result.Tests is null ||
+            result.Status is not ("tests_failed" or "tests_passed") ||
+            result.Tests.Total <= 0)
+            throw new InvalidOperationException("Only a parsed, executed TRX test report is admissible.");
+        var failed = result.Status == "tests_failed";
+        if (failed && result.Tests.Failed <= 0)
+            throw new InvalidOperationException("Failure evidence must include at least one failed test.");
+        var kind = failed ? "test_execution" : "test_observation";
+        var summary = $"TRX total={result.Tests.Total}, passed={result.Tests.Passed}, " +
+            $"failed={result.Tests.Failed}, skipped={result.Tests.Skipped}; " +
+            $"Docker exit={result.ExitCode}; status={result.Status}";
+        var provenance = (failed ? "verified-failed-experiment:" : "verified-passed-experiment:")
+            + result.ExperimentId;
+        return AddEvidenceCore(hypothesisId, kind, summary, provenance, result.ExperimentId);
+    }
+
+    private ReviewEvidence AddEvidenceCore(string hypothesisId, string kind,
+        string summary, string provenance, string? artifactId)
+    {
         ValidateIdentifier(hypothesisId, nameof(hypothesisId));
         if (!AllowedEvidenceKinds.Contains(kind)) throw new ArgumentException("Unknown evidence kind.");
         ValidateString(summary, 10000, nameof(summary));
@@ -175,7 +203,8 @@ public sealed class ReviewLedger
             {
                 var kind = reader.GetString(0);
                 var source = reader.GetString(1);
-                test |= kind == "test_execution";
+                test |= kind == "test_execution" &&
+                    source.StartsWith("verified-failed-experiment:", StringComparison.Ordinal);
                 oracle |= kind == "contract" &&
                     !source.StartsWith("llm:", StringComparison.OrdinalIgnoreCase);
             }
