@@ -18,10 +18,11 @@ The **ASP.NET Core Web UI** is a separate, optional entry point alongside the
 existing MCP stdio server. It runs on **http://127.0.0.1:5077** and requires no
 JavaScript framework, database server or cloud LLM account.
 
-The browser provides seven screens:
+The browser provides eight screens:
 
 - **Dashboard:** open a trusted solution, start Roslyn scans, see project /
   method counts, compilation diagnostics and candidate categories.
+- **Performance hotspots:** static costly-loop/call candidates plus imported sampled workload profiles with self/inclusive rankings.
 - **Deterministic analysis:** compiler/semantic evidence, method metrics, source links and JSON export without a model.
 - **Findings:** search/filter candidate performance, async and correctness rules
   and jump to the affected method.
@@ -72,7 +73,72 @@ experiment artifacts are shared when `TENKA_DATA_DIR` matches. In-memory
 Roslyn state is not shared between the Web and MCP processes. The browser
 does not silently execute code or claim that a static rule proves a defect.
 
+## Finding real performance hotspots
+
+The **性能ホットスポット** screen separates two very different questions:
+
+- **Static candidate ranking:** Roslyn inspects every indexed method for
+  nested loops, repeated allocations/boxing/string concatenation,
+  LINQ materialization/terminal enumeration, List<T> scans inside loops,
+  synchronous waits, lock contention candidates, I/O inside loops and
+  calls to other solution methods. A two-hop bounded call graph propagation
+  increases the screening priority of callers of suspicious methods.
+  These scores **are not elapsed time or CPU measurements**.
+- **Observed workload hotspots:** Import a **sampled Speedscope JSON**
+  created by a profiler for a representative application workload.
+  The dashboard shows exclusive/self and inclusive weights/percentages,
+  total samples, and conservative mapping of fully-qualified frame names
+  back to Roslyn method IDs. Overloads/dynamic methods that cannot be
+  uniquely identified are **left unmatched**.
+
+MCP:
+
+- \`performance_hotspots(maxMethods,maxSites)\` returns static method rankings,
+  individual source-linked cost candidates, and direct call edges.
+- \`performance_profile_import(filePath,profileIndex,maxFrames)\` reads
+  a **local .json file inside TENKA_ALLOWED_ROOTS**. The import does not
+  launch the application or execute the profiler.
+- \`performance_profile_current()\` returns the last imported profile.
+
+Web API: \`POST /api/hotspots/scan\`,
+\`POST /api/hotspots/profile/import\`, \`GET /api/hotspots/report\`.
+
+### Capture a representative .NET workload
+
+Use the supported \`dotnet-trace\` tool separately, while running your
+application with normal inputs. Recent versions offer .NET runtime
+sampled-thread-time tracing:
+
+~~~powershell
+dotnet tool install --global dotnet-trace
+dotnet-trace ps
+dotnet-trace collect --process-id 12345 --profile dotnet-sampled-thread-time,dotnet-common --output workload.nettrace
+dotnet-trace convert workload.nettrace --format Speedscope
+~~~
+
+Use an on-CPU profiler for CPU attribution where possible. Some EventPipe
+thread-time samples include waiting threads and cannot be interpreted as
+exclusive CPU usage. This version imports **sampled and evented** Speedscope profiles. In
+sampled mode, weights come from stack samples; in evented mode,
+durations between matched open/close events are accumulated. Evented
+durations can reflect elapsed/thread time instead of on-CPU time. Copy the
+sampled JSON into a directory covered by \`TENKA_ALLOWED_ROOTS\`, open the
+target solution and import it in **性能ホットスポット**. Never send traces
+containing secrets or user data to untrusted third-party services.
+
+Only a measured representative trace can answer which frame actually
+consumed most sampled time. A static risk score might be high for a method
+that was never called. Conversely, hot code can be computationally costly
+without containing suspicious syntax. The imported weight unit is
+retained as seconds, milliseconds, bytes, or samples (\`none\`); no
+unwarranted conversion to CPU time is performed.
+
+Profile import is read-only, bounded to a 25 MB JSON file and 200,000
+samples/events, and validates frame indices, weights and balanced event
+stacks. No profiler executable is invoked by the import tool.
+
 ## Deterministic C# analysis (no LLM required)
+
 
 Start with this mode if you want a reproducible, objective inspection before
 asking a model for suggestions. The deterministic engine is driven by **Roslyn**
@@ -191,6 +257,7 @@ free of bugs or performance regressions.
 | --- | --- |
 | `autonomous_review_start` / `autonomous_review_status` | Bounded local-LLM method investigation and current run state |
 | `autonomous_review_stop` / `autonomous_review_history` | Cancel a run and retrieve persisted history |
+| `performance_hotspots` / `performance_profile_import` / `performance_profile_current` | Static candidate ranking plus separately imported measured workload profile |
 | `deterministic_analyze` / `deterministic_rules` | Reproducible Roslyn analysis and rule catalog, no LLM required |
 | `workspace_open` | Evaluate a trusted .sln, .slnx or .csproj with MSBuildWorkspace and index C# methods |
 | `symbols_find` | Find methods by signature/path |

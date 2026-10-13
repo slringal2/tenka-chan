@@ -53,6 +53,27 @@ public static class ReviewTools
         rules = DeterministicRuleCatalog.Rules
     });
 
+    [McpServerTool(Name = "performance_hotspots")]
+    [Description("Deterministic static hotspot screening: nested loops, repeated allocations/enumerations, blocking/I/O, and bounded callee-risk propagation. Scores are NOT CPU measurements.")]
+    public static async Task<string> PerformanceHotspots(
+        RoslynReviewService roslyn, int maxMethods = 100, int maxSites = 300,
+        CancellationToken cancellationToken = default) =>
+        Json(await roslyn.AnalyzePerformanceHotspotsAsync(maxMethods, maxSites, cancellationToken));
+
+    [McpServerTool(Name = "performance_profile_import")]
+    [Description("Read an allowlisted sampled speedscope JSON workload profile without executing code. Report observed inclusive/exclusive weights and conservatively match qualified method names.")]
+    public static async Task<string> PerformanceProfileImport(
+        RoslynReviewService roslyn, string filePath,
+        int profileIndex = 0, int maxFrames = 100,
+        CancellationToken cancellationToken = default) =>
+        Json(await roslyn.ImportHotspotProfileAsync(filePath, profileIndex,
+            maxFrames, cancellationToken));
+
+    [McpServerTool(Name = "performance_profile_current")]
+    [Description("Return the last imported measured sampled profile, or null if no profile is loaded.")]
+    public static string PerformanceProfileCurrent(RoslynReviewService roslyn) =>
+        Json(roslyn.CurrentHotspotProfile);
+
     [McpServerTool(Name = "review_scan")]
     [Description("Run conservative Roslyn optimization and async-blocking candidate rules. Findings require independent validation.")]
     public static async Task<string> Scan(RoslynReviewService roslyn,

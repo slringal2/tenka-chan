@@ -59,8 +59,8 @@ async function withButton(button, operation) {
 
 function showView(view) {
   const routes = { overview: "Dashboard", findings: "Findings", methods: "Methods",
-    deterministic: "Deterministic", evidence: "Evidence",
-    autoreview: "AI Review", experiments: "Experiments" };
+    deterministic: "Deterministic", hotspots: "Performance Hotspots",
+    evidence: "Evidence", autoreview: "AI Review", experiments: "Experiments" };
   if (!Object.hasOwn(routes, view)) return;
   state.view = view;
   document.querySelectorAll(".view").forEach(item => { item.hidden = item.id !== "view-" + view; });
@@ -75,6 +75,8 @@ function showView(view) {
   if (view === "methods") loadTargets().catch(error => toast(error.message, true));
   if (view === "deterministic")
     loadDeterministic().catch(error => toast(error.message, true));
+  if (view === "hotspots")
+    loadHotspotReports().catch(error => toast(error.message, true));
   if (view === "evidence") loadHypotheses().catch(error => toast(error.message, true));
   if (view === "autoreview") {
     refreshReview().catch(error => toast(error.message, true));
@@ -742,6 +744,131 @@ function exportDeterministic() {
   } finally { setTimeout(() => URL.revokeObjectURL(url), 2500); }
 }
 
+
+function performanceRow(item, detail, score, clickTarget) {
+  const row = el("button", "item-row clickable");
+  row.type = "button";
+  const body = el("div");
+  add(body, el("strong", "", item));
+  add(body, el("small", "", detail));
+  row.append(body, badge(score));
+  if (clickTarget)
+    row.addEventListener("click", () => openMethod(clickTarget));
+  else
+    row.disabled = true;
+  return row;
+}
+
+function renderHotspotReports() {
+  const report = state.hotspotStatic;
+  const measured = state.hotspotMeasured;
+  $("hotspot-site-count").textContent = report ? count(report.totalSites) : "—";
+  $("hotspot-method-count").textContent = report ? count(report.totalMethods) : "—";
+  $("hotspot-profile-frames").textContent = measured ? count(measured.totalFrames) : "—";
+  $("hotspot-matched").textContent = measured ? count(measured.linkedFrames) : "—";
+
+  const methods = $("hotspot-methods");
+  const sites = $("hotspot-sites");
+  clear(methods); clear(sites);
+  if (!report) {
+    empty(methods, "静的解析を実行してください。");
+    empty(sites, "静的解析を実行してください。");
+  } else {
+    if (!report.methods.length) empty(methods, "解析可能なメソッドはありません。");
+    for (const method of report.methods.slice(0, 100)) {
+      const m = method.method;
+      const description = [
+        m.project + " · " + clip(m.file, 45) + ":" + m.line,
+        "loop depth " + method.maximumLoopDepth,
+        "allocations " + method.allocationCandidates,
+        "enumerations " + method.enumerationCandidates,
+        method.reasons[0] || "呼び出し先を確認"
+      ].join(" · ");
+      add(methods, performanceRow(m.signature, description,
+        "静的 " + method.suspicionScore.toFixed(1), m.id));
+    }
+    if (!report.sites.length) empty(sites, "コスト候補箇所は見つかりませんでした。");
+    for (const site of report.sites.slice(0, 100))
+      add(sites, performanceRow(site.category + " — " + clip(site.expression, 85),
+        site.file + ":" + site.line + " · depth " + site.loopDepth +
+        " · " + site.explanation,
+        "静的 " + site.weight.toFixed(1), site.methodId));
+  }
+
+  const observations = $("hotspot-measured");
+  clear(observations);
+  $("hotspot-profile-unit").textContent = measured
+    ? measured.unit + " · " + count(measured.totalSamples) +
+        (measured.profileType === "evented" ? " weighted intervals" : " samples")
+    : "プロファイル未読込";
+  if (!measured) {
+    empty(observations, "Speedscope sampled / evented JSONを取り込んでください。");
+    return;
+  }
+  if (!measured.frames.length) {
+    empty(observations, "有効なフレームはありません。");
+    return;
+  }
+  for (const frame of measured.frames.slice(0, 100)) {
+    const description = "Self " + frame.exclusivePercent.toFixed(2) + "%" +
+      " / Inclusive " + frame.inclusivePercent.toFixed(2) + "%" +
+      " · " + count(frame.sampleCount) +
+      (measured.profileType === "evented" ? " intervals" : " samples") +
+      " · " + frame.matchStatus;
+    add(observations, performanceRow(frame.frameName, description,
+      "実測 " + frame.exclusivePercent.toFixed(2) + "%",
+      frame.matchedMethodId));
+  }
+  if (measured.ambiguousFrames > 0) {
+    add(observations, el("p", "inline-help",
+      count(measured.ambiguousFrames) +
+      " 件のフレームはオーバーロード等により自動対応付けできませんでした。"));
+  }
+}
+
+async function loadHotspotReports() {
+  const result = await api("/hotspots/report");
+  state.hotspotStatic = result.staticAnalysis;
+  state.hotspotMeasured = result.sampledProfile;
+  renderHotspotReports();
+}
+
+async function runStaticHotspotScan(event) {
+  event.preventDefault();
+  await withButton($("hotspot-static-run"), async () => {
+    if (!state.overview?.loaded) throw new Error("先に.NET Solutionを読み込んでください。");
+    const form = Object.fromEntries(new FormData(event.currentTarget));
+    const maxMethods = Number(form.maxMethods);
+    const maxSites = Number(form.maxSites);
+    if (!Number.isInteger(maxMethods) || maxMethods < 1 || maxMethods > 500 ||
+        !Number.isInteger(maxSites) || maxSites < 1 || maxSites > 2000)
+      throw new Error("メソッド・候補数の指定が範囲外です。");
+    state.hotspotStatic = await api("/hotspots/scan", {
+      method: "POST", body: { maxMethods, maxSites }
+    });
+    renderHotspotReports();
+    toast(count(state.hotspotStatic.totalSites) + " 件の静的コスト候補を解析しました。");
+  });
+}
+
+async function importSampledHotspot(event) {
+  event.preventDefault();
+  await withButton($("hotspot-profile-run"), async () => {
+    if (!state.overview?.loaded) throw new Error("先に.NET Solutionを読み込んでください。");
+    const form = Object.fromEntries(new FormData(event.currentTarget));
+    const filePath = String(form.filePath || "").trim();
+    const profileIndex = Number(form.profileIndex);
+    if (!filePath || !Number.isInteger(profileIndex) || profileIndex < 0 || profileIndex > 100)
+      throw new Error("プロファイルJSONのパス・番号を確認してください。");
+    state.hotspotMeasured = await api("/hotspots/profile/import", {
+      method: "POST", body: { filePath, profileIndex, maxFrames: 100 }
+    });
+    renderHotspotReports();
+    toast(count(state.hotspotMeasured.linkedFrames) +
+      " 件の実測フレームをRoslynメソッドへ対応付けました。");
+  });
+}
+
 async function initialize() {
   document.querySelectorAll(".nav-item").forEach(button =>
     button.addEventListener("click", () => showView(button.dataset.view)));
@@ -769,6 +896,9 @@ async function initialize() {
       const summary = await api("/workspace/open", { method: "POST", body: { path } });
       state.deterministic = null;
       renderDeterministic();
+      state.hotspotStatic = null;
+      state.hotspotMeasured = null;
+      renderHotspotReports();
       toast("読み込み成功: " + summary.projects.length + " projects / " + summary.methodCount + " methods");
       await loadOverview();
       await loadTargets();
@@ -825,6 +955,8 @@ async function initialize() {
   $("auto-stop").addEventListener("click", stopReview);
   $("auto-history-refresh").addEventListener("click", () =>
     loadReviewHistory().catch(error => toast(error.message, true)));
+  $("hotspot-static-form").addEventListener("submit", runStaticHotspotScan);
+  $("hotspot-profile-form").addEventListener("submit", importSampledHotspot);
   $("det-form").addEventListener("submit", runDeterministic);
   $("det-export").addEventListener("click", exportDeterministic);
   $("compare-form").addEventListener("submit", compareBenchmarks);
