@@ -6,7 +6,7 @@ test/benchmark projects and a guarded, offline Docker execution path to
 MCP-capable coding agents. The language model can be local or remote: the
 server never requires an LLM API key.
 
-> **Status:** early functional foundation, not an autonomous AI reviewer.
+> **Status:** early functional foundation, including bounded autonomous investigation but not automated bug verification.
 > The MCP tools generate *candidate* findings, not proven defects.
 > Generated test and benchmark execution is opt-in and requires a prewarmed
 > package cache; full self-directed fuzzing, mutation testing, baseline checkout,
@@ -18,7 +18,7 @@ The **ASP.NET Core Web UI** is a separate, optional entry point alongside the
 existing MCP stdio server. It runs on **http://127.0.0.1:5077** and requires no
 JavaScript framework, database server or cloud LLM account.
 
-The browser provides five screens:
+The browser provides six screens:
 
 - **Dashboard:** open a trusted solution, start Roslyn scans, see project /
   method counts, compilation diagnostics and candidate categories.
@@ -28,6 +28,7 @@ The browser provides five screens:
   source, direct calls, CFG/dataflow, and retrieve candidate boundary inputs.
 - **Evidence:** create and inspect durable hypotheses, their status and
   supporting records from the SQLite ledger.
+- **Autonomous AI review:** bounded local-LLM investigation, cancellation, live progress and persisted run logs.
 - **Tests and performance:** prepare a detached xUnit/BenchmarkDotNet experiment,
   explicitly run it in Docker when enabled, view saved TRX/JSON results, and
   compare compatible benchmark reports.
@@ -70,10 +71,68 @@ experiment artifacts are shared when \`TENKA_DATA_DIR\` matches. In-memory
 Roslyn state is not shared between the Web and MCP processes. The browser
 does not silently execute code or claim that a static rule proves a defect.
 
+## Autonomous local-LLM review
+
+Tenka-chan can now **inspect a bounded queue of high-priority Roslyn methods
+with a local OpenAI-compatible chat-completions model**. The runner proposes
+unverified hypotheses, logs its progress, and persists all claims in the
+SQLite review ledger. It does **not** create executable tests or modify
+project code on its own. Test/benchmark generation and Docker execution
+remain explicit, separately authorized actions.
+
+Use a llama.cpp server (or another compatible **local** endpoint):
+
+~~~powershell
+# In a separate terminal:
+llama-server -m C:\Models\your-model.gguf --alias local -c 32768 --port 8080
+
+# In the tenka-chan terminal:
+$env:TENKA_ALLOWED_ROOTS = "C:\Projects"
+$env:TENKA_TRUST_MSBUILD = "1"
+$env:TENKA_LLM_ENDPOINT = "http://127.0.0.1:8080/v1/chat/completions"
+$env:TENKA_LLM_MODEL = "local"
+dotnet run --project src/TenkaChan.Web/TenkaChan.Web.csproj -c Release
+~~~
+
+Open the Web dashboard and load a trusted solution. Select **AI自律レビュー**,
+set 1–30 methods and a 1–30 minute budget, then click **レビューを開始**.
+You can stop a run and inspect live progress and run history from the same
+screen. The review attempts one local model call per method; a malformed
+response is recorded as a method error instead of being presented as a defect.
+
+The original stdio MCP server exposes the same orchestration:
+
+- \`autonomous_review_start(maxMethods, maxMinutes)\`
+- \`autonomous_review_status(runId)\`
+- \`autonomous_review_stop(runId)\`
+- \`autonomous_review_history(limit)\`
+
+First call \`workspace_open\` before starting through MCP. The run-state JSON
+records are stored in \`TENKA_DATA_DIR/review-runs\` and hypothesis records in
+\`TENKA_DATA_DIR/review-ledger.sqlite\`. An in-progress run is marked
+\`interrupted\` after a process restart. There is a single active run per
+process. An active run prevents replacement of its Roslyn workspace through
+the provided Web and MCP APIs.
+
+The local model endpoint is restricted to HTTP loopback
+(\`127.0.0.1\`, \`localhost\`, or \`::1\`) with the exact
+\`/v1/chat/completions\` path. The client disables proxying and redirects,
+limits response size, and applies a 120-second per-call timeout. Code comments
+and project content are treated as untrusted data in the model prompt;
+this is defense-in-depth, not a formal guarantee against prompt injection.
+
+**Current limit:** the model proposes hypotheses and text-based test ideas,
+not runnable test code. Claims remain \`suspected\` until separately validated
+with a trusted oracle and observed experiment. A completed run means the
+configured number of methods was investigated, **not** that the solution is
+free of bugs or performance regressions.
+
 ## Features
 
 | Tool | Function |
 | --- | --- |
+| `autonomous_review_start` / `autonomous_review_status` | Bounded local-LLM method investigation and current run state |
+| `autonomous_review_stop` / `autonomous_review_history` | Cancel a run and retrieve persisted history |
 | `workspace_open` | Evaluate a trusted .sln, .slnx or .csproj with MSBuildWorkspace and index C# methods |
 | `symbols_find` | Find methods by signature/path |
 | `symbol_inspect` | Get source, calls/callers, CFG, dataflow and compilation diagnostics |
@@ -251,5 +310,4 @@ the source and the test assertion.
 probability. `symbol_references` cannot resolve all reflection, dynamic
 dispatch or dependency-injection paths.
 
-A full autonomous review loop, profiler, native JIT disassembler, and
-Git-based benchmark regression runner remain future work.
+Fully automated test drafting/execution/verification, dynamic profiling, native JIT disassembly and Git-based regression runs remain future work.
