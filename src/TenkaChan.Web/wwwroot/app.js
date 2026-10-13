@@ -664,6 +664,7 @@ function renderDeterministic() {
   $("det-errors").textContent = summary ? count(summary.compilerErrors) : "—";
   $("det-warnings").textContent = summary ? count(summary.compilerWarnings) : "—";
   $("det-methods").textContent = summary ? count(summary.returnedMethodMetrics) : "—";
+  // Installed Roslyn Analyzer results are counted separately from compiler diagnostics.
   $("det-completeness").textContent = !summary ? "未実行" :
     summary.incompleteRuleScanning ? "一部ルール省略" :
     summary.findingsTruncated || summary.methodMetricsTruncated ? "表示件数上限あり" :
