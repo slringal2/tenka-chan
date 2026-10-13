@@ -27,6 +27,7 @@ server never requires an LLM API key.
 | `evidence_add` | Attach an independently sourced contract or experiment observation |
 | `hypothesis_set_status` | Track suspected/reproduced/not-reproduced/refuted outcomes |
 | `hypothesis_get` / `hypotheses_list` | Resume evidence review after restarting the MCP process |
+| `test_plan_suggest` | Propose null/empty/numeric-boundary inputs using Roslyn parameter types, without inventing expected outputs |
 | `experiment_prepare` | Validate C# syntax and build detached xUnit/BenchmarkDotNet project with a project reference |
 | `experiment_run` | Execute a prepared project **in a resource-limited, network-disabled Docker container only** |
 | `il_inspect` | Decode managed IL instructions directly from a DLL/EXE without executing it |
@@ -84,7 +85,7 @@ stays a valid JSON-RPC transport.
 2. Use `review_targets` to select interesting methods and `workspace_diagnostics` to identify compilation problems. `review_scan` then finds *candidates*; `symbols_find` and `symbol_inspect`
    to explore relevant code. The agent should inspect call sites and invariants
    before claiming that something is a bug.
-3. Use `hypothesis_create` and `evidence_add` to record failure conditions and contract/test evidence. For reproducible failures, use `hypothesis_set_status` with `reported_reproduced` only after adding test execution and independent contract evidence. Write standalone C# xUnit test source, then call `experiment_prepare`
+3. Use `test_plan_suggest` for boundary inputs, then use `hypothesis_create` and `evidence_add` to record failure conditions and contract/test evidence. For reproducible failures, use `hypothesis_set_status` with `reported_reproduced` only after adding test execution and independent contract evidence. Write standalone C# xUnit test source, then call `experiment_prepare`
    with `kind="test"`, a repository root, and the .csproj path **relative to
    that root**.
 4. Optionally enable the Docker runner and call `experiment_run` using the
