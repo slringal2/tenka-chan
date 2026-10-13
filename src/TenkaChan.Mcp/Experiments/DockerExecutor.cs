@@ -141,11 +141,18 @@ public sealed class DockerExecutor
         if (forcedStatus is not null) status = forcedStatus;
         else if (manifest.Kind == "test")
         {
+            // VSTest/TRX often emits ResultSummary outcome="Completed" for
+            // successful runs; the authoritative counts are in Counters.
             status = tests is null ? "no_test_report"
-                : tests.Total <= 0 ? "no_tests_discovered"
-                : tests.Failed > 0 || !string.Equals(tests.Outcome, "Passed", StringComparison.OrdinalIgnoreCase)
+                : tests.Total <= 0 || tests.Passed == 0 ? "no_tests_discovered"
+                : tests.Failed > 0 ||
+                    string.Equals(tests.Outcome, "Failed", StringComparison.OrdinalIgnoreCase)
                     ? "tests_failed"
-                    : exitCode == 0 ? "tests_passed" : "test_runner_error";
+                : exitCode != 0 ? "test_runner_error"
+                : tests.Passed + tests.Skipped < tests.Total ? "test_report_incomplete"
+                : string.Equals(tests.Outcome, "Completed", StringComparison.OrdinalIgnoreCase) ||
+                  string.Equals(tests.Outcome, "Passed", StringComparison.OrdinalIgnoreCase)
+                    ? "tests_passed" : "test_report_unrecognized_outcome";
         }
         else
         {
