@@ -62,7 +62,7 @@ public sealed class RoslynIntegrationTests
             var correlation = service.CorrelateNativeCode(native);
             var compiled = Assert.Single(correlation.Methods);
             Assert.Equal(add.Id, compiled.RoslynMethodId);
-            Assert.Equal("matched_unique_method", compiled.MatchStatus);
+            Assert.Equal("matched_method_signature", compiled.MatchStatus);
             Assert.Equal(summary.SnapshotId, correlation.RoslynSnapshotId);
 
             var plan = service.SuggestTestPlan(add.Id);
