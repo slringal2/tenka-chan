@@ -70,6 +70,13 @@ public sealed class DeterministicAnalysisIntegrationTests
             Assert.Equal(first.Summary.TotalFindings, second.Summary.TotalFindings);
             Assert.Equal(first.Findings.Select(x => x.Fingerprint),
                 second.Findings.Select(x => x.Fingerprint));
+            // New Roslyn session IDs are ephemeral, but findings remain
+            // reproducible across reloading the same source and settings.
+            await service.OpenAsync(project);
+            var reloaded = await service.AnalyzeDeterministicAsync(500, 100);
+            Assert.Equal(first.Findings.Select(x => x.Fingerprint),
+                reloaded.Findings.Select(x => x.Fingerprint));
+
             Assert.True(first.Summary.DocumentsAnalyzed >= 1);
             Assert.Equal(2, first.Summary.MethodsIndexed);
             Assert.Contains(first.Findings, x => x.RuleId == "PERF1001");
@@ -78,14 +85,16 @@ public sealed class DeterministicAnalysisIntegrationTests
                 && x.EvidenceLevel == "semantic_fact");
             Assert.Contains(first.Findings, x => x.RuleId == "CS0168"
                 && x.Source == "roslyn_compiler");
-            Assert.All(first.Findings.Where(x => x.Line > 0),
+            // MSBuildWorkspace may include generated obj/**/*.cs compiler
+            // diagnostics; only source-rule findings must point at Analysis.cs.
+            Assert.All(first.Findings.Where(x => x.Source == "roslyn_semantic_rule"),
                 x => Assert.Equal("Analysis.cs", x.RelativePath));
             Assert.All(first.Findings.Where(x => x.Source == "roslyn_semantic_rule"),
                 x => Assert.False(string.IsNullOrEmpty(x.MethodId)));
 
             Assert.Equal(2, first.MethodMetrics.Count);
-            var sum = Assert.Single(first.MethodMetrics.Where(x =>
-                x.Signature.Contains("Analysis.Sum")));
+            var sum = Assert.Single(first.MethodMetrics,
+                x => x.Signature.Contains("Analysis.Sum"));
             Assert.True(sum.LoopCount >= 2);
             Assert.True(sum.CfgBlockCount > 0);
             Assert.True(sum.ResolvedInvocationCount >= 1);
