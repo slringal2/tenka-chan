@@ -17,6 +17,7 @@ public sealed class DashboardState(RoslynReviewService roslyn) : IReviewContextS
     private RuleFinding[] _findings = [];
     private CompilationDiagnosticsReport? _diagnostics;
     private DeterministicAnalysisReport? _deterministic;
+    private StaticHotspotReport? _hotspots;
     private string? _path;
     private DateTimeOffset? _lastOpened;
     private DateTimeOffset? _lastScanned;
@@ -43,6 +44,8 @@ public sealed class DashboardState(RoslynReviewService roslyn) : IReviewContextS
             diagnosticWarnings = _diagnostics?.WarningCount ?? 0,
             deterministicFindingCount = _deterministic?.Summary.TotalFindings ?? 0,
             deterministicComplete = _deterministic is not null,
+            hotspotCandidates = _hotspots?.TotalSites ?? 0,
+            hotspotMeasuredFrames = roslyn.CurrentHotspotProfile?.LinkedFrames ?? 0,
             scanned = _lastScanned is not null,
             lastOpened = _lastOpened,
             lastScanned = _lastScanned
@@ -59,6 +62,7 @@ public sealed class DashboardState(RoslynReviewService roslyn) : IReviewContextS
             _findings = [];
             _diagnostics = null;
             _deterministic = null;
+            _hotspots = null;
             _path = null;
             _lastOpened = null;
             _lastScanned = null;
@@ -86,6 +90,37 @@ public sealed class DashboardState(RoslynReviewService roslyn) : IReviewContextS
                 diagnosticErrors = diagnostics.ErrorCount,
                 diagnosticWarnings = diagnostics.WarningCount,
                 scannedAt = _lastScanned };
+        }
+        finally { _gate.Release(); }
+    }
+
+    public StaticHotspotReport? StaticHotspotReport => _hotspots;
+    public SampledHotspotReport? MeasuredHotspotReport =>
+        roslyn.CurrentHotspotProfile;
+
+    public async Task<StaticHotspotReport> ScanHotspotsAsync(
+        int maxMethods, int maxSites, CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            EnsureOpen();
+            _hotspots = await roslyn.AnalyzePerformanceHotspotsAsync(
+                maxMethods, maxSites, ct);
+            return _hotspots;
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task<SampledHotspotReport> ImportHotspotProfileAsync(
+        string path, int profileIndex, int maxFrames, CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            EnsureOpen();
+            return await roslyn.ImportHotspotProfileAsync(path,
+                profileIndex, maxFrames, ct);
         }
         finally { _gate.Release(); }
     }
