@@ -65,6 +65,11 @@ public static class ReviewTools
         string methodName, int maxInstructions = 250) =>
         Json(inspector.Inspect(assemblyPath, typeName, methodName, maxInstructions));
 
+    [McpServerTool(Name = "test_plan_suggest")]
+    [Description("Suggest boundary-value C# inputs from Roslyn parameter types, without making up test oracles or assertions.")]
+    public static string SuggestTestPlan(RoslynReviewService roslyn, string methodId) =>
+        Json(roslyn.SuggestTestPlan(methodId));
+
     [McpServerTool(Name = "review_targets")]
     [Description("Rank methods by deterministic syntax-based review priority. This score is not a defect probability.")]
     public static string Targets(RoslynReviewService roslyn, int limit = 50,
