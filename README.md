@@ -10,7 +10,7 @@ server never requires an LLM API key.
 > The MCP tools generate *candidate* findings, not proven defects.
 > Generated test and benchmark execution is opt-in and requires a prewarmed
 > package cache; full self-directed fuzzing, mutation testing, baseline checkout,
-> profiler traces and JIT disassembly are **not yet implemented**.
+> profiler traces and **native JIT** disassembly are **not yet implemented**.
 
 ## Features
 
@@ -22,6 +22,7 @@ server never requires an LLM API key.
 | `review_scan` | Find LINQ materialization in loops, string concatenation, repeated regex creation, blocking Task.Result in async |
 | `experiment_prepare` | Validate C# syntax and build detached xUnit/BenchmarkDotNet project with a project reference |
 | `experiment_run` | Execute a prepared project **in a resource-limited, network-disabled Docker container only** |
+| `il_inspect` | Decode managed IL instructions directly from a DLL/EXE without executing it |
 | `performance_compare` | Compare samples from matched environments with an exploratory bootstrap interval |
 
 ## Prerequisites
