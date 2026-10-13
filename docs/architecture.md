@@ -66,3 +66,5 @@ errors. Passing a test proves only the asserted behavior for that input.
 4. Add typed MCP resources for large evidentiary artifacts rather than
    returning unbounded logs through tool calls.
 5. Add property-based testing, fuzzing and mutation testing with seed replay.
+
+The `il_inspect` tool reads managed IL using PEReader/MetadataReader without executing target assemblies. Native JIT disassembly remains future work.
