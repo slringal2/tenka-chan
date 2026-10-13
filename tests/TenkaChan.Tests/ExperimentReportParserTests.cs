@@ -99,6 +99,14 @@ public sealed class ExperimentReportParserTests
         var path = WriteTemp(".json", """
             {
               "Title": "Bench",
+              "HostEnvironmentInfo": {
+                "OsVersion": "Linux",
+                "ProcessorName": {"Value": "Test CPU"},
+                "Architecture": "x64",
+                "ClrVersion": ".NET 10",
+                "DotNetCliVersion": "10.0.401",
+                "Configuration": "RELEASE"
+              },
               "Benchmarks": [
                 {
                   "Type": "Test.Bench",
@@ -117,6 +125,7 @@ public sealed class ExperimentReportParserTests
             Assert.Equal(20, observation.SampleCount);
             Assert.Equal(125.4, observation.MeanNanoseconds);
             Assert.Equal(64d, observation.AllocatedBytesPerOperation);
+            Assert.Contains("Test CPU", observation.EnvironmentFingerprint);
         }
         finally { File.Delete(path); }
     }
