@@ -1,0 +1,17 @@
+{
+  "$schema": "https://www.speedscope.app/file-format-schema.json",
+  "name": "tenka-ci-synthetic-workload",
+  "shared": {
+    "frames": [
+      {"name": "UiSample.Calculator.CountCopies(System.Collections.Generic.IEnumerable<System.Int32>)"},
+      {"name": "UiSample.Calculator.Add(System.Int32, System.Int32)"},
+      {"name": "System.Threading.ThreadPool.WorkerThread()"}
+    ]
+  },
+  "profiles": [{
+    "type": "sampled", "name": "deterministic-synthetic-sample",
+    "unit": "milliseconds", "startValue": 0, "endValue": 10,
+    "samples": [[2,0], [2,0], [2,1]],
+    "weights": [4, 4, 2]
+  }]
+}
