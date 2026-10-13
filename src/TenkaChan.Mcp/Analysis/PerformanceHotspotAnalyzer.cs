@@ -244,6 +244,12 @@ public static class PerformanceHotspotAnalyzer
 
                 if (!bySymbol.TryGetValue(method.OriginalDefinition, out var callee))
                     continue;
+                if (callee.Summary.Id == definition.Summary.Id)
+                {
+                    AddSite("recursive_call_candidate", call, depth, 7,
+                        "Recursive self-call: cumulative work depends on recursion depth and branching.",
+                        "Measure recursion depth/call counts and check termination with representative inputs.");
+                }
                 var dispatch = method.IsVirtual || method.IsAbstract ||
                     method.ContainingType?.TypeKind == TypeKind.Interface
                     ? "possible_dynamic_dispatch" : "direct_resolved";
