@@ -23,6 +23,11 @@ builder.Services.AddSingleton<ExperimentStore>();
 builder.Services.AddSingleton<DockerExecutor>();
 builder.Services.AddSingleton<BenchmarkRunComparer>();
 builder.Services.AddSingleton<ReviewLedger>();
+builder.Services.AddSingleton<ReviewRunStore>();
+builder.Services.AddSingleton<IReviewContextSource>(
+    services => services.GetRequiredService<DashboardState>());
+builder.Services.AddSingleton<IReviewReasoner, LocalLlmReviewReasoner>();
+builder.Services.AddSingleton<AutonomousReviewRunner>();
 
 // MSBuild project evaluation can execute custom build targets: opt-in only.
 if (Environment.GetEnvironmentVariable("TENKA_TRUST_MSBUILD") == "1"
@@ -87,16 +92,27 @@ app.MapGet("/api/session", (WorkspaceGuard guard) => Results.Ok(new
     listening = "loopback",
     msbuildEnabled = guard.TrustMsBuild,
     dockerEnabled = guard.AllowDocker,
+    model = Environment.GetEnvironmentVariable("TENKA_LLM_MODEL") ?? "local",
+    llmEndpoint = LocalLlmSettings.FromEnvironment().Endpoint.ToString(),
     port
 }));
 
 app.MapGet("/api/overview", (DashboardState dashboard) => Results.Ok(dashboard.Overview()));
 
 app.MapPost("/api/workspace/open", (OpenWorkspaceRequest request, DashboardState dashboard,
-    CancellationToken ct) => Safe(async () => (object)await dashboard.OpenAsync(request.Path, ct)));
+    AutonomousReviewRunner runner, CancellationToken ct) => Safe(async () =>
+{
+    if (runner.IsActive) throw new InvalidOperationException("Stop active review before opening another workspace.");
+    return (object)await dashboard.OpenAsync(request.Path, ct);
+}));
 
-app.MapPost("/api/workspace/scan", (DashboardState dashboard, CancellationToken ct) =>
-    Safe(async () => await dashboard.ScanAsync(ct)));
+app.MapPost("/api/workspace/scan", (DashboardState dashboard,
+    AutonomousReviewRunner runner, CancellationToken ct) =>
+    Safe(async () =>
+    {
+        if (runner.IsActive) throw new InvalidOperationException("Stop active review before rescanning.");
+        return await dashboard.ScanAsync(ct);
+    }));
 
 app.MapGet("/api/findings", (DashboardState dashboard, string? q,
     string? category, int? offset, int? limit) =>
@@ -146,6 +162,23 @@ app.MapPost("/api/benchmarks/compare", (CompareBenchmarksRequest request,
         request.BaselineExperimentId, request.CandidateExperimentId,
         request.ThresholdPercent ?? 5))));
 
+app.MapGet("/api/reviews/current", (AutonomousReviewRunner runner) =>
+    Results.Ok(runner.Current));
+
+app.MapGet("/api/reviews", (AutonomousReviewRunner runner, int? limit) =>
+    Results.Ok(runner.History(limit ?? 20)));
+
+app.MapGet("/api/reviews/{id}", (AutonomousReviewRunner runner, string id) =>
+    Safe(() => Task.FromResult((object)runner.Get(id))));
+
+app.MapPost("/api/reviews/start", (StartAutonomousReviewRequest request,
+    AutonomousReviewRunner runner, CancellationToken ct) =>
+    Safe(async () => (object)await runner.StartAsync(
+        new AutonomousReviewOptions(request.MaxMethods, request.MaxMinutes), ct)));
+
+app.MapPost("/api/reviews/{id}/stop", (AutonomousReviewRunner runner, string id) =>
+    Safe(() => Task.FromResult((object)runner.Stop(id))));
+
 app.Logger.LogInformation("Tenka-chan dashboard: http://127.0.0.1:{Port}", port);
 await app.RunAsync();
 
@@ -172,6 +205,7 @@ async Task<IResult> Safe(Func<Task<object>> operation)
     }
 }
 
+public sealed record StartAutonomousReviewRequest(int MaxMethods = 10, int MaxMinutes = 15);
 public sealed record OpenWorkspaceRequest(string Path);
 public sealed record CreateHypothesisRequest(string SnapshotId, string MethodId,
     string Category, string Claim, string FailureCondition);
