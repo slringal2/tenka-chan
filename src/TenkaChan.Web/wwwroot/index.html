@@ -20,6 +20,7 @@
       <nav class="nav-list">
         <button class="nav-item active" data-view="overview"><span class="nav-icon">◫</span><span>ダッシュボード</span></button>
         <button class="nav-item" data-view="findings"><span class="nav-icon">◇</span><span>検出候補</span><span class="nav-count" id="nav-findings">—</span></button>
+        <button class="nav-item" data-view="deterministic"><span class="nav-icon">▦</span><span>決定論的解析</span></button>
         <button class="nav-item" data-view="methods"><span class="nav-icon">⌘</span><span>メソッド解析</span></button>
         <button class="nav-item" data-view="evidence"><span class="nav-icon">◉</span><span>仮説・証拠</span></button>
         <button class="nav-item" data-view="autoreview"><span class="nav-icon">✧</span><span>AI自律レビュー</span></button>
@@ -75,6 +76,47 @@
           <article class="panel diagnostic-panel">
             <div class="panel-header"><div><h3>コンパイル診断</h3><p>Roslynが報告したエラー・警告</p></div><span id="diagnostics-summary" class="subtle-chip">未スキャン</span></div>
             <div id="diagnostics-list" class="diagnostic-list"><div class="empty-mini">スキャンを実行すると診断結果が表示されます。</div></div>
+          </article>
+        </section>
+
+        <section class="view" id="view-deterministic" hidden>
+          <div class="page-heading">
+            <div class="eyebrow">DETERMINISTIC / ROSLYN</div>
+            <h1>決定論的解析</h1>
+            <p>LLMによる推測を使わず、コンパイラ診断・意味解析・制御フロー解析を実行します。</p>
+          </div>
+          <div class="panel">
+            <div class="panel-header">
+              <div><h3>解析設定</h3><p>ルールは固定。対象コードとコンパイル設定が同じなら同じ指摘を再生成できます。</p></div>
+              <span class="subtle-chip" id="det-rule-version">ルール未読込</span>
+            </div>
+            <form id="det-form" class="det-controls">
+              <label>表示する指摘数<input name="maxFindings" type="number" min="1" max="5000" value="500" required></label>
+              <label>詳細計測するメソッド数<input name="maxMethodMetrics" type="number" min="1" max="2000" value="100" required></label>
+              <button id="det-run" class="button button-primary" type="submit">決定論的解析を実行 →</button>
+              <button id="det-export" class="button button-outline" type="button" disabled>JSONを保存 ↧</button>
+            </form>
+            <p class="form-note">解析ではコードを実行せず、LLM APIにも接続しません。MSBuildのプロジェクト評価には従来どおり信頼済み設定が必要です。</p>
+          </div>
+          <div class="metrics det-metrics">
+            <article class="metric-card"><div class="metric-top"><span>ALL FINDINGS</span></div><div class="metric-value" id="det-count">—</div><div class="metric-caption">コンパイラ診断＋静的ルール</div></article>
+            <article class="metric-card"><div class="metric-top"><span>COMPILER ERRORS</span></div><div class="metric-value" id="det-errors">—</div><div class="metric-caption">コンパイルエラー</div></article>
+            <article class="metric-card"><div class="metric-top"><span>COMPILER WARNINGS</span></div><div class="metric-value" id="det-warnings">—</div><div class="metric-caption">コンパイル警告</div></article>
+            <article class="metric-card"><div class="metric-top"><span>METHOD METRICS</span></div><div class="metric-value" id="det-methods">—</div><div class="metric-caption">優先度・CFG・複雑度</div></article>
+          </div>
+          <div class="two-column">
+            <article class="panel">
+              <div class="panel-header"><div><h3>指摘と証拠レベル</h3><p>コンパイラ診断／言語仕様の事実／性能候補を区別</p></div></div>
+              <div id="det-findings" class="stack-list"><div class="empty-mini">解析を実行してください。</div></div>
+            </article>
+            <article class="panel">
+              <div class="panel-header"><div><h3>メソッド別の計測値</h3><p>静的複雑度とCFGの基本ブロック数</p></div></div>
+              <div id="det-method-list" class="stack-list"><div class="empty-mini">解析を実行してください。</div></div>
+            </article>
+          </div>
+          <article class="panel diagnostic-panel">
+            <div class="panel-header"><div><h3>解析の適用範囲</h3><p>省略・上限到達・未検証事項を明示します</p></div><span class="subtle-chip" id="det-completeness">未実行</span></div>
+            <div id="det-notes" class="diagnostic-list"><div class="empty-mini">解析実行後に情報を表示します。</div></div>
           </article>
         </section>
 

@@ -62,6 +62,15 @@ jobs:
           python3 -c 'import json; x=json.load(open("/tmp/tenka-web-methods.json")); assert len(x) >= 2, x'
           curl --silent --show-error --fail 'http://127.0.0.1:5077/api/findings?limit=10' >/tmp/tenka-web-findings.json
           python3 -c 'import json; x=json.load(open("/tmp/tenka-web-findings.json")); assert x["total"] >= 1, x'
+          curl --silent --show-error --fail http://127.0.0.1:5077/api/deterministic/rules >/tmp/tenka-web-rules.json
+          python3 -c 'import json; x=json.load(open("/tmp/tenka-web-rules.json")); assert any(r["ruleId"] == "CORRECT2001" for r in x["rules"])'
+          curl --silent --show-error --fail -X POST http://127.0.0.1:5077/api/deterministic/run \
+            -H 'Content-Type: application/json' -H "X-Tenka-CSRF: $token" \
+            -d '{"maxFindings":100,"maxMethodMetrics":10}' >/tmp/tenka-web-deterministic.json
+          python3 -c 'import json; x=json.load(open("/tmp/tenka-web-deterministic.json")); assert x["summary"]["methodsIndexed"] >= 2, x["summary"]; assert any(f["ruleId"] == "PERF1001" for f in x["findings"]), x["findings"]; assert x["methodMetrics"], x'
+          curl --silent --show-error --fail http://127.0.0.1:5077/api/deterministic/report >/tmp/tenka-web-deterministic-cached.json
+          python3 -c 'import json; a=json.load(open("/tmp/tenka-web-deterministic.json")); b=json.load(open("/tmp/tenka-web-deterministic-cached.json")); assert a == b'
+
           curl --silent --show-error --fail -X POST http://127.0.0.1:5077/api/reviews/start \
             -H 'Content-Type: application/json' -H "X-Tenka-CSRF: $token" \
             -d '{"maxMethods":2,"maxMinutes":1}' >/tmp/tenka-web-review-start.json

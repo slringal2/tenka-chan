@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Collections.Immutable;
+using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.FlowAnalysis;
@@ -239,6 +241,225 @@ public sealed class RoslynReviewService : IDisposable
         return result;
     }
 
+
+    /// <summary>
+    /// Produce a self-contained deterministic report without asking an LLM.
+    /// This is not a formal proof of correctness or a measured performance
+    /// profile. Findings/metrics are sorted and bounded for MCP/Web clients.
+    /// </summary>
+    public async Task<DeterministicAnalysisReport> AnalyzeDeterministicAsync(
+        int maxFindings = 1000, int maxMethodMetrics = 300,
+        CancellationToken ct = default)
+    {
+        // Shares the workspace lifetime lock with OpenAsync so concurrent
+        // MCP requests cannot replace the compilation in mid-scan.
+        await _openLock.WaitAsync(ct);
+        try
+        {
+            EnsureOpen();
+        var findingLimit = Math.Clamp(maxFindings, 1, 5000);
+        var metricLimit = Math.Clamp(maxMethodMetrics, 1, 2000);
+        var findings = new List<DeterministicFinding>();
+        var documentsScanned = 0;
+        var compilerErrors = 0;
+        var compilerWarnings = 0;
+        var compilerInfos = 0;
+        var projectAnalyzerDiagnostics = 0;
+        var projectAnalyzersExecuted = 0;
+        var additionalNotes = new List<string>();
+        var incompleteRuleScanning = false;
+
+        var entries = _methods.Values.ToArray();
+        var byDocument = entries.GroupBy(x => x.Document.Id)
+            .ToDictionary(g => g.Key, g => g.OrderBy(e => e.Syntax.Span.Length).ToArray());
+        var documentModels = new Dictionary<DocumentId, SemanticModel>();
+
+        foreach (var project in _solution!.Projects
+            .Where(project => project.Language == LanguageNames.CSharp)
+            .OrderBy(project => project.Name, StringComparer.Ordinal)
+            .ThenBy(project => project.FilePath, StringComparer.Ordinal))
+        {
+            ct.ThrowIfCancellationRequested();
+            var texts = new Dictionary<string, Microsoft.CodeAnalysis.Text.SourceText>(
+                OperatingSystem.IsWindows()
+                    ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+            var documents = project.Documents
+                .OrderBy(d => d.FilePath, StringComparer.Ordinal).ToArray();
+
+            foreach (var document in documents)
+            {
+                ct.ThrowIfCancellationRequested();
+                var root = await document.GetSyntaxRootAsync(ct);
+                var model = await document.GetSemanticModelAsync(ct);
+                if (root is null || model is null) continue;
+                documentModels[document.Id] = model;
+                var text = await document.GetTextAsync(ct);
+                if (document.FilePath is { } filePath) texts[filePath] = text;
+                documentsScanned++;
+
+                string? IdAt(int line, int col)
+                {
+                    if (!byDocument.TryGetValue(document.Id, out var methods)
+                        || line <= 0 || line > text.Lines.Count) return null;
+                    var lineData = text.Lines[line - 1];
+                    var position = lineData.Start + Math.Max(0, col - 1);
+                    if (position > lineData.End) position = lineData.End;
+                    return methods.FirstOrDefault(e => e.Syntax.Span.Contains(position))
+                        ?.Summary.Id;
+                }
+
+                var oldRules = RuleScanner.Scan(root, model,
+                    document.FilePath ?? document.Name, 5000);
+                if (oldRules.Count >= 5000) incompleteRuleScanning = true;
+                var semanticRules = DeterministicSemanticRules.Scan(root, model,
+                    document.FilePath ?? document.Name, ct);
+                foreach (var rule in oldRules.Concat(semanticRules))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var methodId = IdAt(rule.Line, rule.Column);
+                    findings.Add(DeterministicAnalysisEngine.FromRule(rule,
+                        project, text, methodId));
+                }
+            }
+
+            var compilation = await project.GetCompilationAsync(ct);
+            if (compilation is null) continue;
+
+            var analyzerDiagnostics = new List<Diagnostic>();
+            try
+            {
+                var analyzers = project.AnalyzerReferences
+                    .SelectMany(reference => reference.GetAnalyzers(LanguageNames.CSharp))
+                    .Where(analyzer => analyzer is not null)
+                    .DistinctBy(analyzer => analyzer.GetType().AssemblyQualifiedName)
+                    .ToImmutableArray();
+                projectAnalyzersExecuted += analyzers.Length;
+                if (analyzers.Length > 0)
+                {
+                    var reported = await DeterministicAnalysisEngine.RunAnalyzersAsync(
+                        compilation, analyzers, project.AnalyzerOptions, ct);
+                    analyzerDiagnostics.AddRange(reported);
+                    if (reported.Any(d => d.Id == "AD0001"))
+                    {
+                        incompleteRuleScanning = true;
+                        additionalNotes.Add("An installed analyzer crashed in project " +
+                            project.Name + "; AD0001 is an analyzer failure, not an application bug.");
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException
+                or System.Reflection.ReflectionTypeLoadException or IOException)
+            {
+                incompleteRuleScanning = true;
+                additionalNotes.Add("Installed analyzers could not be evaluated for project "
+                    + project.Name + ": " + ex.GetType().Name);
+            }
+            projectAnalyzerDiagnostics += analyzerDiagnostics.Count;
+
+            foreach (var diagnostic in compilation.GetDiagnostics(ct))
+            {
+                ct.ThrowIfCancellationRequested();
+                if (diagnostic.Severity == DiagnosticSeverity.Error) compilerErrors++;
+                else if (diagnostic.Severity == DiagnosticSeverity.Warning) compilerWarnings++;
+                else compilerInfos++;
+
+                var path = diagnostic.Location.IsInSource
+                    ? diagnostic.Location.GetLineSpan().Path : null;
+                var document = path is null ? null : documents.FirstOrDefault(
+                    d => string.Equals(d.FilePath, path, OperatingSystem.IsWindows()
+                        ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal));
+                var text = path is not null && texts.TryGetValue(path, out var sourceText)
+                    ? sourceText : null;
+                string? methodId = null;
+                if (document is not null && text is not null &&
+                    byDocument.TryGetValue(document.Id, out var methodsAtFile))
+                {
+                    var position = diagnostic.Location.SourceSpan.Start;
+                    methodId = methodsAtFile.FirstOrDefault(
+                        e => e.Syntax.Span.Contains(position))?.Summary.Id;
+                }
+                findings.Add(DeterministicAnalysisEngine.FromDiagnostic(
+                    diagnostic, project, text, methodId));
+            }
+
+            foreach (var diagnostic in analyzerDiagnostics)
+            {
+                ct.ThrowIfCancellationRequested();
+                var path = diagnostic.Location.IsInSource
+                    ? diagnostic.Location.GetLineSpan().Path : null;
+                var document = path is null ? null : documents.FirstOrDefault(
+                    d => string.Equals(d.FilePath, path, OperatingSystem.IsWindows()
+                        ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal));
+                var text = path is not null && texts.TryGetValue(path, out var sourceText)
+                    ? sourceText : null;
+                string? methodId = null;
+                if (document is not null && text is not null &&
+                    byDocument.TryGetValue(document.Id, out var methodsAtFile))
+                    methodId = methodsAtFile.FirstOrDefault(
+                        e => e.Syntax.Span.Contains(diagnostic.Location.SourceSpan.Start))
+                        ?.Summary.Id;
+
+                findings.Add(DeterministicAnalysisEngine.FromDiagnostic(
+                    diagnostic, project, text, methodId, projectAnalyzer: true));
+            }
+        }
+
+        var allTargets = entries
+            .Select(entry => (Entry: entry, Target:
+                ReviewPrioritizer.Assess(entry.Summary, entry.Syntax)))
+            .OrderByDescending(x => x.Target.Priority)
+            .ThenBy(x => x.Target.Method.Project, StringComparer.Ordinal)
+            .ThenBy(x => x.Target.Method.File, StringComparer.Ordinal)
+            .ThenBy(x => x.Target.Method.Line)
+            .ThenBy(x => x.Target.Method.Signature, StringComparer.Ordinal)
+            .ToArray();
+        var metrics = new List<DeterministicMethodMetrics>();
+        foreach (var item in allTargets.Take(metricLimit))
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!documentModels.TryGetValue(item.Entry.Document.Id, out var model))
+                continue;
+            metrics.Add(DeterministicAnalysisEngine.BuildMetrics(
+                item.Target, item.Entry.Syntax, model, ct));
+        }
+
+        var ordered = findings
+            .DistinctBy(f => f.Fingerprint)
+            .OrderBy(f => f.Severity switch { "error" => 0, "warning" => 1, _ => 2 })
+            .ThenBy(f => f.Project, StringComparer.Ordinal)
+            .ThenBy(f => f.RelativePath, StringComparer.Ordinal)
+            .ThenBy(f => f.Line)
+            .ThenBy(f => f.Column)
+            .ThenBy(f => f.RuleId, StringComparer.Ordinal)
+            .ToArray();
+        var summary = new DeterministicAnalysisSummary(
+            CurrentSnapshotId, DeterministicRuleCatalog.Version,
+            _solution.Projects.Count(p => p.Language == LanguageNames.CSharp),
+            documentsScanned, _methods.Count,
+            compilerErrors, compilerWarnings, compilerInfos,
+            ordered.Length, Math.Min(ordered.Length, findingLimit),
+            _methods.Count, metrics.Count,
+            ordered.Length > findingLimit, metrics.Count < _methods.Count,
+            incompleteRuleScanning,
+            new string[]
+            {
+                "Compiler diagnostics are compilation facts; rules describe candidates or language semantics, not proven application bugs.",
+                "Complexity scores are syntax heuristics; CFG metrics are optional and do not represent runtime hotness.",
+                "Findings use stable fingerprints for identical project-relative code and rule versions; snapshot IDs are session-specific.",
+                incompleteRuleScanning
+                    ? "Some rule or analyzer results may be incomplete; inspect the analyzer notes."
+                    : "All loaded documents with a semantic model were evaluated by the built-in rule scanner."
+            }.Concat(additionalNotes).ToArray())
+        {
+            ProjectAnalyzerDiagnostics = projectAnalyzerDiagnostics,
+            ProjectAnalyzersExecuted = projectAnalyzersExecuted
+        };
+        return new DeterministicAnalysisReport(
+            summary, ordered.Take(findingLimit).ToArray(), metrics);
+        }
+        finally { _openLock.Release(); }
+    }
 
     public SuggestedTestPlan SuggestTestPlan(string methodId)
     {

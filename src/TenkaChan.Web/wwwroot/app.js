@@ -59,7 +59,8 @@ async function withButton(button, operation) {
 
 function showView(view) {
   const routes = { overview: "Dashboard", findings: "Findings", methods: "Methods",
-    evidence: "Evidence", autoreview: "AI Review", experiments: "Experiments" };
+    deterministic: "Deterministic", evidence: "Evidence",
+    autoreview: "AI Review", experiments: "Experiments" };
   if (!Object.hasOwn(routes, view)) return;
   state.view = view;
   document.querySelectorAll(".view").forEach(item => { item.hidden = item.id !== "view-" + view; });
@@ -72,6 +73,8 @@ function showView(view) {
   $("breadcrumb").textContent = routes[view];
   if (view === "findings") loadFindings(false).catch(error => toast(error.message, true));
   if (view === "methods") loadTargets().catch(error => toast(error.message, true));
+  if (view === "deterministic")
+    loadDeterministic().catch(error => toast(error.message, true));
   if (view === "evidence") loadHypotheses().catch(error => toast(error.message, true));
   if (view === "autoreview") {
     refreshReview().catch(error => toast(error.message, true));
@@ -578,6 +581,167 @@ async function stopReview() {
     toast("レビューの停止を要求しました。");
   });
 }
+
+let deterministicRenderedFindings = 0;
+let deterministicRenderedMethods = 0;
+
+function deterministicFindingRow(item) {
+  const row = el("div", "finding-card");
+  const content = el("div");
+  const label = el("div", "item-rule");
+  add(label, el("span", "rule-code", item.ruleId));
+  add(label, el("span", "rule-pill", item.evidenceLevel));
+  add(content, label);
+  add(content, el("h3", "", item.title));
+  add(content, el("p", "", item.message));
+  add(content, el("div", "finding-location", item.project + " / " +
+    item.relativePath + ":" + item.line + ":" + item.column));
+  if (item.codeExcerpt) add(content, el("p", "", item.codeExcerpt));
+  add(row, content);
+  if (item.methodId) {
+    const button = el("button", "finding-action", "メソッド ↗");
+    button.addEventListener("click", () => openMethod(item.methodId));
+    add(row, button);
+  }
+  return row;
+}
+
+function deterministicMethodRow(item) {
+  const row = el("button", "item-row clickable");
+  row.type = "button";
+  const body = el("div");
+  add(body, el("strong", "", item.signature));
+  add(body, el("small", "", "CFG: " + (item.cfgBlockCount ?? "取得不可") +
+    " blocks / " + (item.cfgBranchCount ?? "—") + " branches • " +
+    item.loopCount + " loops • priority " + item.reviewPriority.toFixed(1)));
+  row.append(body, badge("CC ≈ " + item.approximateComplexity));
+  row.addEventListener("click", () => openMethod(item.methodId));
+  return row;
+}
+
+function appendDeterministicFindings() {
+  const report = state.deterministic;
+  if (!report) return;
+  const holder = $("det-findings");
+  holder.querySelector("[data-det-more]")?.remove();
+  const remaining = report.findings.length - deterministicRenderedFindings;
+  const next = report.findings.slice(deterministicRenderedFindings,
+    deterministicRenderedFindings + 50);
+  next.forEach(item => add(holder, deterministicFindingRow(item)));
+  deterministicRenderedFindings += next.length;
+  if (deterministicRenderedFindings < report.findings.length) {
+    const more = el("button", "button button-outline",
+      "さらに表示（残り " + count(report.findings.length - deterministicRenderedFindings) + " 件）");
+    more.dataset.detMore = "true";
+    more.addEventListener("click", appendDeterministicFindings);
+    add(holder, more);
+  }
+}
+
+function appendDeterministicMethods() {
+  const report = state.deterministic;
+  if (!report) return;
+  const holder = $("det-method-list");
+  holder.querySelector("[data-det-more]")?.remove();
+  const next = report.methodMetrics.slice(deterministicRenderedMethods,
+    deterministicRenderedMethods + 30);
+  next.forEach(item => add(holder, deterministicMethodRow(item)));
+  deterministicRenderedMethods += next.length;
+  if (deterministicRenderedMethods < report.methodMetrics.length) {
+    const more = el("button", "button button-outline",
+      "さらに表示（残り " + count(report.methodMetrics.length - deterministicRenderedMethods) + " 件）");
+    more.dataset.detMore = "true";
+    more.addEventListener("click", appendDeterministicMethods);
+    add(holder, more);
+  }
+}
+
+function renderDeterministic() {
+  const report = state.deterministic;
+  const summary = report?.summary;
+  $("det-export").disabled = !report;
+  $("det-count").textContent = summary ? count(summary.totalFindings) : "—";
+  $("det-errors").textContent = summary ? count(summary.compilerErrors) : "—";
+  $("det-warnings").textContent = summary ? count(summary.compilerWarnings) : "—";
+  $("det-methods").textContent = summary ? count(summary.returnedMethodMetrics) : "—";
+  // Installed Roslyn Analyzer results are counted separately from compiler diagnostics.
+  $("det-completeness").textContent = !summary ? "未実行" :
+    summary.incompleteRuleScanning ? "一部ルール省略" :
+    summary.findingsTruncated || summary.methodMetricsTruncated ? "表示件数上限あり" :
+    "スキャン完了";
+
+  const findings = $("det-findings");
+  const methods = $("det-method-list");
+  const notes = $("det-notes");
+  deterministicRenderedFindings = 0;
+  deterministicRenderedMethods = 0;
+  clear(findings); clear(methods); clear(notes);
+  if (!summary) {
+    empty(findings, "解析を実行してください。");
+    empty(methods, "解析を実行してください。");
+    empty(notes, "解析結果の範囲を表示します。");
+    return;
+  }
+  if (!report.findings.length) empty(findings, "ルール一致・コンパイル診断はありません。");
+  else appendDeterministicFindings();
+  if (!report.methodMetrics.length) empty(methods, "詳細計測したメソッドはありません。");
+  else appendDeterministicMethods();
+  add(notes, el("div", "diagnostic-item",
+    summary.documentsAnalyzed + " documents / " + summary.methodsIndexed + " methods"));
+  add(notes, el("div", "diagnostic-item",
+    count(summary.projectAnalyzersExecuted ?? 0) + " installed analyzers / " +
+    count(summary.projectAnalyzerDiagnostics ?? 0) + " analyzer diagnostics"));
+  add(notes, el("div", "diagnostic-item",
+    "指摘 " + summary.returnedFindings + " / " + summary.totalFindings + " 件、" +
+    "メソッド計測 " + summary.returnedMethodMetrics + " / " +
+    summary.totalMethodMetrics + " 件"));
+  for (const note of summary.notes) add(notes, el("div", "diagnostic-item", note));
+}
+
+async function loadDeterministic() {
+  const rules = await api("/deterministic/rules");
+  $("det-rule-version").textContent = "RULES " + rules.version;
+  state.deterministic = await api("/deterministic/report");
+  renderDeterministic();
+}
+
+async function runDeterministic(event) {
+  event.preventDefault();
+  const button = $("det-run");
+  await withButton(button, async () => {
+    if (!state.overview?.loaded) throw new Error("先にSolutionを読み込んでください。");
+    const form = event.currentTarget;
+    const values = Object.fromEntries(new FormData(form));
+    const maxFindings = Number(values.maxFindings);
+    const maxMethodMetrics = Number(values.maxMethodMetrics);
+    if (!Number.isInteger(maxFindings) || maxFindings < 1 || maxFindings > 5000 ||
+        !Number.isInteger(maxMethodMetrics) || maxMethodMetrics < 1 ||
+        maxMethodMetrics > 2000)
+      throw new Error("解析件数の指定が範囲外です。");
+    const result = await api("/deterministic/run", {
+      method: "POST", body: { maxFindings, maxMethodMetrics }
+    });
+    state.deterministic = result;
+    renderDeterministic();
+    toast("決定論的解析: " + count(result.summary.totalFindings) + " 件の結果を取得しました。");
+  });
+}
+
+function exportDeterministic() {
+  if (!state.deterministic) return;
+  const content = JSON.stringify(state.deterministic, null, 2);
+  const blob = new Blob([content], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  try {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "tenka-deterministic-report.json";
+    document.body.append(link);
+    link.click();
+    link.remove();
+  } finally { setTimeout(() => URL.revokeObjectURL(url), 2500); }
+}
+
 async function initialize() {
   document.querySelectorAll(".nav-item").forEach(button =>
     button.addEventListener("click", () => showView(button.dataset.view)));
@@ -603,6 +767,8 @@ async function initialize() {
     withButton($("open-button"), async () => {
       const path = $("workspace-path").value.trim();
       const summary = await api("/workspace/open", { method: "POST", body: { path } });
+      state.deterministic = null;
+      renderDeterministic();
       toast("読み込み成功: " + summary.projects.length + " projects / " + summary.methodCount + " methods");
       await loadOverview();
       await loadTargets();
@@ -659,6 +825,8 @@ async function initialize() {
   $("auto-stop").addEventListener("click", stopReview);
   $("auto-history-refresh").addEventListener("click", () =>
     loadReviewHistory().catch(error => toast(error.message, true)));
+  $("det-form").addEventListener("submit", runDeterministic);
+  $("det-export").addEventListener("click", exportDeterministic);
   $("compare-form").addEventListener("submit", compareBenchmarks);
 
   try {
