@@ -17,6 +17,42 @@ jobs:
       - run: dotnet restore TenkaChan.slnx
       - run: dotnet build TenkaChan.slnx --configuration Release --no-restore
       - run: dotnet test TenkaChan.slnx --configuration Release --no-build
+      - name: Validate browser JavaScript syntax
+        run: node --check src/TenkaChan.Web/wwwroot/app.js
+      - name: Smoke test localhost Web UI and Roslyn API
+        env:
+          TENKA_TRUST_MSBUILD: '1'
+          TENKA_WEB_PORT: '5077'
+        run: |
+          set -euo pipefail
+          export TENKA_ALLOWED_ROOTS="$GITHUB_WORKSPACE/tests/Fixtures/UiSample"
+          dotnet run --project src/TenkaChan.Web/TenkaChan.Web.csproj --configuration Release --no-build --no-launch-profile >/tmp/tenka-web.log 2>&1 &
+          web_pid=$!
+          trap 'kill "$web_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 50); do
+            if curl --silent --fail http://127.0.0.1:5077/api/session >/tmp/tenka-web-session.json; then break; fi
+            sleep 1
+          done
+          if [ ! -s /tmp/tenka-web-session.json ]; then cat /tmp/tenka-web.log; exit 1; fi
+          curl --silent --fail http://127.0.0.1:5077/ | grep -q 'DEEP REVIEW CONSOLE'
+          token=$(python3 -c 'import json; print(json.load(open("/tmp/tenka-web-session.json"))["csrfToken"])')
+          status=$(curl --silent -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:5077/api/workspace/scan -H 'Content-Type: application/json' -d '{}')
+          test "$status" = '403'
+          export PROJECT="$GITHUB_WORKSPACE/tests/Fixtures/UiSample/UiSample.csproj"
+          payload=$(python3 -c 'import json,os; print(json.dumps({"path":os.environ["PROJECT"]}))')
+          curl --silent --show-error --fail -X POST http://127.0.0.1:5077/api/workspace/open \
+            -H 'Content-Type: application/json' -H "X-Tenka-CSRF: $token" \
+            --data-binary "$payload" >/tmp/tenka-web-open.json
+          python3 -c 'import json; x=json.load(open("/tmp/tenka-web-open.json")); assert x["methodCount"] >= 2, x'
+          curl --silent --show-error --fail -X POST http://127.0.0.1:5077/api/workspace/scan \
+            -H 'Content-Type: application/json' -H "X-Tenka-CSRF: $token" \
+            -d '{}' >/tmp/tenka-web-scan.json
+          python3 -c 'import json; x=json.load(open("/tmp/tenka-web-scan.json")); assert x["findingCount"] >= 1, x'
+          curl --silent --show-error --fail 'http://127.0.0.1:5077/api/methods?limit=10' >/tmp/tenka-web-methods.json
+          python3 -c 'import json; x=json.load(open("/tmp/tenka-web-methods.json")); assert len(x) >= 2, x'
+          curl --silent --show-error --fail 'http://127.0.0.1:5077/api/findings?limit=10' >/tmp/tenka-web-findings.json
+          python3 -c 'import json; x=json.load(open("/tmp/tenka-web-findings.json")); assert x["total"] >= 1, x'
+
   docker-smoke:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
