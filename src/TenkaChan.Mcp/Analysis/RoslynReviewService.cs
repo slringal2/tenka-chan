@@ -28,8 +28,11 @@ public sealed class RoslynReviewService : IDisposable
     private MSBuildWorkspace? _workspace;
     private Solution? _solution;
     private string _snapshotId = "";
+    private SampledHotspotReport? _hotspotProfile;
 
     public RoslynReviewService(WorkspaceGuard guard) => _guard = guard;
+
+    public SampledHotspotReport? CurrentHotspotProfile => _hotspotProfile;
 
     public string CurrentSnapshotId => _solution is not null
         ? _snapshotId : throw new InvalidOperationException("Call workspace_open first.");
@@ -47,6 +50,7 @@ public sealed class RoslynReviewService : IDisposable
             _methods.Clear();
             _warnings.Clear();
             _solution = null;
+            _hotspotProfile = null;
             _workspace = MSBuildWorkspace.Create();
             _workspace.RegisterWorkspaceFailedHandler(args =>
             {
@@ -457,6 +461,67 @@ public sealed class RoslynReviewService : IDisposable
         };
         return new DeterministicAnalysisReport(
             summary, ordered.Take(findingLimit).ToArray(), metrics);
+        }
+        finally { _openLock.Release(); }
+    }
+
+
+    /// <summary>
+    /// Static workload-independent ranking, including two-hop call evidence.
+    /// Never interprets syntax weight as milliseconds or CPU percentage.
+    /// </summary>
+    public async Task<StaticHotspotReport> AnalyzePerformanceHotspotsAsync(
+        int maxMethods = 100, int maxSites = 300,
+        CancellationToken ct = default)
+    {
+        await _openLock.WaitAsync(ct);
+        try
+        {
+            EnsureOpen();
+            var models = new Dictionary<DocumentId, SemanticModel>();
+            var definitions = new List<HotspotMethodDefinition>();
+            foreach (var method in _methods.Values)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (!models.TryGetValue(method.Document.Id, out var model))
+                {
+                    model = await method.Document.GetSemanticModelAsync(ct)
+                        ?? throw new InvalidOperationException("Semantic model unavailable.");
+                    models.Add(method.Document.Id, model);
+                }
+                var projectDirectory = Path.GetDirectoryName(method.Document.Project.FilePath)
+                    ?? throw new InvalidOperationException("Project directory unavailable.");
+                definitions.Add(new HotspotMethodDefinition(method.Summary, method.Syntax,
+                    method.Symbol, model, projectDirectory));
+            }
+            return PerformanceHotspotAnalyzer.Analyze(CurrentSnapshotId, definitions,
+                maxMethods, maxSites, ct);
+        }
+        finally { _openLock.Release(); }
+    }
+
+    /// <summary>
+    /// Import a sampled workload profile created separately by a trusted
+    /// profiler. This parser never starts an executable or profiler.
+    /// </summary>
+    public async Task<SampledHotspotReport> ImportHotspotProfileAsync(
+        string filePath, int profileIndex = 0, int maxFrames = 100,
+        CancellationToken ct = default)
+    {
+        var safeFile = _guard.RequireFile(filePath, ".json");
+        await _openLock.WaitAsync(ct);
+        try
+        {
+            EnsureOpen();
+            var methods = _methods.Values.Select(m =>
+                new ProfileMethodIdentity(m.Summary.Id,
+                    m.Symbol.ContainingType.ToDisplayString(
+                        SymbolDisplayFormat.CSharpErrorMessageFormat) + "." +
+                    m.Symbol.Name)).ToArray();
+            var report = SpeedscopeHotspotParser.Read(safeFile, methods,
+                profileIndex, maxFrames);
+            _hotspotProfile = report;
+            return report;
         }
         finally { _openLock.Release(); }
     }
