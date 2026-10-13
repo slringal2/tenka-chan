@@ -53,7 +53,7 @@ public sealed class IlInspector
                 if (definition.RelativeVirtualAddress == 0)
                     throw new InvalidOperationException("Method has no IL body (abstract/extern).");
                 var body = pe.GetMethodBody(definition.RelativeVirtualAddress);
-                var bytes = body.GetILBytes().ToArray();
+                var bytes = body.GetILBytes() ?? Array.Empty<byte>();
                 var instructions = Decode(bytes, Math.Clamp(maxInstructions, 1, 1000), out var truncated);
                 return new IlMethodReport(path, full, method,
                     MetadataTokens.GetToken(handle), instructions, truncated,
