@@ -8,7 +8,7 @@ namespace TenkaChan.Mcp.Experiments;
 
 public sealed record ExperimentManifest(
     string Id, string Kind, string RepositoryRoot, string ProjectRelativePath,
-    string CreatedUtc, string SourceSha256);
+    string CreatedUtc, string SourceSha256, string ProjectSha256 = "");
 
 public sealed record ExperimentReceipt(string Id, string Kind, string Directory,
     string SourceDiagnostics, string Message);
@@ -74,7 +74,9 @@ public sealed class ExperimentStore
         }
         var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
             System.Text.Encoding.UTF8.GetBytes(generatedCode)));
-        var manifest = new ExperimentManifest(id, kind, root, relative, DateTimeOffset.UtcNow.ToString("O"), digest);
+        var projectSha = Sha256File(Path.Combine(directory, projectName));
+        var manifest = new ExperimentManifest(id, kind, root, relative,
+            DateTimeOffset.UtcNow.ToString("O"), digest, projectSha);
         File.WriteAllText(Path.Combine(directory, "manifest.json"), JsonSerializer.Serialize(manifest, _json));
         return new ExperimentReceipt(id, kind, directory, "syntax_valid",
             "Prepared only; not executed. The resulting project requires an isolated Docker runner and prewarmed offline NuGet cache.");
@@ -93,6 +95,64 @@ public sealed class ExperimentStore
         if (manifest.Id != experimentId)
             throw new InvalidDataException("Manifest ID mismatch.");
         _guard.RequireProjectWithin(manifest.RepositoryRoot, manifest.ProjectRelativePath);
+        var source = Path.Combine(directory, "Generated.cs");
+        var projectName = manifest.Kind == "test" ? "GeneratedTests.csproj"
+            : manifest.Kind == "benchmark" ? "GeneratedBenchmarks.csproj"
+            : throw new InvalidDataException("Invalid experiment kind.");
+        var project = Path.Combine(directory, projectName);
+        if (!File.Exists(source) || !File.Exists(project)
+            || !string.Equals(Sha256File(source), manifest.SourceSha256, StringComparison.Ordinal)
+            || (manifest.ProjectSha256.Length > 0
+                && !string.Equals(Sha256File(project), manifest.ProjectSha256, StringComparison.Ordinal)))
+            throw new InvalidDataException("Generated experiment files changed after preparation.");
         return (manifest, directory);
     }
+
+    internal string CreateArtifactsDirectory(string experimentId)
+    {
+        var (_, directory) = Read(experimentId);
+        var artifacts = Path.Combine(directory, "artifacts");
+        Directory.CreateDirectory(artifacts);
+        // The sandbox runs as UID 65532. This grants write access only inside a
+        // dedicated artifacts directory; repository and generated source remain RO.
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+        {
+            Directory.SetUnixFileMode(artifacts,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                | UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
+                | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute);
+        }
+        return artifacts;
+    }
+
+    internal void SaveExecutionResult(ExecutionResult report)
+    {
+        var (_, directory) = Read(report.ExperimentId);
+        var target = Path.Combine(directory, "execution-report.json");
+        var temporary = Path.Combine(directory, ".execution-" + Guid.NewGuid().ToString("N") + ".tmp");
+        try
+        {
+            File.WriteAllText(temporary, JsonSerializer.Serialize(report, _json));
+            File.Move(temporary, target, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporary)) File.Delete(temporary);
+        }
+    }
+
+    public ExecutionResult ReadExecutionResult(string experimentId)
+    {
+        var (_, directory) = Read(experimentId);
+        var target = Path.Combine(directory, "execution-report.json");
+        if (!File.Exists(target))
+            throw new FileNotFoundException("Experiment has not produced a stored execution report.", target);
+        if (new FileInfo(target).Length > 1_000_000)
+            throw new InvalidDataException("Execution report exceeds maximum size.");
+        return JsonSerializer.Deserialize<ExecutionResult>(File.ReadAllText(target))
+            ?? throw new InvalidDataException("Execution report is invalid.");
+    }
+
+    private static string Sha256File(string filePath) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(filePath)));
 }
