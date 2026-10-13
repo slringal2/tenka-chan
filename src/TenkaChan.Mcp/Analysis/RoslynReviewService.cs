@@ -46,7 +46,7 @@ public sealed class RoslynReviewService : IDisposable
             _workspace.RegisterWorkspaceFailedHandler(args =>
             {
                 if (_warnings.Count < 100) _warnings.Add(args.Diagnostic.Message);
-            };
+            });
             _solution = Path.GetExtension(safePath).Equals(".csproj", StringComparison.OrdinalIgnoreCase)
                 ? (await _workspace.OpenProjectAsync(safePath, cancellationToken: ct)).Solution
                 : await _workspace.OpenSolutionAsync(safePath, cancellationToken: ct);
