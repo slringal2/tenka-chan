@@ -57,10 +57,28 @@ public static class PerformanceHotspotAnalyzer
             var enumerationCandidates = 0;
             var blockingCandidates = 0;
 
-            foreach (var loop in loops.Where(n => LoopDepth(n) > 0))
-                AddSite("nested_loops", loop, LoopDepth(loop) + 1,
-                    9, "Nested loop: iterations may multiply with input size.",
-                    "Establish actual loop bounds and measure with increasing input sizes.");
+            foreach (var loop in loops)
+            {
+                var directArithmetic = nodes.OfType<BinaryExpressionSyntax>().Count(binary =>
+                    loop.Span.Contains(binary.Span) &&
+                    LoopDepth(binary) == LoopDepth(loop) + 1 &&
+                    (binary.IsKind(SyntaxKind.AddExpression) ||
+                     binary.IsKind(SyntaxKind.SubtractExpression) ||
+                     binary.IsKind(SyntaxKind.MultiplyExpression) ||
+                     binary.IsKind(SyntaxKind.DivideExpression) ||
+                     binary.IsKind(SyntaxKind.ModuloExpression) ||
+                     binary.IsKind(SyntaxKind.LeftShiftExpression) ||
+                     binary.IsKind(SyntaxKind.RightShiftExpression)));
+                // Count direct arithmetic only; nested loops are scored separately.
+                AddSite("loop_body_candidate", loop, LoopDepth(loop) + 1,
+                    Math.Min(9, 1.5 + directArithmetic * 0.7),
+                    "Loop body executes repeatedly; actual iteration count and work are unknown.",
+                    "Profile the loop under representative input size and identify heavy callees.");
+                if (LoopDepth(loop) > 0)
+                    AddSite("nested_loops", loop, LoopDepth(loop) + 1,
+                        9, "Nested loop: iterations may multiply with input size.",
+                        "Establish actual loop bounds and measure with increasing input sizes.");
+            }
 
             foreach (var n in nodes)
             {
