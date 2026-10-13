@@ -19,3 +19,14 @@ public sealed record MethodInspection(
     IReadOnlyList<string> Writes,
     IReadOnlyList<string> Diagnostics,
     string? AnalysisNote);
+
+public sealed record CompilationDiagnostic(
+    string Project, string DiagnosticId, string Severity, string Message,
+    string? File, int? Line, int? Column);
+
+public sealed record CompilationDiagnosticsReport(
+    int ErrorCount, int WarningCount, int InformationCount,
+    int ReturnedCount, IReadOnlyList<CompilationDiagnostic> Diagnostics);
+
+public sealed record ReferenceHit(
+    string Project, string File, int Line, int Column, string Preview);

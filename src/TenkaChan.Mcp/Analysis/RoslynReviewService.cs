@@ -4,6 +4,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.FlowAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
+using Microsoft.CodeAnalysis.FindSymbols;
 using Microsoft.CodeAnalysis.Operations;
 using TenkaChan.Mcp.Security;
 
@@ -42,10 +43,10 @@ public sealed class RoslynReviewService : IDisposable
             _warnings.Clear();
             _solution = null;
             _workspace = MSBuildWorkspace.Create();
-            _workspace.WorkspaceFailed += (_, args) =>
+            _workspace.RegisterWorkspaceFailedHandler(args =>
             {
                 if (_warnings.Count < 100) _warnings.Add(args.Diagnostic.Message);
-            };
+            });
             _solution = Path.GetExtension(safePath).Equals(".csproj", StringComparison.OrdinalIgnoreCase)
                 ? (await _workspace.OpenProjectAsync(safePath, cancellationToken: ct)).Solution
                 : await _workspace.OpenSolutionAsync(safePath, cancellationToken: ct);
@@ -230,6 +231,94 @@ public sealed class RoslynReviewService : IDisposable
                         .OrderBy(entry => entry.Syntax.Span.Length)
                         .FirstOrDefault()?.Summary.Id
                 }));
+            }
+        }
+        return result;
+    }
+
+
+    public SuggestedTestPlan SuggestTestPlan(string methodId)
+    {
+        var method = RequireMethod(methodId);
+        return BoundaryTestAdvisor.Suggest(method.Summary, method.Symbol);
+    }
+
+    public IReadOnlyList<ReviewTarget> GetReviewTargets(int limit = 50, int offset = 0,
+        string? query = null)
+    {
+        EnsureOpen();
+        var all = _methods.Values
+            .Where(entry => string.IsNullOrWhiteSpace(query)
+                || entry.Summary.Signature.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || entry.Summary.File.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .Select(entry => ReviewPrioritizer.Assess(entry.Summary, entry.Syntax))
+            .OrderByDescending(target => target.Priority)
+            .ThenBy(target => target.Method.Signature, StringComparer.Ordinal)
+            .ToArray();
+        return all.Skip(Math.Clamp(offset, 0, 1_000_000))
+            .Take(Math.Clamp(limit, 1, 200)).ToArray();
+    }
+
+    public async Task<CompilationDiagnosticsReport> GetCompilationDiagnosticsAsync(
+        int limit = 200, CancellationToken ct = default)
+    {
+        EnsureOpen();
+        var returned = new List<CompilationDiagnostic>();
+        var errorCount = 0;
+        var warningCount = 0;
+        var infoCount = 0;
+        var take = Math.Clamp(limit, 1, 2000);
+
+        foreach (var project in _solution!.Projects.Where(p => p.Language == LanguageNames.CSharp))
+        {
+            ct.ThrowIfCancellationRequested();
+            var compilation = await project.GetCompilationAsync(ct);
+            if (compilation is null) continue;
+            foreach (var diagnostic in compilation.GetDiagnostics(ct))
+            {
+                if (diagnostic.Severity == DiagnosticSeverity.Error) errorCount++;
+                else if (diagnostic.Severity == DiagnosticSeverity.Warning) warningCount++;
+                else infoCount++;
+
+                if (returned.Count >= take) continue;
+                var span = diagnostic.Location.IsInSource
+                    ? diagnostic.Location.GetLineSpan() : default;
+                returned.Add(new CompilationDiagnostic(
+                    project.Name, diagnostic.Id, diagnostic.Severity.ToString(),
+                    diagnostic.GetMessage(), diagnostic.Location.IsInSource ? span.Path : null,
+                    diagnostic.Location.IsInSource ? span.StartLinePosition.Line + 1 : null,
+                    diagnostic.Location.IsInSource ? span.StartLinePosition.Character + 1 : null));
+            }
+        }
+        return new CompilationDiagnosticsReport(
+            errorCount, warningCount, infoCount, returned.Count, returned);
+    }
+
+    public async Task<IReadOnlyList<ReferenceHit>> FindReferencesAsync(
+        string methodId, int limit = 100, CancellationToken ct = default)
+    {
+        var entry = RequireMethod(methodId);
+        var found = await SymbolFinder.FindReferencesAsync(entry.Symbol, _solution!,
+            cancellationToken: ct);
+        var result = new List<ReferenceHit>();
+        var maximum = Math.Clamp(limit, 1, 500);
+        foreach (var reference in found)
+        {
+            foreach (var location in reference.Locations)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (result.Count >= maximum) return result;
+                if (!location.Location.IsInSource) continue;
+                var filePath = location.Document.FilePath;
+                if (string.IsNullOrEmpty(filePath)) continue;
+                var text = await location.Document.GetTextAsync(ct);
+                var sourceLine = text.Lines.GetLineFromPosition(location.Location.SourceSpan.Start);
+                var preview = sourceLine.ToString().Trim();
+                if (preview.Length > 250) preview = preview[..250];
+                result.Add(new ReferenceHit(location.Document.Project.Name, filePath,
+                    sourceLine.LineNumber + 1,
+                    location.Location.SourceSpan.Start - sourceLine.Start + 1,
+                    preview));
             }
         }
         return result;

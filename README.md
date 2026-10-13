@@ -19,7 +19,15 @@ server never requires an LLM API key.
 | `workspace_open` | Evaluate a trusted .sln, .slnx or .csproj with MSBuildWorkspace and index C# methods |
 | `symbols_find` | Find methods by signature/path |
 | `symbol_inspect` | Get source, calls/callers, CFG, dataflow and compilation diagnostics |
-| `review_scan` | Find LINQ materialization in loops, string concatenation, repeated regex creation, blocking Task.Result in async |
+| `review_scan` | Find LINQ, string, regex, HttpClient, swallowed exception and async-blocking candidates |
+| `review_targets` | Prioritize review targets by branching, loops, async, allocations and method size |
+| `workspace_diagnostics` | List Roslyn compilation errors/warnings with locations and totals |
+| `symbol_references` | Resolve usage locations of a C# method across projects |
+| `hypothesis_create` | Create a persistent review hypothesis with an explicit failure condition |
+| `evidence_add` | Attach an independently sourced contract or experiment observation |
+| `hypothesis_set_status` | Track suspected/reproduced/not-reproduced/refuted outcomes |
+| `hypothesis_get` / `hypotheses_list` | Resume evidence review after restarting the MCP process |
+| `test_plan_suggest` | Propose null/empty/numeric-boundary inputs using Roslyn parameter types, without inventing expected outputs |
 | `experiment_prepare` | Validate C# syntax and build detached xUnit/BenchmarkDotNet project with a project reference |
 | `experiment_run` | Execute a prepared project **in a resource-limited, network-disabled Docker container only** |
 | `il_inspect` | Decode managed IL instructions directly from a DLL/EXE without executing it |
@@ -45,7 +53,7 @@ Environment variables (set *before* starting the MCP process):
 | --- | --- | --- |
 | `TENKA_ALLOWED_ROOTS` | yes | Explicit allowlisted directories, separated by OS path separator (; on Windows, : on Unix) |
 | `TENKA_TRUST_MSBUILD` | for semantic analysis | `1` confirms that the target's MSBuild files are trusted to be evaluated on the host |
-| `TENKA_DATA_DIR` | optional | Directory holding experiment manifests/source. Defaults to local app data/tenka-chan |
+| `TENKA_DATA_DIR` | optional | Directory holding experiment manifests and persistent SQLite review ledger. Defaults to local app data/tenka-chan |
 | `TENKA_ENABLE_DOCKER` | for execution | `1` enables the Docker-only execution tool |
 | `TENKA_NUGET_PACKAGES` | for execution | Host package cache directory mounted read-only to /nuget |
 
@@ -74,10 +82,10 @@ stays a valid JSON-RPC transport.
 ## Suggested agent workflow
 
 1. `workspace_open` a trusted solution.
-2. `review_scan` to obtain *candidates*; `symbols_find` and `symbol_inspect`
+2. Use `review_targets` to select interesting methods and `workspace_diagnostics` to identify compilation problems. `review_scan` then finds *candidates*; `symbols_find` and `symbol_inspect`
    to explore relevant code. The agent should inspect call sites and invariants
    before claiming that something is a bug.
-3. Write standalone C# xUnit test source, then call `experiment_prepare`
+3. Use `test_plan_suggest` for boundary inputs, then use `hypothesis_create` and `evidence_add` to record failure conditions and contract/test evidence. For reproducible failures, use `hypothesis_set_status` with `reported_reproduced` only after adding test execution and independent contract evidence. Write standalone C# xUnit test source, then call `experiment_prepare`
    with `kind="test"`, a repository root, and the .csproj path **relative to
    that root**.
 4. Optionally enable the Docker runner and call `experiment_run` using the
@@ -141,9 +149,23 @@ benchmarks automatically.
 
 ## Roadmap
 
-- Persistent solution indexing and review ledger (SQLite)
+- Persistent Roslyn solution indexing/daemon (SQLite review ledger is implemented)
 - Symbol-based interprocedural analysis and nullable/reflection limitations
 - Test oracle provenance and property-based/stateful test generation
 - Golden benchmarks on a dedicated runner, dotnet-trace, JIT/IL inspection
 - Git baseline replay, reproducible comparison, flaky-test detection
 - Strict sandbox hardening, quota/approval and immutable evidence artifacts
+
+## Review ledger semantics
+
+The SQLite ledger resides in `TENKA_DATA_DIR/review-ledger.sqlite`. A review
+hypothesis is **not** a confirmed defect. `reported_reproduced` is a
+provenance-gated *claim*: it requires a test_execution record and a separately
+sourced contract record, but does not verify that the recorded test actually
+ran or that the oracle is correct. The reviewer must still inspect evidence.
+`review_targets` is a syntactic heuristic, **not** runtime hotness or defect
+probability. `symbol_references` cannot resolve all reflection, dynamic
+dispatch or dependency-injection paths.
+
+A full autonomous review loop, profiler, native JIT disassembler, and
+Git-based benchmark regression runner remain future work.

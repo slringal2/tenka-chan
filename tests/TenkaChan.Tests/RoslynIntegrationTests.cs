@@ -34,6 +34,7 @@ public sealed class RoslynIntegrationTests
                         if (a < 0) return b;
                         return a + b;
                     }
+                    public static int Call(int value) => Add(value, 1);
                     public static void Use(int[] items)
                     {
                         for (int i = 0; i < 3; i++)
@@ -51,6 +52,23 @@ public sealed class RoslynIntegrationTests
             var details = await service.InspectAsync(add.Id);
             Assert.Contains("return a + b", details.Source);
             Assert.NotEmpty(details.Blocks);
+            var plan = service.SuggestTestPlan(add.Id);
+            Assert.True(plan.ExternallyCallable);
+            Assert.Equal("unresolved", plan.OracleStatus);
+            Assert.Contains(plan.Inputs, input => input.CSharpExpressions.Contains("int.MinValue"));
+
+            var references = await service.FindReferencesAsync(add.Id);
+            Assert.Contains(references, location => location.Preview.Contains("Add(value, 1)"));
+
+            var targets = service.GetReviewTargets();
+            Assert.NotEmpty(targets);
+            Assert.Contains(targets, target => target.Method.Id == add.Id);
+            Assert.True(targets[0].Priority >= targets[^1].Priority);
+
+            var diagnostics = await service.GetCompilationDiagnosticsAsync();
+            Assert.True(diagnostics.ErrorCount >= 0);
+            Assert.True(diagnostics.ReturnedCount <= 200);
+
 
             var results = await service.ScanAsync();
             Assert.Contains(results, f => f.RuleId == "PERF1001" && f.MethodId is not null);
