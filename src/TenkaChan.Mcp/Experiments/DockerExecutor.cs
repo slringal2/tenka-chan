@@ -182,7 +182,8 @@ public sealed class DockerExecutor
         {
             status = exitCode != 0 ? "jit_runner_failed"
                 : nativeDisassembly is null ? "jit_report_missing"
-                : nativeDisassembly.MethodCount == 0 ? "jit_no_matching_methods"
+                : nativeDisassembly.MethodCount == 0 ||
+                  nativeDisassembly.InstructionCount == 0 ? "jit_no_matching_methods"
                 : "jit_completed";
         }
         else
@@ -229,19 +230,22 @@ public sealed class DockerExecutor
         {
             "test" =>
                 "dotnet test /work/generated/GeneratedTests.csproj -c Release --no-restore " +
-                "--logger 'trx;LogFileName=results.trx' --results-directory /artifacts",
+                "--logger 'trx;LogFileName=results.trx' --results-directory /artifacts -p:TargetFramework=" +
+                    framework.TargetFramework,
             "benchmark" =>
                 "set +e\n" +
                 "cd /work/generated\n" +
                 "dotnet run -c Release --no-restore " +
-                "--project /work/generated/GeneratedBenchmarks.csproj -- " +
+                "--project /work/generated/GeneratedBenchmarks.csproj -p:TargetFramework=" +
+                    framework.TargetFramework + " -- " +
                 "--filter '*' --exporters FullJSON --artifacts /work/benchmark-output --memory\n" +
                 "benchmark_exit=$?\nset -e\n" +
                 "for report in /work/benchmark-output/results/*-report-full.json; do\n" +
                 "  if [ -f \"$report\" ]; then cp \"$report\" /artifacts/; fi\n" +
                 "done\nexit \"$benchmark_exit\"",
             "jit" =>
-                "dotnet build /work/generated/GeneratedJit.csproj -c Release --no-restore\n" +
+                "dotnet build /work/generated/GeneratedJit.csproj -c Release --no-restore -p:TargetFramework=" +
+                    framework.TargetFramework + "\n" +
                 "set +e\n" +
                 "DOTNET_JitDisasm=\"$TENKA_JIT_FILTER\" " +
                 "DOTNET_JitDisasmWithCodeBytes=1 " +
@@ -267,7 +271,8 @@ public sealed class DockerExecutor
             "printf '<configuration><packageSources><clear/></packageSources></configuration>' " +
                 "> /work/NuGet.Config\n" +
             "dotnet restore /work/generated/" + project +
-                " --configfile /work/NuGet.Config -p:NuGetAudit=false\n" +
+                " --configfile /work/NuGet.Config -p:NuGetAudit=false -p:TargetFramework=" +
+                    framework.TargetFramework + "\n" +
             run + "\n";
 
         var info = new ProcessStartInfo("docker")
