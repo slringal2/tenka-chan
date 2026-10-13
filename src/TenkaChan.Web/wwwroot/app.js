@@ -456,6 +456,9 @@ function renderNativeDisassembly(root, report) {
             "Code size " + (method.codeSizeBytes ?? "unknown") + " bytes",
             method.matchStatus]));
     if (method.roslynMethodId) {
+      detailSection(root, "Source declaration",
+        (method.roslynSignature || "") + " — " +
+        (method.roslynSourcePath || "") + ":" + (method.roslynSourceLine ?? "—"));
       const link = el("button", "button button-outline", "Roslynメソッド詳細へ ↗");
       link.addEventListener("click", () => {
         $("experiment-dialog").close();
@@ -488,6 +491,46 @@ function renderNativeDisassembly(root, report) {
   }
   for (const note of report.limitations ?? [])
     detailSection(root, "Interpretation limit", note);
+}
+
+async function compareNativeCode(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  await withButton(form.querySelector("button"), async () => {
+    const comparison = await api("/native/compare", {
+      method: "POST", body: Object.fromEntries(new FormData(form))
+    });
+    const holder = $("native-comparison-result");
+    clear(holder);
+    const block = el("div", "compare-card");
+    add(block, el("strong", "", comparison.status + " • " +
+      comparison.baselineFramework + " → " + comparison.candidateFramework));
+    add(block, el("small", "",
+      "機械語の差分です。命令数やコードサイズだけでは実行時間を判断できません。"));
+    for (const method of comparison.methods) {
+      const entry = el("div", "item-row");
+      const content = el("div");
+      add(content, el("strong", "", method.jitSignature));
+      const size = method.byteDelta === null ? "不明" :
+        (method.byteDelta > 0 ? "+" : "") + method.byteDelta + " bytes";
+      const countDelta = method.candidateInstructionCount -
+        method.baselineInstructionCount;
+      add(content, el("small", "",
+        "Native code " + (method.baselineCodeBytes ?? "—") + " → " +
+        (method.candidateCodeBytes ?? "—") + " bytes (" + size + ")" +
+        " • instruction Δ " + (countDelta > 0 ? "+" : "") + countDelta));
+      const families = method.families.filter(f => f.delta !== 0)
+        .map(f => f.family + ": " + (f.delta > 0 ? "+" : "") + f.delta);
+      if (families.length) add(content, el("small", "", families.join(" · ")));
+      for (const observation of method.observations)
+        add(content, el("small", "", observation));
+      add(entry, content);
+      add(block, entry);
+    }
+    for (const note of comparison.limitations)
+      add(block, el("small", "", note));
+    add(holder, block);
+  });
 }
 
 async function compareBenchmarks(event) {
@@ -1034,6 +1077,7 @@ async function initialize() {
   };
   $("experiment-kind").addEventListener("change", updateExperimentMode);
   updateExperimentMode();
+  $("native-compare-form").addEventListener("submit", compareNativeCode);
   $("compare-form").addEventListener("submit", compareBenchmarks);
 
   try {
