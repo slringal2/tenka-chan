@@ -1,0 +1,19 @@
+name: Build and unit test
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet restore TenkaChan.slnx
+      - run: dotnet build TenkaChan.slnx --configuration Release --no-restore
+      - run: dotnet test TenkaChan.slnx --configuration Release --no-build
