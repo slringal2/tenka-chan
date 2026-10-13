@@ -5,6 +5,8 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.FlowAnalysis;
 using Microsoft.CodeAnalysis.Operations;
 using Microsoft.CodeAnalysis.Text;
+using Microsoft.CodeAnalysis.Diagnostics;
+using System.Collections.Immutable;
 
 namespace TenkaChan.Mcp.Analysis;
 
@@ -31,9 +33,30 @@ public static class DeterministicAnalysisEngine
             methodId, candidate.Message, excerpt, candidate.Verification);
     }
 
+    /// <summary>
+    /// Execute analyzers explicitly installed in a trusted project. Analyzer
+    /// code executes on the caller's process and must never run on projects
+    /// that have not been explicitly trusted.
+    /// </summary>
+    public static async Task<IReadOnlyList<Diagnostic>> RunAnalyzersAsync(
+        Compilation compilation, ImmutableArray<DiagnosticAnalyzer> analyzers,
+        AnalyzerOptions options, CancellationToken cancellationToken = default)
+    {
+        if (analyzers.IsDefaultOrEmpty) return [];
+        var settings = new CompilationWithAnalyzersOptions(options,
+            onAnalyzerException: null, concurrentAnalysis: false,
+            logAnalyzerExecutionTime: false, reportSuppressedDiagnostics: false);
+        var diagnostics = await compilation.WithAnalyzers(analyzers, settings)
+            .GetAnalyzerDiagnosticsAsync(cancellationToken);
+        return diagnostics.OrderBy(d => d.Location.GetLineSpan().Path,
+                StringComparer.Ordinal)
+            .ThenBy(d => d.Location.SourceSpan.Start).ThenBy(d => d.Id,
+                StringComparer.Ordinal).ToArray();
+    }
+
     public static DeterministicFinding FromDiagnostic(
         Diagnostic diagnostic, Project project, SourceText? text,
-        string? methodId)
+        string? methodId, bool projectAnalyzer = false)
     {
         var path = diagnostic.Location.IsInSource
             ? diagnostic.Location.GetLineSpan().Path ?? ""
@@ -53,13 +76,18 @@ public static class DeterministicAnalysisEngine
         return new DeterministicFinding(
             Fingerprint(project.Name, relative, diagnostic.Id, line, col,
                 diagnostic.GetMessage()),
-            diagnostic.Id, "Compiler diagnostic: " + diagnostic.Id,
-            "compiler", severity, "compiler", "roslyn_compiler",
+            diagnostic.Id,
+            (projectAnalyzer ? "Analyzer diagnostic: " : "Compiler diagnostic: ") + diagnostic.Id,
+            projectAnalyzer ? "analyzer" : "compiler", severity,
+            projectAnalyzer ? "analyzer" : "compiler",
+            projectAnalyzer ? "roslyn_project_analyzer" : "roslyn_compiler",
             project.Name, path, relative, line, col, methodId,
             diagnostic.GetMessage(), excerpt,
-            severity == "error"
-                ? "Fix the compilation error and verify that the project builds."
-                : "Inspect the compiler diagnostic and determine whether action is required.");
+            projectAnalyzer
+                ? "Review the installed analyzer's rule documentation and verify the issue."
+                : severity == "error"
+                    ? "Fix the compilation error and verify that the project builds."
+                    : "Inspect the compiler diagnostic and determine whether action is required.");
     }
 
     public static DeterministicMethodMetrics BuildMetrics(
