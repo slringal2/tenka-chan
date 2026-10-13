@@ -114,6 +114,25 @@ app.MapPost("/api/workspace/scan", (DashboardState dashboard,
         return await dashboard.ScanAsync(ct);
     }));
 
+app.MapGet("/api/deterministic/rules", () =>
+    Results.Ok(new { version = DeterministicRuleCatalog.Version,
+        rules = DeterministicRuleCatalog.Rules }));
+
+app.MapGet("/api/deterministic/report", (DashboardState dashboard) =>
+    Results.Ok(dashboard.DeterministicReport));
+
+app.MapPost("/api/deterministic/run", (
+    DeterministicRunRequest request, DashboardState dashboard,
+    AutonomousReviewRunner runner, CancellationToken ct) =>
+    Safe(async () =>
+    {
+        if (runner.IsActive)
+            throw new InvalidOperationException(
+                "Stop active LLM review before rebuilding the deterministic report.");
+        return (object)await dashboard.AnalyzeDeterministicAsync(
+            request.MaxFindings, request.MaxMethodMetrics, ct);
+    }));
+
 app.MapGet("/api/findings", (DashboardState dashboard, string? q,
     string? category, int? offset, int? limit) =>
     Results.Ok(dashboard.Findings(q, category, offset ?? 0, limit ?? 100)));
@@ -205,6 +224,8 @@ async Task<IResult> Safe(Func<Task<object>> operation)
     }
 }
 
+public sealed record DeterministicRunRequest(int MaxFindings = 500,
+    int MaxMethodMetrics = 100);
 public sealed record StartAutonomousReviewRequest(int MaxMethods = 10, int MaxMinutes = 15);
 public sealed record OpenWorkspaceRequest(string Path);
 public sealed record CreateHypothesisRequest(string SnapshotId, string MethodId,
