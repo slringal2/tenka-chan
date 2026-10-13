@@ -96,7 +96,7 @@ public static class TargetFrameworkPolicy
         if (string.IsNullOrWhiteSpace(selector) ||
             selector.Length > 160 ||
             !Regex.IsMatch(selector,
-                @"^[A-Za-z_][A-Za-z0-9_+.<>-\x60\[\],*]*:[A-Za-z_][A-Za-z0-9_<>*\x60]*$",
+                @"^[A-Za-z_][A-Za-z0-9_.+<>\[\],*\x60-]*:[A-Za-z_][A-Za-z0-9_<>*\x60]*$",
                 RegexOptions.CultureInvariant))
             throw new ArgumentException(
                 "JIT filter must identify a class and method (e.g. Calculator:Sum), " +
