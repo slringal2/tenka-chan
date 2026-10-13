@@ -22,7 +22,7 @@ public sealed class DockerNet8AndJitSmokeTests
                 public class Net8Test
                 {
                     [Fact] public void Works() {
-                        Assert.Equal(20, Calc.Sum(new[] { 1, 2, 3 }));
+                        Assert.Equal(42, Calc.Sum(new[] { 1, 2, 3 }));
                     }
                 }
                 """);
@@ -68,7 +68,7 @@ public sealed class DockerNet8AndJitSmokeTests
             var report = Assert.IsType<TenkaChan.Mcp.Analysis.NativeCodeReport>(
                 execution.NativeDisassembly);
             Assert.NotEmpty(report.Methods);
-            var native = Assert.Contains(report.Methods,
+            var native = Assert.Single(report.Methods,
                 m => m.MethodName == "Sum" && m.DeclaringType.Contains("Calc"));
             Assert.True(native.Instructions.Count > 0,
                 $"RyuJIT produced a method listing but zero parsed instructions. " +
