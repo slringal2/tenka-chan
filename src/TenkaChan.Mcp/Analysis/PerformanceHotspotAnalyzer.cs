@@ -74,8 +74,8 @@ public static class PerformanceHotspotAnalyzer
                     var isArray = type is IArrayTypeSymbol;
                     if (isArray || type?.IsReferenceType == true)
                     {
-                        var typeName = type?.ToDisplayString() ?? "object";
-                        var regex = typeName == "System.Text.RegularExpressions.Regex";
+                        var createdTypeName = type?.ToDisplayString() ?? "object";
+                        var regex = createdTypeName == "System.Text.RegularExpressions.Regex";
                         AddSite(regex ? "regex_per_iteration" : "allocation_per_iteration",
                             n, depth, regex ? 11 : 4,
                             regex ? "Regex constructed within loop." :
@@ -87,8 +87,8 @@ public static class PerformanceHotspotAnalyzer
 
                 if (depth > 0 && n is VariableDeclaratorSyntax variable &&
                     variable.Initializer?.Value is { } initializer &&
-                    model.GetDeclaredSymbol(variable, cancellationToken) is ILocalSymbol local &&
-                    local.Type.SpecialType == SpecialType.System_Object &&
+                    model.GetDeclaredSymbol(variable, cancellationToken) is ILocalSymbol localSymbol &&
+                    localSymbol.Type.SpecialType == SpecialType.System_Object &&
                     model.GetTypeInfo(initializer, cancellationToken).Type?.IsValueType == true)
                 {
                     AddSite("boxing_per_iteration", initializer, depth, 6,
@@ -218,7 +218,7 @@ public static class PerformanceHotspotAnalyzer
                 if (!bySymbol.TryGetValue(method.OriginalDefinition, out var callee))
                     continue;
                 var dispatch = method.IsVirtual || method.IsAbstract ||
-                    method.ContainingType.TypeKind == TypeKind.Interface
+                    method.ContainingType?.TypeKind == TypeKind.Interface
                     ? "possible_dynamic_dispatch" : "direct_resolved";
                 ownedEdges.Add(new PendingEdge(definition.Summary.Id,
                     callee.Summary.Id, definition.Summary.File,
