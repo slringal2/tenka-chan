@@ -798,10 +798,11 @@ function renderHotspotReports() {
   const observations = $("hotspot-measured");
   clear(observations);
   $("hotspot-profile-unit").textContent = measured
-    ? measured.unit + " · " + count(measured.totalSamples) + " samples"
+    ? measured.unit + " · " + count(measured.totalSamples) +
+        (measured.profileType === "evented" ? " weighted intervals" : " samples")
     : "プロファイル未読込";
   if (!measured) {
-    empty(observations, "Speedscope sampled JSONを取り込んでください。");
+    empty(observations, "Speedscope sampled / evented JSONを取り込んでください。");
     return;
   }
   if (!measured.frames.length) {
@@ -811,7 +812,8 @@ function renderHotspotReports() {
   for (const frame of measured.frames.slice(0, 100)) {
     const description = "Self " + frame.exclusivePercent.toFixed(2) + "%" +
       " / Inclusive " + frame.inclusivePercent.toFixed(2) + "%" +
-      " · " + count(frame.sampleCount) + " samples" +
+      " · " + count(frame.sampleCount) +
+      (measured.profileType === "evented" ? " intervals" : " samples") +
       " · " + frame.matchStatus;
     add(observations, performanceRow(frame.frameName, description,
       "実測 " + frame.exclusivePercent.toFixed(2) + "%",
