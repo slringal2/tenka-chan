@@ -1,3 +1,5 @@
+// This is an in-process test fixture, never shipped as a compiler extension.
+#pragma warning disable RS1038, RS1041, RS1036, RS2008
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
