@@ -294,3 +294,22 @@ button.item-row:hover,.item-row.clickable:hover { background:#1b3037; border-col
   .review-hero-orb { display: none; }
   .review-buttons .button { flex: 1; }
 }
+
+
+/* Deterministic evidence screen */
+.det-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.det-controls label { display: flex; flex-direction: column; gap: 6px;
+  font-size: 11px; color: var(--muted-light); }
+.det-controls input { padding: 10px 12px; width: 170px; }
+.det-metrics { margin-top: 18px; margin-bottom: 18px; }
+#det-findings, #det-method-list { max-height: 740px; overflow: auto; padding-right: 4px; }
+#det-findings .finding-card { padding: 13px 14px; gap: 8px; }
+#det-findings .finding-card h3 { margin: 5px 0 2px; font-size: 12px; }
+#det-findings .finding-card p { font-size: 11px; }
+#det-findings .item-rule .rule-pill { color: #8be9d5; border-color: #3e786e; }
+#det-findings .finding-location { font-size: 10px; }
+#det-method-list .item-row { flex-wrap: wrap; }
+@media (max-width: 760px) {
+  .det-controls { flex-direction: column; align-items: stretch; }
+  .det-controls input { width: 100%; }
+}
