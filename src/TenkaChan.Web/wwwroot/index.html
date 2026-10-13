@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Tenka — C# Review Console</title>
+  <meta name="description" content="Tenka-chan: Roslyn, tests, performance and evidence in one local dashboard.">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" aria-label="ナビゲーション">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">T<span>✦</span></div>
+        <div><div class="brand-name">tenka<span class="brand-dot">.</span></div><div class="brand-sub">DEEP REVIEW CONSOLE</div></div>
+      </div>
+      <div class="nav-label">WORKSPACE</div>
+      <nav class="nav-list">
+        <button class="nav-item active" data-view="overview"><span class="nav-icon">◫</span><span>ダッシュボード</span></button>
+        <button class="nav-item" data-view="findings"><span class="nav-icon">◇</span><span>検出候補</span><span class="nav-count" id="nav-findings">—</span></button>
+        <button class="nav-item" data-view="methods"><span class="nav-icon">⌘</span><span>メソッド解析</span></button>
+        <button class="nav-item" data-view="evidence"><span class="nav-icon">◉</span><span>仮説・証拠</span></button>
+        <button class="nav-item" data-view="experiments"><span class="nav-icon">◈</span><span>テストと性能</span></button>
+      </nav>
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-bottom">
+        <div class="runtime"><span class="runtime-dot"></span><span id="runtime-status">ローカルサーバーへ接続中</span></div>
+        <div class="sidebar-note">MCP + Web UI<br>分析結果はローカルに保持されます。</div>
+        <a href="https://github.com/slringal2/tenka-chan" target="_blank" rel="noopener noreferrer" class="repo-link">GitHub リポジトリ <span>↗</span></a>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div class="breadcrumb"><span class="muted">TENKA / </span><strong id="breadcrumb">Dashboard</strong></div>
+        <div class="topbar-right"><span class="privacy-chip">● LOCAL ONLY</span><span class="top-separator"></span><span class="top-version">C# · Roslyn · .NET 10</span></div>
+      </header>
+
+      <div class="content">
+        <section class="view" id="view-overview">
+          <div class="hero">
+            <div class="hero-kicker"><span class="hero-line"></span> STATIC ANALYSIS + EVIDENCE</div>
+            <h1>コードの品質を、<br><em>推測ではなく証拠</em>で。</h1>
+            <p>Roslynによる構造解析から、テストの再現結果、性能比較まで。レビューの状況をひとつの画面に。</p>
+            <div class="hero-orb orb-a"></div><div class="hero-orb orb-b"></div>
+          </div>
+
+          <div class="section-title"><div><h2>ワークスペース</h2><p>信頼できる.NET Solution / Projectを読み込みます。</p></div></div>
+          <form class="workspace-form" id="workspace-form">
+            <div class="workspace-input-group"><label for="workspace-path">ソリューションの絶対パス</label><input id="workspace-path" name="path" type="text" spellcheck="false" autocomplete="off" required placeholder="C:\Projects\MyApp\MyApp.sln" /></div>
+            <button type="submit" class="button button-primary" id="open-button">読み込む <span>→</span></button>
+            <button type="button" class="button button-outline" id="scan-button" disabled>全体をスキャン <span>↗</span></button>
+          </form>
+          <div class="inline-help" id="workspace-help">最初に TENKA_ALLOWED_ROOTS と TENKA_TRUST_MSBUILD=1 を設定してください。</div>
+
+          <div class="metrics" aria-label="解析状況">
+            <article class="metric-card"><div class="metric-top"><span>PROJECTS</span><span class="metric-glyph">▧</span></div><div class="metric-value" id="metric-projects">—</div><div class="metric-caption">読み込み済みのプロジェクト</div></article>
+            <article class="metric-card"><div class="metric-top"><span>METHODS</span><span class="metric-glyph">⌘</span></div><div class="metric-value" id="metric-methods">—</div><div class="metric-caption">Roslynで解析可能なメソッド</div></article>
+            <article class="metric-card"><div class="metric-top"><span>REVIEW CANDIDATES</span><span class="metric-glyph orange">◇</span></div><div class="metric-value" id="metric-findings">—</div><div class="metric-caption">検証が必要な検出候補</div></article>
+            <article class="metric-card"><div class="metric-top"><span>OPEN HYPOTHESES</span><span class="metric-glyph purple">◎</span></div><div class="metric-value" id="metric-hypotheses">—</div><div class="metric-caption">保存済みのレビュー仮説</div></article>
+          </div>
+          <div class="two-column">
+            <article class="panel">
+              <div class="panel-header"><div><h3>優先レビュー対象</h3><p>複雑さ・ループ・非同期処理に基づく順序</p></div><button class="text-link" data-go="methods">すべて見る ↗</button></div>
+              <div id="overview-targets" class="stack-list"><div class="empty-mini">ワークスペースが未選択です。</div></div>
+            </article>
+            <article class="panel">
+              <div class="panel-header"><div><h3>検出カテゴリ</h3><p>ルールの一致はバグ確定を意味しません</p></div><button class="text-link" data-go="findings">候補を見る ↗</button></div>
+              <div id="category-breakdown" class="category-list"><div class="empty-mini">スキャン後に集計を表示します。</div></div>
+            </article>
+          </div>
+          <article class="panel diagnostic-panel">
+            <div class="panel-header"><div><h3>コンパイル診断</h3><p>Roslynが報告したエラー・警告</p></div><span id="diagnostics-summary" class="subtle-chip">未スキャン</span></div>
+            <div id="diagnostics-list" class="diagnostic-list"><div class="empty-mini">スキャンを実行すると診断結果が表示されます。</div></div>
+          </article>
+        </section>
+
+        <section class="view" id="view-findings" hidden>
+          <div class="page-heading"><div class="eyebrow">FINDINGS / ROSLYN RULES</div><h1>検出候補</h1><p>確認が必要なコードのパターンを一覧表示します。性能劣化・不具合の確定結果ではありません。</p></div>
+          <div class="toolbar">
+            <input id="finding-search" class="search-input" type="search" placeholder="ルール、メッセージ、ファイル名で検索…" aria-label="候補を検索">
+            <select id="finding-category" aria-label="カテゴリで絞り込み"><option value="all">すべてのカテゴリ</option></select>
+            <span id="finding-total" class="results-count">0 件</span>
+          </div>
+          <div id="findings-list" class="stack-list large"></div>
+        </section>
+
+        <section class="view" id="view-methods" hidden>
+          <div class="page-heading"><div class="eyebrow">ROSLYN / CODE EXPLORER</div><h1>メソッド解析</h1><p>危険度の確率ではなく、構文の複雑さによる調査優先度を表示します。</p></div>
+          <div class="toolbar"><input id="method-search" class="search-input" type="search" placeholder="メソッド名・パスを検索…" aria-label="メソッドを検索"><span class="results-count">スコアの高い順</span></div>
+          <div id="methods-list" class="stack-list large"></div>
+        </section>
+
+        <section class="view" id="view-evidence" hidden>
+          <div class="page-heading"><div class="eyebrow">HYPOTHESES / EVIDENCE</div><h1>仮説と証拠</h1><p>LLMの推測と実験で確認した事実を分けて管理します。記録はSQLiteに保存されます。</p></div>
+          <div class="two-column evidence-layout">
+            <article class="panel">
+              <div class="panel-header"><div><h3>レビュー台帳</h3><p>直近の仮説と判定状態</p></div><button class="text-link" id="refresh-hypotheses">更新 ↻</button></div>
+              <div id="hypotheses-list" class="stack-list"></div>
+            </article>
+            <article class="panel">
+              <div class="panel-header"><div><h3>新しい仮説を登録</h3><p>正誤はテストなどで別途検証します</p></div></div>
+              <form id="hypothesis-form" class="form-stack">
+                <label>メソッドID<input name="methodId" id="hyp-method" autocomplete="off" placeholder="メソッド解析から選択" required></label>
+                <label>カテゴリ<select name="category"><option value="correctness">Correctness</option><option value="performance">Performance</option><option value="allocation">Allocation</option><option value="concurrency">Concurrency</option><option value="resource">Resource</option><option value="contract">Contract</option><option value="security">Security</option><option value="other">Other</option></select></label>
+                <label>仮説<textarea name="claim" rows="3" placeholder="どの条件で何が問題になる可能性があるか" required></textarea></label>
+                <label>失敗条件<textarea name="failureCondition" rows="2" placeholder="具体的な再現条件・期待される不変条件" required></textarea></label>
+                <button type="submit" class="button button-primary">仮説を保存する →</button>
+              </form>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" id="view-experiments" hidden>
+          <div class="page-heading"><div class="eyebrow">TESTS / PERFORMANCE</div><h1>テストと性能</h1><p>生成テストを隔離実行し、TRX・BenchmarkDotNetの観測結果を確認します。</p></div>
+          <div class="two-column experiments-layout">
+            <article class="panel">
+              <div class="panel-header"><div><h3>実験履歴</h3><p>保存されたテスト・ベンチマーク</p></div><button class="text-link" id="refresh-experiments">更新 ↻</button></div>
+              <div id="experiments-list" class="stack-list"></div>
+            </article>
+            <article class="panel">
+              <div class="panel-header"><div><h3>新しい実験を準備</h3><p>元コードは変更しません</p></div></div>
+              <form id="experiment-form" class="form-stack">
+                <label>リポジトリの絶対パス<input name="repositoryRoot" id="experiment-root" required placeholder="C:\Projects\MyApp"></label>
+                <label>対象 .csproj（リポジトリからの相対パス）<input name="projectRelativePath" required placeholder="src\MyApp\MyApp.csproj"></label>
+                <label>実験種別<select name="kind"><option value="test">xUnitテスト</option><option value="benchmark">BenchmarkDotNet</option></select></label>
+                <label>C#コード<textarea name="generatedCode" rows="9" spellcheck="false" class="code-input" required placeholder="using Xunit;&#10;public class MyTests {&#10;    [Fact] public void Case() { /* ... */ }&#10;}"></textarea></label>
+                <button class="button button-primary" type="submit">実験を準備する →</button>
+              </form>
+              <p class="form-note" id="docker-note">Docker実行は許可されていません。TENKA_ENABLE_DOCKER=1で有効にできます。</p>
+            </article>
+          </div>
+          <article class="panel comparison-panel">
+            <div class="panel-header"><div><h3>性能差を比較</h3><p>同じワークロード・実行環境で保存したBenchmarkDotNet結果を比較</p></div></div>
+            <form class="comparison-form" id="compare-form">
+              <label>BASELINE ID<input name="baselineExperimentId" required placeholder="実験ID"></label>
+              <label>CANDIDATE ID<input name="candidateExperimentId" required placeholder="実験ID"></label>
+              <button class="button button-outline" type="submit">比較する ↗</button>
+            </form>
+            <div id="comparison-result"></div>
+          </article>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="method-dialog" class="detail-dialog">
+    <div class="detail-header"><div><div class="eyebrow">ROSLYN INSPECTOR</div><h2 id="method-detail-title">メソッド詳細</h2><div class="detail-sub" id="method-detail-sub"></div></div><button class="icon-button" id="close-method" aria-label="閉じる">×</button></div>
+    <div class="detail-body" id="method-detail-body"></div>
+    <div class="detail-footer"><button class="button button-outline" id="method-plan-button">境界値テスト案を表示</button><button class="button button-primary" id="method-hyp-button">このメソッドの仮説を作る →</button></div>
+  </dialog>
+
+  <dialog id="evidence-dialog" class="detail-dialog">
+    <div class="detail-header"><div><div class="eyebrow">EVIDENCE RECORD</div><h2 id="evidence-detail-title">仮説の詳細</h2></div><button class="icon-button" id="close-evidence" aria-label="閉じる">×</button></div>
+    <div class="detail-body" id="evidence-detail-body"></div>
+  </dialog>
+
+  <dialog id="experiment-dialog" class="detail-dialog">
+    <div class="detail-header"><div><div class="eyebrow">EXECUTION REPORT</div><h2 id="experiment-detail-title">実験結果</h2></div><button class="icon-button" id="close-experiment" aria-label="閉じる">×</button></div>
+    <div class="detail-body" id="experiment-detail-body"></div>
+  </dialog>
+
+  <div id="toast-container" class="toast-container" role="status" aria-live="polite"></div>
+</body>
+</html>
