@@ -44,14 +44,20 @@ public static class RuleScanner
                     call, "latency and concurrency measurements");
             }
 
+            // Only Count() > 0 or Count() != 0 can be compared with Any()
+            // without changing the numeric threshold. Query providers and
+            // side-effecting sequences still require semantic verification.
             if (InsideLoop(call) && methodName == "Count" && IsLinq(symbol)
                 && call.Parent is BinaryExpressionSyntax binary
                 && (binary.IsKind(SyntaxKind.GreaterThanExpression)
-                    || binary.IsKind(SyntaxKind.NotEqualsExpression)))
+                    || binary.IsKind(SyntaxKind.NotEqualsExpression))
+                && ReferenceEquals(binary.Left, call)
+                && model.GetConstantValue(binary.Right).Value is int countLimit
+                && countLimit == 0)
             {
                 Add("PERF1004", "enumeration",
-                    "LINQ Count() in a comparison may enumerate unnecessarily; check semantics and consider Any().",
-                    call, "behavioral tests plus enumeration-count benchmark");
+                    "LINQ Count() compared with zero inside a loop; Any() may avoid enumeration.",
+                    call, "verify side effects/provider semantics and compare Count() with Any()");
             }
         }
 
@@ -136,13 +142,38 @@ public static class RuleScanner
         }
     }
 
-    private static bool InsideAsyncMethod(SyntaxNode node) =>
-        node.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault()
-            ?.Modifiers.Any(SyntaxKind.AsyncKeyword) == true;
+    private static bool InsideAsyncMethod(SyntaxNode node)
+    {
+        foreach (var parent in node.Ancestors())
+        {
+            if (parent is MethodDeclarationSyntax method)
+                return method.Modifiers.Any(SyntaxKind.AsyncKeyword);
+            if (parent is LocalFunctionStatementSyntax local)
+                return local.Modifiers.Any(SyntaxKind.AsyncKeyword);
+            if (parent is AnonymousFunctionExpressionSyntax lambda)
+                return lambda.AsyncKeyword.IsKind(SyntaxKind.AsyncKeyword);
+            if (parent is ConstructorDeclarationSyntax or AccessorDeclarationSyntax)
+                return false;
+        }
+        return false;
+    }
 
-    private static bool InsideLoop(SyntaxNode node) =>
-        node.Ancestors().Any(parent => parent is ForStatementSyntax or ForEachStatementSyntax
-            or ForEachVariableStatementSyntax or WhileStatementSyntax or DoStatementSyntax);
+    private static bool InsideLoop(SyntaxNode node)
+    {
+        foreach (var parent in node.Ancestors())
+        {
+            if (parent is ForStatementSyntax or ForEachStatementSyntax
+                or ForEachVariableStatementSyntax or WhileStatementSyntax or DoStatementSyntax)
+                return true;
+            // Loops outside a lambda/local function do not execute each time
+            // that nested function's body is invoked.
+            if (parent is MethodDeclarationSyntax or LocalFunctionStatementSyntax
+                or AnonymousFunctionExpressionSyntax or ConstructorDeclarationSyntax
+                or AccessorDeclarationSyntax)
+                return false;
+        }
+        return false;
+    }
 
     private static bool IsLinq(IMethodSymbol? symbol) =>
         symbol?.ContainingType.ToDisplayString() is "System.Linq.Enumerable" or "System.Linq.Queryable";
