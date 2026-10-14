@@ -3,6 +3,9 @@ namespace TenkaChan.Mcp.Analysis;
 /// <summary>
 /// Bounded streaming reducer. Collection lifetimes, suspension windows and
 /// overlapping waiter durations remain separate. Pairing never crosses PID/CLR.
+/// Suspension phases additionally match the initiating thread, following the
+/// CLR convention used by TraceEvent's TraceManagedProcess: a SampleProfiler
+/// suspension on another thread must not consume a GC restart or pending start.
 /// </summary>
 public sealed class RuntimeCostAccumulator
 {
@@ -32,7 +35,8 @@ public sealed class RuntimeCostAccumulator
         public double? First, Last;
         public double PauseTotal, PauseMax, FullyTotal, WaitTotal, WaitMax;
         public ulong AllocationBytes;
-        public Pause? PendingPause;
+        public readonly Dictionary<int, Pause> PendingPauses = [];
+        public readonly Dictionary<int, int> ExcludedSuspensions = [];
         public readonly Dictionary<int, RuntimeCostEvent?> PendingGc = [];
         public readonly Dictionary<int, double?> PendingContention = [];
         public readonly Dictionary<int, int> Generations = [];
@@ -61,15 +65,17 @@ public sealed class RuntimeCostAccumulator
             s.Issue("out_of_order_timestamp");
             foreach (var key in s.PendingGc.Keys.ToArray()) s.PendingGc[key] = null;
             foreach (var key in s.PendingContention.Keys.ToArray()) s.PendingContention[key] = null;
-            if (s.PendingPause is not null) s.PendingPause.Invalid = true;
+            foreach (var pending in s.PendingPauses.Values) pending.Invalid = true;
             return;
         }
         s.First ??= e.TimeMs; s.Last = e.TimeMs;
+        s.PendingPauses.TryGetValue(e.ThreadId, out var pendingPause);
         switch (e.Kind)
         {
             case "gc_start":
                 s.GcStarts++;
-                if (e.Generation is int gen) s.Generations[gen] = s.Generations.GetValueOrDefault(gen) + 1;
+                if (e.Generation is >= 0 and <= 2) s.Generations[e.Generation.Value] = s.Generations.GetValueOrDefault(e.Generation.Value) + 1;
+                else s.Issue("unknown_gc_generation");
                 if (e.Count is not int count) { s.Issue("gc_count_missing"); break; }
                 if (s.PendingGc.ContainsKey(count)) { s.PendingGc[count] = null; s.Issue("duplicate_gc_start"); }
                 else if (s.PendingGc.Count < 1024) s.PendingGc.Add(count, e);
@@ -83,26 +89,36 @@ public sealed class RuntimeCostAccumulator
                     s.Cycles.Add(new(start.Count!.Value, start.Generation, start.GcType, start.Reason, start.TimeMs, e.TimeMs));
                 break;
             case "suspend_start":
-                if (s.PendingPause is not null) { s.PendingPause.Invalid = true; s.Issue("duplicate_suspend_start"); }
-                else s.PendingPause = new(e);
+                if (e.Reason is int reason && reason is not (1 or 6))
+                {
+                    // Known non-GC reasons are expected observations, not lost GC evidence.
+                    if (s.ExcludedSuspensions.Count < 64 || s.ExcludedSuspensions.ContainsKey(reason))
+                        s.ExcludedSuspensions[reason] = s.ExcludedSuspensions.GetValueOrDefault(reason) + 1;
+                    else s.Issue("suspension_reason_group_limit");
+                }
+                else if (e.Reason is null) s.Issue("suspension_reason_missing");
+                if (pendingPause is not null) { pendingPause.Invalid = true; s.Issue("duplicate_suspend_start"); }
+                else if (s.PendingPauses.Count < 1024) s.PendingPauses.Add(e.ThreadId, new(e));
+                else s.Issue("pending_suspension_limit");
                 break;
             case "suspend_stop":
-                if (s.PendingPause is null) s.Issue("orphan_suspend_complete");
-                else if (s.PendingPause.Suspended is not null || s.PendingPause.Restart is not null)
-                { s.PendingPause.Invalid = true; s.Issue("invalid_suspend_sequence"); }
-                else s.PendingPause.Suspended = e.TimeMs;
+                if (pendingPause is null) s.Issue("orphan_suspend_complete");
+                else if (pendingPause.Suspended is not null || pendingPause.Restart is not null)
+                { pendingPause.Invalid = true; s.Issue("invalid_suspend_sequence"); }
+                else pendingPause.Suspended = e.TimeMs;
                 break;
             case "restart_start":
-                if (s.PendingPause is null) s.Issue("orphan_restart_start");
-                else if (s.PendingPause.Restart is not null)
-                { s.PendingPause.Invalid = true; s.Issue("duplicate_restart_start"); }
-                else s.PendingPause.Restart = e.TimeMs;
+                if (pendingPause is null) s.Issue("orphan_restart_start");
+                else if (pendingPause.Restart is not null)
+                { pendingPause.Invalid = true; s.Issue("duplicate_restart_start"); }
+                else pendingPause.Restart = e.TimeMs;
                 break;
             case "restart_stop":
-                var pause = s.PendingPause; s.PendingPause = null;
-                if (pause is null || pause.Invalid) { s.Issue("unmatched_restart_stop"); break; }
-                if (pause.Start.Reason is not (1 or 6)) { s.Issue("non_gc_or_unknown_suspension"); break; }
-                var window = new RuntimeGcPause(pause.Start.TimeMs, pause.Suspended, pause.Restart, e.TimeMs, pause.Start.Reason.Value);
+                s.PendingPauses.Remove(e.ThreadId);
+                if (pendingPause is null || pendingPause.Invalid) { s.Issue("unmatched_restart_stop"); break; }
+                if (pendingPause.Start.Reason is not (1 or 6)) break;
+                var window = new RuntimeGcPause(pendingPause.Start.TimeMs, pendingPause.Suspended, pendingPause.Restart, e.TimeMs, pendingPause.Start.Reason.Value)
+                { InitiatingThreadId = e.ThreadId };
                 s.PauseCount++; s.PauseTotal = AddFinite(s.PauseTotal, window.SuspensionWindowMs);
                 s.PauseMax = Math.Max(s.PauseMax, window.SuspensionWindowMs);
                 if (window.FullySuspendedMs is double full && full >= 0) { s.FullyCount++; s.FullyTotal = AddFinite(s.FullyTotal, full); }
@@ -171,7 +187,7 @@ public sealed class RuntimeCostAccumulator
             var s = pair.Value;
             var issues = new Dictionary<string, int>(s.Issues, StringComparer.Ordinal);
             if (s.PendingGc.Count > 0) issues["unclosed_gc_starts"] = s.PendingGc.Count;
-            if (s.PendingPause is not null) issues["unclosed_suspension"] = 1;
+            if (s.PendingPauses.Count > 0) issues["unclosed_suspension"] = s.PendingPauses.Count;
             if (s.PendingContention.Count > 0) issues["unclosed_contention_starts"] = s.PendingContention.Count;
             var hints = new List<RuntimeCostHint>();
             if (s.PauseCount > 0)
@@ -200,6 +216,7 @@ public sealed class RuntimeCostAccumulator
                     ["monitorContention"] = s.ContentionStops > 0 ? "stop_events_observed" : "not_observed__not_proof_of_zero",
                     ["onCpu"] = "not_collected_by_this_analysis", ["otherWaits"] = "not_collected_by_this_analysis"
                 }, s.GcStops > s.Cycles.Count || s.PauseCount > s.Pauses.Count || s.Types.Count > _options.MaxRows ||
-                    s.Threads.Count > _options.MaxRows || s.Issues.Keys.Any(k => k.EndsWith("_limit", StringComparison.Ordinal)), hints);
+                    s.Threads.Count > _options.MaxRows || s.Issues.Keys.Any(k => k.EndsWith("_limit", StringComparison.Ordinal)), hints)
+            { ExcludedSuspensionStartsByReason = new Dictionary<int,int>(s.ExcludedSuspensions) };
         }).ToArray();
 }

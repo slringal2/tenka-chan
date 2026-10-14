@@ -1,4 +1,3 @@
-using System.Text.Json;
 using TenkaChan.Mcp.Analysis;
 using TenkaChan.Mcp.Experiments;
 using TenkaChan.Mcp.Security;
@@ -82,10 +81,36 @@ public sealed class RuntimeCostTests
         Assert.Empty(s.Collections); Assert.Contains("duplicate_gc_start", s.IncompleteEvidence.Keys);
     }
     [Fact]
-    public void NonGcSuspensionsAreNotReportedAsGcPauses()
+    public void NonGcSuspensionsAreNotReportedAsGcPausesOrDataLoss()
     {
         var s = One(E("suspend_start", 1) with { Reason = 5 }, E("restart_stop", 10));
-        Assert.Equal(0, s.GcSuspensionWindows); Assert.Contains("non_gc_or_unknown_suspension", s.IncompleteEvidence.Keys);
+        Assert.Equal(0, s.GcSuspensionWindows); Assert.Equal(1, s.ExcludedSuspensionStartsByReason[5]);
+        Assert.Empty(s.IncompleteEvidence);
+    }
+    [Theory]
+    [InlineData(5)] [InlineData(9)] [InlineData(0)]
+    public void InterleavedNonGcThreadCannotConsumeGcSuspensionPhases(int otherReason)
+    {
+        var s = One(E("suspend_start", 1, 2) with { Reason = otherReason },
+            E("suspend_start", 2, 1) with { Reason = 1 },
+            E("suspend_stop", 3, 2), E("restart_start", 4, 2), E("restart_stop", 5, 2),
+            E("suspend_stop", 6, 1), E("restart_start", 9, 1), E("restart_stop", 10, 1));
+        var pause = Assert.Single(s.Pauses); Assert.Equal(1, pause.InitiatingThreadId);
+        Assert.Equal(8d, pause.SuspensionWindowMs); Assert.Equal(3d, pause.FullySuspendedMs);
+        Assert.Equal(1, s.ExcludedSuspensionStartsByReason[otherReason]); Assert.Empty(s.IncompleteEvidence);
+    }
+    [Fact]
+    public void WrongThreadRestartCannotCloseGcWindow()
+    {
+        var s = One(E("suspend_start", 1, 1) with { Reason = 1 }, E("restart_stop", 10, 2));
+        Assert.Empty(s.Pauses); Assert.Contains("unclosed_suspension", s.IncompleteEvidence.Keys);
+        Assert.Contains("unmatched_restart_stop", s.IncompleteEvidence.Keys);
+    }
+    [Fact]
+    public void DuplicateSameThreadSuspensionStillFailsClosed()
+    {
+        var s = One(E("suspend_start", 1) with { Reason = 1 }, E("suspend_start", 2) with { Reason = 1 }, E("restart_stop", 10));
+        Assert.Empty(s.Pauses); Assert.Contains("duplicate_suspend_start", s.IncompleteEvidence.Keys);
     }
     [Fact]
     public void IncompletePhasesDoNotInventFullySuspendedTime()

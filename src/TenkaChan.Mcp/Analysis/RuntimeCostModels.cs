@@ -22,6 +22,7 @@ public sealed record RuntimeGcCycle(int Count, int? Generation, int? Type, int? 
 }
 public sealed record RuntimeGcPause(double StartMs, double? SuspendedMs, double? RestartMs, double EndMs, int Reason)
 {
+    public int InitiatingThreadId { get; init; }
     public double SuspensionWindowMs => EndMs - StartMs;
     public double? FullySuspendedMs => SuspendedMs is double s && RestartMs is double r ? r - s : null;
 }
@@ -48,4 +49,6 @@ public sealed record RuntimeCostSummary(int ProcessId, int ClrInstanceId, int Ob
 {
     public double? CpuMilliseconds => null;
     public double? OtherWaitMilliseconds => null;
+    public string DurationAggregation => "sum_of_observed_windows_and_waiters_not_disjoint_wall_time";
+    public IReadOnlyDictionary<int,int> ExcludedSuspensionStartsByReason { get; init; } = new Dictionary<int,int>();
 }
