@@ -14,7 +14,8 @@ public sealed class PerformanceEvidenceService(
 {
     public async Task<PerformanceTriageReport> TriageAsync(
         string? jitExperimentId = null, int maxObserved = 50,
-        int maxStatic = 30, CancellationToken cancellationToken = default)
+        int maxStatic = 30, string? benchmarkExperimentId = null,
+        CancellationToken cancellationToken = default)
     {
         var snapshot = roslyn.CurrentSnapshotId;
         var staticReport = await roslyn.AnalyzePerformanceHotspotsAsync(
@@ -27,7 +28,10 @@ public sealed class PerformanceEvidenceService(
             throw new InvalidOperationException(
                 "Workspace changed during evidence collection; reopen or retry.");
         return PerformanceEvidenceJoiner.Build(snapshot, staticReport, profile, correlated,
-            jitExperimentId, maxObserved, maxStatic);
+            jitExperimentId, maxObserved, maxStatic) with
+        {
+            Benchmarks = LoadBenchmarkEvidence(benchmarkExperimentId)
+        };
     }
 
     public async Task<PerformanceMethodDossier> InvestigateAsync(
@@ -43,7 +47,8 @@ public sealed class PerformanceEvidenceService(
         if (assemblyFile is not null && jitExperimentId is null)
             throw new ArgumentException("A JIT experiment ID is required for captured binary inspection.");
 
-        var triage = await TriageAsync(jitExperimentId, 200, 100, cancellationToken);
+        var triage = await TriageAsync(jitExperimentId,
+            maxObserved: 200, maxStatic: 100, cancellationToken: cancellationToken);
         // Never choose a method by approximate name if the profiling match was
         // ambiguous. Only exact Roslyn method IDs from a ranked result qualify.
         var entry = triage.Observed.FirstOrDefault(x => x.MethodId == methodId)
@@ -116,6 +121,40 @@ public sealed class PerformanceEvidenceService(
             };
         }
         return dossier;
+    }
+
+    private StandaloneBenchmarkEvidence? LoadBenchmarkEvidence(string? experimentId)
+    {
+        if (experimentId is null) return null;
+        var (manifest, _) = experiments.Read(experimentId);
+        var report = experiments.ReadExecutionResult(experimentId);
+        return SummarizeBenchmark(experimentId, manifest, report);
+    }
+
+    internal static StandaloneBenchmarkEvidence SummarizeBenchmark(
+        string experimentId, ExperimentManifest manifest, ExecutionResult report)
+    {
+        if (manifest.Id != experimentId || report.ExperimentId != experimentId ||
+            manifest.Kind != "benchmark" || report.Kind != "benchmark" ||
+            report.Status is not ("benchmark_completed" or "benchmark_partial") ||
+            report.Benchmarks.Count == 0)
+            throw new InvalidOperationException(
+                "Expected a completed or explicitly partial BenchmarkDotNet experiment.");
+        var cases = report.Benchmarks.Take(100)
+            .Select(x => new StandaloneBenchmarkCase(x.CaseId, x.SampleCount,
+                x.MeanNanoseconds, x.MedianNanoseconds,
+                x.AllocatedBytesPerOperation, x.EnvironmentFingerprint))
+            .ToArray();
+        return new StandaloneBenchmarkEvidence(experimentId,
+            manifest.TargetFramework, report.Status, cases,
+            [
+                "These are independent BenchmarkDotNet observations. Benchmark case names do not uniquely map to sampled profiler frames or the same workload.",
+                "Do not infer a performance regression without comparable baseline/candidate runs, environment validation and independent samples.",
+                "Mean and median are time per benchmark operation, not total application CPU usage.",
+                report.Benchmarks.Count > cases.Length
+                    ? "Benchmark cases were truncated for the evidence report."
+                    : "All available benchmark cases fit within the 100-case display limit."
+            ]);
     }
 
     private NativeCodeReport? LoadNative(string? experimentId)
