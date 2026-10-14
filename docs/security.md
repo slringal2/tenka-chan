@@ -94,3 +94,22 @@ such as a dedicated VM. Real host JIT output is useful for diagnosing
 Windows-specific code generation, but it still does **not** measure CPU
 usage or prove an optimization.
 
+
+
+### SDK8/9 disposable Docker overlay
+
+The .NET 8 SDK fails to create NuGet's named migration mutex on some
+systems when the container **root filesystem itself** is marked
+read-only, even if writable tmpfs is provided for HOME and /tmp.
+Tenka's isolated SDK8/9 experiments therefore use a **disposable
+writable container overlay**. The container is still deleted after
+each run and has no network access, dropped Linux capabilities,
+no-new-privileges, CPU/memory/PID quotas, and read-only source,
+generated experiment and NuGet cache bind mounts. Only the dedicated
+artifact output mount is writable on the host.
+
+SDK10 and later retain an immutable container root unless separately
+validated. These restrictions are defense in depth, not proof of
+protection against every container escape. The trusted local-host
+execution mode remains entirely unsandboxed and is for explicitly
+trusted binaries only.
