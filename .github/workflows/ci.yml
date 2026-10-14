@@ -13,7 +13,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: |
+            10.0.x
+            8.0.x
       - run: dotnet restore TenkaChan.slnx
       - run: dotnet build TenkaChan.slnx --configuration Release --no-restore
       - run: dotnet test TenkaChan.slnx --configuration Release --no-build
@@ -21,7 +23,7 @@ jobs:
         run: dotnet build tests/Fixtures/TrustedLocalJitApp/TrustedLocalJitApp.csproj --configuration Release
       - name: Verify actual host-native JIT capture without Docker
         env:
-          TENKA_LOCAL_JIT_SMOKE_ASSEMBLY: ${{ github.workspace }}/tests/Fixtures/TrustedLocalJitApp/bin/Release/net10.0/TrustedLocalJitApp.dll
+          TENKA_LOCAL_JIT_SMOKE_ASSEMBLY: ${{ github.workspace }}/tests/Fixtures/TrustedLocalJitApp/bin/Release/net8.0/TrustedLocalJitApp.dll
         run: dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj --configuration Release --no-build --filter FullyQualifiedName~TrustedLocalJitRunnerTests
       - name: Validate browser JavaScript syntax
         run: node --check src/TenkaChan.Web/wwwroot/app.js
@@ -91,7 +93,7 @@ jobs:
           python3 -c 'import json; x=json.load(open("/tmp/tenka-web-hotspot-cached.json")); assert x["staticAnalysis"]["totalSites"] >= 1, x; assert x["sampledProfile"]["totalSamples"] == 3, x'
 
 
-          export LOCAL_JIT_BINARY="$GITHUB_WORKSPACE/tests/Fixtures/TrustedLocalJitApp/bin/Release/net10.0/TrustedLocalJitApp.dll"
+          export LOCAL_JIT_BINARY="$GITHUB_WORKSPACE/tests/Fixtures/TrustedLocalJitApp/bin/Release/net8.0/TrustedLocalJitApp.dll"
           local_payload=$(python3 -c 'import json,os; print(json.dumps({"assemblyPath":os.environ["LOCAL_JIT_BINARY"],"jitFilter":"LocalJitFixture:Compute","trustedBinary":True,"timeoutSeconds":45}))')
           curl --silent --show-error --fail -X POST http://127.0.0.1:5077/api/local-jit/capture \
             -H 'Content-Type: application/json' -H "X-Tenka-CSRF: $token" \
