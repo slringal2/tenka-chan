@@ -26,6 +26,7 @@ jobs:
         run: |
           dotnet restore tests/Fixtures/Net8XunitCache/Net8XunitCache.csproj
           dotnet restore tests/Fixtures/BenchmarkCache/BenchmarkCache.csproj
+          dotnet restore tests/Fixtures/BenchmarkCache/BenchmarkCache.csproj -p:TargetFramework=net8.0
       - run: node --check src/TenkaChan.Web/wwwroot/app.js
       - name: Actual host xUnit and BenchmarkDotNet with explicit test authorization
         shell: pwsh
