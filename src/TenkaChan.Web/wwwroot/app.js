@@ -1118,6 +1118,8 @@ async function runStaticHotspotScan(event) {
       method: "POST", body: { maxMethods, maxSites }
     });
     renderHotspotReports();
+    state.performanceTriage = null;
+    renderPerformanceTriage();
     toast(count(state.hotspotStatic.totalSites) + " 件の静的コスト候補を解析しました。");
   });
 }
@@ -1135,6 +1137,8 @@ async function importSampledHotspot(event) {
       method: "POST", body: { filePath, profileIndex, maxFrames: 100 }
     });
     renderHotspotReports();
+    state.performanceTriage = null;
+    renderPerformanceTriage();
     toast(count(state.hotspotMeasured.linkedFrames) +
       " 件の実測フレームをRoslynメソッドへ対応付けました。");
   });
