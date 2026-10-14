@@ -117,6 +117,9 @@ The stdio MCP tools are:
 
 - `trusted_local_jit_capture(assemblyPath,jitFilter,trustedBinary,timeoutSeconds)`
 - `trusted_local_jit_result(runId)`
+- `trusted_local_jit_correlate(runId)` — requires a loaded Roslyn workspace;
+  only uniquely identified methods get a source-method link (not an exact
+  machine-instruction-to-C#-line mapping).
 
 For MCP, explicitly pass `trustedBinary=true` *and* enable
 `TENKA_ENABLE_LOCAL_EXEC=1` at startup. Neither condition can substitute
