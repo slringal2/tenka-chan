@@ -21,6 +21,8 @@ builder.Services.AddSingleton<RoslynReviewService>();
 builder.Services.AddSingleton<DashboardState>();
 builder.Services.AddSingleton<ExperimentStore>();
 builder.Services.AddSingleton<DockerExecutor>();
+builder.Services.AddSingleton<TrustedLocalJitRunner>();
+builder.Services.AddSingleton<TrustedLocalProcessProfiler>();
 builder.Services.AddSingleton<BenchmarkRunComparer>();
 builder.Services.AddSingleton<NativeExperimentComparer>();
 builder.Services.AddSingleton<ReviewLedger>();
@@ -93,6 +95,7 @@ app.MapGet("/api/session", (WorkspaceGuard guard) => Results.Ok(new
     listening = "loopback",
     msbuildEnabled = guard.TrustMsBuild,
     dockerEnabled = guard.AllowDocker,
+    trustedLocalExecutionEnabled = Environment.GetEnvironmentVariable("TENKA_ENABLE_LOCAL_EXEC") == "1",
     model = Environment.GetEnvironmentVariable("TENKA_LLM_MODEL") ?? "local",
     llmEndpoint = LocalLlmSettings.FromEnvironment().Endpoint.ToString(),
     port
@@ -114,6 +117,37 @@ app.MapPost("/api/workspace/scan", (DashboardState dashboard,
         if (runner.IsActive) throw new InvalidOperationException("Stop active review before rescanning.");
         return await dashboard.ScanAsync(ct);
     }));
+
+app.MapPost("/api/local-performance/measure",
+    (LocalPerformanceRequest request, TrustedLocalProcessProfiler runner,
+        CancellationToken ct) =>
+    Safe(async () => (object)await runner.MeasureAsync(
+        request.BaselineAssembly, request.TrustedBinary,
+        request.CandidateAssembly, request.Arguments, request.Repetitions,
+        request.Warmups, request.TimeoutSeconds, ct)));
+
+app.MapGet("/api/local-performance/{id}",
+    (TrustedLocalProcessProfiler runner, string id) =>
+    Safe(() => Task.FromResult((object)runner.Get(id))));
+
+app.MapPost("/api/local-jit/capture",
+    (LocalJitCaptureRequest request, TrustedLocalJitRunner runner, CancellationToken ct) =>
+    Safe(async () => (object)await runner.CaptureAsync(
+        request.AssemblyPath, request.JitFilter, request.TrustedBinary,
+        request.TimeoutSeconds, request.Arguments, ct)));
+
+app.MapGet("/api/local-jit/{id}/correlate",
+    (TrustedLocalJitRunner runner, DashboardState dashboard,
+        string id, CancellationToken ct) =>
+    Safe(async () =>
+    {
+        var native = runner.Get(id).NativeDisassembly
+            ?? throw new InvalidOperationException("The local JIT capture has no native code to correlate.");
+        return (object)await dashboard.CorrelateNativeAsync(native, ct);
+    }));
+
+app.MapGet("/api/local-jit/{id}", (TrustedLocalJitRunner runner, string id) =>
+    Safe(() => Task.FromResult((object)runner.Get(id))));
 
 app.MapGet("/api/hotspots/report", (DashboardState dashboard) =>
     Results.Ok(new
@@ -273,6 +307,13 @@ public sealed record HotspotProfileRequest(string FilePath, int ProfileIndex = 0
 public sealed record DeterministicRunRequest(int MaxFindings = 500,
     int MaxMethodMetrics = 100);
 public sealed record StartAutonomousReviewRequest(int MaxMethods = 10, int MaxMinutes = 15);
+public sealed record LocalPerformanceRequest(
+    string BaselineAssembly, bool TrustedBinary,
+    string? CandidateAssembly = null, string[]? Arguments = null,
+    int Repetitions = 5, int Warmups = 1, int TimeoutSeconds = 15);
+public sealed record LocalJitCaptureRequest(
+    string AssemblyPath, string JitFilter, bool TrustedBinary,
+    int TimeoutSeconds = 45, string[]? Arguments = null);
 public sealed record OpenWorkspaceRequest(string Path);
 public sealed record CreateHypothesisRequest(string SnapshotId, string MethodId,
     string Category, string Claim, string FailureCondition);

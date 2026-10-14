@@ -158,6 +158,47 @@ public static class ReviewTools
         string baselineExperimentId, string candidateExperimentId) =>
         Json(comparer.Compare(baselineExperimentId, candidateExperimentId));
 
+    [McpServerTool(Name = "trusted_local_workload_measure")]
+    [Description("UNSANDBOXED: repeatedly launch a prebuilt trusted .NET 8+ application on the actual host; optionally alternate baseline/candidate revisions. Reports whole-process elapsed/CPU time, NOT method latency. Requires TENKA_ENABLE_LOCAL_EXEC=1 and trustedBinary=true.")]
+    public static async Task<string> TrustedLocalWorkloadMeasure(
+        TrustedLocalProcessProfiler profiler, string baselineAssembly,
+        bool trustedBinary = false, string? candidateAssembly = null,
+        string[]? arguments = null, int repetitions = 5,
+        int warmups = 1, int timeoutSeconds = 15,
+        CancellationToken cancellationToken = default) =>
+        Json(await profiler.MeasureAsync(baselineAssembly, trustedBinary,
+            candidateAssembly, arguments, repetitions, warmups,
+            timeoutSeconds, cancellationToken));
+
+    [McpServerTool(Name = "trusted_local_workload_result")]
+    [Description("Read a saved trusted host whole-process performance observation without executing code.")]
+    public static string TrustedLocalWorkloadResult(
+        TrustedLocalProcessProfiler profiler, string runId) => Json(profiler.Get(runId));
+
+    [McpServerTool(Name = "trusted_local_jit_capture")]
+    [Description("UNSANDBOXED local execution: run a previously built trusted .NET 8+ application on the host and capture RyuJIT machine code. Requires TENKA_ENABLE_LOCAL_EXEC=1 and trustedBinary=true; NEVER use for generated/untrusted code.")]
+    public static async Task<string> TrustedLocalJitCapture(
+        TrustedLocalJitRunner runner, string assemblyPath,
+        string jitFilter, bool trustedBinary = false, int timeoutSeconds = 45,
+        string[]? arguments = null, CancellationToken cancellationToken = default) =>
+        Json(await runner.CaptureAsync(assemblyPath, jitFilter,
+            trustedBinary, timeoutSeconds, arguments, cancellationToken));
+
+    [McpServerTool(Name = "trusted_local_jit_correlate")]
+    [Description("Read a saved trusted host-native JIT report and attempt unique Roslyn method-level correspondence in the opened workspace. No target process is started.")]
+    public static string CorrelateTrustedLocalJit(
+        TrustedLocalJitRunner runner, RoslynReviewService roslyn, string runId)
+    {
+        var native = runner.Get(runId).NativeDisassembly
+            ?? throw new InvalidOperationException("The trusted local run has no native JIT instructions.");
+        return Json(roslyn.CorrelateNativeCode(native));
+    }
+
+    [McpServerTool(Name = "trusted_local_jit_result")]
+    [Description("Return the saved local native JIT capture result by UUID. Does not execute code.")]
+    public static string TrustedLocalJitResult(TrustedLocalJitRunner runner, string runId) =>
+        Json(runner.Get(runId));
+
     [McpServerTool(Name = "native_disassembly_result")]
     [Description("Return structured RyuJIT native machine instructions and code bytes from a completed kind=jit experiment. Never interprets instruction counts as elapsed time.")]
     public static string NativeDisassemblyResult(ExperimentStore experiments, string experimentId) =>

@@ -176,8 +176,9 @@ public sealed class DockerExecutor(WorkspaceGuard guard, ExperimentStore experim
         { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
         foreach (var arg in new[]
         {
-            "run", "--rm", "--pull=never", "--name", name, "--network", "none", "--read-only", "--cap-drop", "ALL",
-            "--security-opt", "no-new-privileges", "--pids-limit", "128", "--memory", "2g", "--cpus", "2", "--user", "65532:65532",
+            "run", "--rm", "--pull=never", "--name", name, "--network", "none", "--cap-drop", "ALL",
+            "--security-opt", "no-new-privileges", "--pids-limit", "128", "--memory", "2g", "--cpus", "2", "--user",
+            target.MajorVersion is 8 or 9 ? "1654:1654" : "65532:65532",
             "--tmpfs", "/work:rw,exec,size=1g,mode=1777", "--tmpfs", "/tmp:rw,exec,size=128m,mode=1777",
             "--env", "HOME=/work", "--env", "DOTNET_CLI_HOME=/work", "--env", "DOTNET_NOLOGO=1",
             "--env", "DOTNET_CLI_TELEMETRY_OPTOUT=1", "--env", "NUGET_PACKAGES=/nuget",
@@ -186,6 +187,13 @@ public sealed class DockerExecutor(WorkspaceGuard guard, ExperimentStore experim
             "--mount", "type=bind,source=" + cache + ",target=/nuget,readonly",
             "--mount", "type=bind,source=" + artifacts + ",target=/artifacts"
         }) info.ArgumentList.Add(arg);
+        // Confirmed in CI: SDK8 NuGet first-use named mutex fails with
+        // --read-only even when /tmp and HOME are writable tmpfs.
+        // Use an ephemeral writable container overlay for SDK8/9, while
+        // keeping host source, generated code and NuGet packages read-only.
+        // The SDK10 image keeps its previously validated immutable root.
+        if (target.MajorVersion is not (8 or 9))
+            info.ArgumentList.Add("--read-only");
         if (manifest.Kind == "jit")
         { info.ArgumentList.Add("--env"); info.ArgumentList.Add("TENKA_JIT_FILTER=" + TargetFrameworkPolicy.ValidateJitFilter(manifest.JitFilter ?? "")); }
         foreach (var arg in new[] { target.SdkImage, "sh", "-c", script }) info.ArgumentList.Add(arg);
