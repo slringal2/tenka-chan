@@ -997,14 +997,18 @@ async function measureLocalPerformance(event) {
       const samples = measured.filter(x => x.variant === variant);
       if (!samples.length) continue;
       const wall = samples.map(x => x.wallMilliseconds).sort((a,b) => a-b);
-      const cpu = samples.map(x => x.cpuMilliseconds).sort((a,b) => a-b);
-      const median = list => list[Math.floor(list.length/2)];
+      const cpu = samples.map(x => x.cpuMilliseconds)
+        .filter(x => Number.isFinite(x)).sort((a,b) => a-b);
+      const median = list => list.length % 2
+        ? list[Math.floor(list.length/2)]
+        : (list[list.length/2 - 1] + list[list.length/2]) / 2;
       const row = el("div", "item-row");
       const body = el("div");
       add(body, el("strong", "", variant.toUpperCase()));
       add(body, el("small", "",
         "Elapsed median ~ " + median(wall).toFixed(2) + " ms/process" +
-        " · CPU median ~ " + median(cpu).toFixed(2) + " ms/process" +
+        " · CPU (sampled/final) ~ " +
+        (cpu.length ? median(cpu).toFixed(2) + " ms/process" : "not available") +
         " · " + samples.length + " samples"));
       add(row, body);
       add(metrics, row);
