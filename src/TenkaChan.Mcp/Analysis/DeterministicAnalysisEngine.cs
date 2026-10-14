@@ -92,16 +92,16 @@ public static class DeterministicAnalysisEngine
     }
 
     public static DeterministicMethodMetrics BuildMetrics(
-        ReviewTarget target, MethodDeclarationSyntax syntax,
+        ReviewTarget target, SyntaxNode syntax,
         SemanticModel model, CancellationToken cancellationToken = default)
     {
         int? cfgBlocks = null;
         int? cfgBranches = null;
-        if (syntax.Body is not null || syntax.ExpressionBody is not null)
+        if (CallableSyntax.Body(syntax) is not null)
         {
             try
             {
-                var graph = ControlFlowGraph.Create(syntax, model, cancellationToken);
+                var graph = CallableSyntax.TryCreateGraph(syntax, model, cancellationToken);
                 if (graph is not null)
                 {
                     cfgBlocks = graph.Blocks.Length;
@@ -116,9 +116,7 @@ public static class DeterministicAnalysisEngine
             }
         }
 
-        var calls = syntax.DescendantNodes(descendIntoChildren: node =>
-                node == syntax || node is not (LocalFunctionStatementSyntax
-                    or AnonymousFunctionExpressionSyntax))
+        var calls = CallableSyntax.OwnNodes(syntax)
             .OfType<InvocationExpressionSyntax>()
             .Count(inv => model.GetSymbolInfo(inv, cancellationToken).Symbol is IMethodSymbol);
 

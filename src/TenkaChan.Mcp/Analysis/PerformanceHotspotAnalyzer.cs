@@ -7,7 +7,7 @@ using System.Text;
 namespace TenkaChan.Mcp.Analysis;
 
 public sealed record HotspotMethodDefinition(
-    MethodSummary Summary, MethodDeclarationSyntax Syntax, IMethodSymbol Symbol,
+    MethodSummary Summary, SyntaxNode Syntax, IMethodSymbol Symbol,
     SemanticModel SemanticModel, string ProjectDirectory);
 
 /// <summary>
@@ -44,9 +44,7 @@ public static class PerformanceHotspotAnalyzer
             cancellationToken.ThrowIfCancellationRequested();
             var syntax = definition.Syntax;
             var model = definition.SemanticModel;
-            var nodes = syntax.DescendantNodes(descendIntoChildren: n =>
-                n == syntax || n is not (AnonymousFunctionExpressionSyntax
-                    or LocalFunctionStatementSyntax)).ToArray();
+            var nodes = CallableSyntax.OwnNodes(syntax).ToArray();
 
             var loops = nodes.Where(IsLoop).ToArray();
             var maximumDepth = loops.Length == 0 ? 0 : loops.Max(n => LoopDepth(n) + 1);
@@ -362,8 +360,7 @@ public static class PerformanceHotspotAnalyzer
         foreach (var parent in node.Ancestors())
         {
             if (IsLoop(parent)) depth++;
-            if (parent is MethodDeclarationSyntax or LocalFunctionStatementSyntax
-                or AnonymousFunctionExpressionSyntax or ConstructorDeclarationSyntax)
+            if (CallableSyntax.IsBoundary(parent))
                 break;
         }
         return depth;

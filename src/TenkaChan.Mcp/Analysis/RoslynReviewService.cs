@@ -19,7 +19,7 @@ namespace TenkaChan.Mcp.Analysis;
 public sealed class RoslynReviewService : IDisposable
 {
     private sealed record Entry(MethodSummary Summary, Document Document,
-        MethodDeclarationSyntax Syntax, IMethodSymbol Symbol);
+        SyntaxNode Syntax, IMethodSymbol Symbol);
 
     private readonly WorkspaceGuard _guard;
     private readonly SemaphoreSlim _openLock = new(1, 1);
@@ -83,19 +83,22 @@ public sealed class RoslynReviewService : IDisposable
                     var syntaxRoot = await document.GetSyntaxRootAsync(ct);
                     var model = await document.GetSemanticModelAsync(ct);
                     if (syntaxRoot is null || model is null) continue;
-                    foreach (var method in syntaxRoot.DescendantNodes().OfType<MethodDeclarationSyntax>())
+                    foreach (var callable in CallableSyntax.Enumerate(syntaxRoot, model, ct))
                     {
-                        if (model.GetDeclaredSymbol(method, ct) is not IMethodSymbol symbol) continue;
+                        var method = callable.Syntax;
+                        var symbol = callable.Symbol;
                         var signature = symbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
                         var sourcePath = document.FilePath ?? document.Name;
                         var line = method.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
                         var identity = project.Id.Id + "|" + sourcePath + "|" + signature + "|" + method.SpanStart;
                         var id = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity)))[..20];
-                        var summary = new MethodSummary(id, project.Name, signature, sourcePath, line);
+                        var summary = new MethodSummary(id, project.Name, signature, sourcePath, line)
+                        { CallableKind = symbol.MethodKind.ToString() };
                         _methods[id] = new Entry(summary, document, method, symbol);
                     }
                 }
             }
+            _warnings.Add("Source callable catalog includes explicit constructors, accessors, operators, local functions and lambdas. Implicit primary-constructor work, field initializers and lowered/generated bodies are not exhaustively indexed. Nested callable CFGs and generated-name profile links remain unavailable.");
             var projects = _solution.Projects.Select(p =>
                 new ProjectSummary(p.Name, p.FilePath,
                     null, // Target framework is not safely inferable from ParseOptions.
@@ -123,7 +126,7 @@ public sealed class RoslynReviewService : IDisposable
         var entry = RequireMethod(methodId);
         var model = await entry.Document.GetSemanticModelAsync(ct)
             ?? throw new InvalidOperationException("Semantic model unavailable.");
-        var calls = entry.Syntax.DescendantNodes().OfType<InvocationExpressionSyntax>()
+        var calls = CallableSyntax.OwnNodes(entry.Syntax).OfType<InvocationExpressionSyntax>()
             .Select(s => (model.GetSymbolInfo(s, ct).Symbol as IMethodSymbol)?.ToDisplayString())
             .Where(s => s is not null).Distinct().Take(100).Select(s => s!).ToArray();
 
@@ -137,7 +140,7 @@ public sealed class RoslynReviewService : IDisposable
                 if (callers.Count >= 100) break;
                 var otherModel = await other.Document.GetSemanticModelAsync(ct);
                 if (otherModel is null) continue;
-                foreach (var invocation in other.Syntax.DescendantNodes().OfType<InvocationExpressionSyntax>())
+                foreach (var invocation in CallableSyntax.OwnNodes(other.Syntax).OfType<InvocationExpressionSyntax>())
                 {
                     var invoked = otherModel.GetSymbolInfo(invocation, ct).Symbol;
                     if (SymbolEqualityComparer.Default.Equals(
@@ -154,23 +157,12 @@ public sealed class RoslynReviewService : IDisposable
         var reads = Array.Empty<string>();
         var writes = Array.Empty<string>();
         string? note = null;
-        if (entry.Syntax.Body is not null)
+        var body = CallableSyntax.Body(entry.Syntax);
+        if (body is not null)
         {
             try
             {
-                // The block operation is often a child of an IMethodBodyOperation.
-                // ControlFlowGraph.Create requires a root operation with Parent == null.
-                var operation = model.GetOperation(entry.Syntax, ct)
-                    ?? model.GetOperation(entry.Syntax.Body, ct);
-                while (operation?.Parent is not null)
-                    operation = operation.Parent;
-
-                var graph = operation switch
-                {
-                    IMethodBodyOperation methodBody => ControlFlowGraph.Create(methodBody, ct),
-                    IBlockOperation blockBody => ControlFlowGraph.Create(blockBody, ct),
-                    _ => ControlFlowGraph.Create(entry.Syntax, model, ct)
-                };
+                var graph = CallableSyntax.TryCreateGraph(entry.Syntax, model, ct);
                 if (graph is not null)
                 {
                     foreach (var block in graph.Blocks.Take(250))
@@ -183,9 +175,9 @@ public sealed class RoslynReviewService : IDisposable
                             block.BranchValue is null ? null : Truncate(block.BranchValue.Syntax.ToString(), 350)));
                     }
                 }
-                if (graph is null) note = "CFG unavailable: Roslyn returned no executable root operation.";
-                var flow = model.AnalyzeDataFlow(entry.Syntax.Body);
-                if (flow.Succeeded)
+                if (graph is null) note = "CFG unavailable for this callable; an enclosing method CFG is never substituted.";
+                var flow = body is BlockSyntax blockBody ? model.AnalyzeDataFlow(blockBody) : null;
+                if (flow?.Succeeded == true)
                 {
                     reads = flow.ReadInside.Select(x => x.Name).Distinct().ToArray();
                     writes = flow.WrittenInside.Select(x => x.Name).Distinct().ToArray();
@@ -469,7 +461,7 @@ public sealed class RoslynReviewService : IDisposable
     public NativeCodeReport CorrelateNativeCode(NativeCodeReport report)
     {
         EnsureOpen();
-        var symbols = _methods.Values.Select(e =>
+        var symbols = _methods.Values.Where(e => CallableSyntax.CanCorrelateByMetadataName(e.Symbol)).Select(e =>
             new NativeRoslynCandidate(e.Summary, e.Symbol)).ToArray();
         return NativeMethodCorrelator.Correlate(report, symbols, CurrentSnapshotId);
     }
@@ -521,7 +513,7 @@ public sealed class RoslynReviewService : IDisposable
         try
         {
             EnsureOpen();
-            var methods = _methods.Values.Select(m =>
+            var methods = _methods.Values.Where(m => CallableSyntax.CanCorrelateByMetadataName(m.Symbol)).Select(m =>
                 new ProfileMethodIdentity(m.Summary.Id,
                     m.Symbol.ContainingType.ToDisplayString(
                         SymbolDisplayFormat.CSharpErrorMessageFormat) + "." +
@@ -643,4 +635,3 @@ public sealed class RoslynReviewService : IDisposable
         _openLock.Dispose();
     }
 }
-

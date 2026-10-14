@@ -15,9 +15,9 @@ public sealed record ReviewTarget(
 /// </summary>
 public static class ReviewPrioritizer
 {
-    public static ReviewTarget Assess(MethodSummary method, MethodDeclarationSyntax syntax)
+    public static ReviewTarget Assess(MethodSummary method, SyntaxNode syntax)
     {
-        var descendants = syntax.DescendantNodes().ToArray();
+        var descendants = CallableSyntax.OwnNodes(syntax).ToArray();
         var loops = descendants.Count(node => node is ForStatementSyntax or ForEachStatementSyntax
             or ForEachVariableStatementSyntax or WhileStatementSyntax or DoStatementSyntax);
         var conditionalCount = descendants.Count(node =>
@@ -33,7 +33,7 @@ public static class ReviewPrioritizer
         var hasLock = descendants.Any(node => node is LockStatementSyntax);
         var hasTry = descendants.Any(node => node is TryStatementSyntax);
         var hasThrow = descendants.Any(node => node is ThrowStatementSyntax or ThrowExpressionSyntax);
-        var hasUnsafe = syntax.Modifiers.Any(SyntaxKind.UnsafeKeyword);
+        var hasUnsafe = syntax.ChildTokens().Any(t => t.IsKind(SyntaxKind.UnsafeKeyword));
         var sourceLines = Math.Max(1, syntax.GetLocation().GetLineSpan().EndLinePosition.Line -
             syntax.GetLocation().GetLineSpan().StartLinePosition.Line + 1);
 

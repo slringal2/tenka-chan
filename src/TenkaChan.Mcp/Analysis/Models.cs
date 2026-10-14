@@ -3,7 +3,10 @@ namespace TenkaChan.Mcp.Analysis;
 public sealed record ProjectSummary(string Name, string? Path, string? TargetFramework, int Documents);
 public sealed record SolutionSummary(string SnapshotId, int MethodCount, IReadOnlyList<ProjectSummary> Projects,
     IReadOnlyList<string> WorkspaceWarnings);
-public sealed record MethodSummary(string Id, string Project, string Signature, string File, int Line);
+public sealed record MethodSummary(string Id, string Project, string Signature, string File, int Line)
+{
+    public string CallableKind { get; init; } = "Ordinary";
+}
 public sealed record RuleFinding(string RuleId, string Category, string Severity, string Message,
     string File, int Line, int Column, string? MethodId, string Verification,
     string Status = "candidate");

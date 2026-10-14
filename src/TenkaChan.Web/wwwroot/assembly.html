@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>甜花ちゃん | アセンブリ解析</title><link rel="stylesheet" href="assembly.css"><script defer src="assembly.js"></script></head>
+<body><main><nav><a href="/">ダッシュボード</a> · <a href="/priorities.html">調査優先度</a> · <a href="/trace.html">プロファイル取得</a></nav>
+<h1>アセンブリ解析</h1><p>DLLのメタデータ・ILと、保存済みJIT機械語を調べます。この画面では対象コードを実行しません。</p>
+<p id="status" role="status">接続中…</p>
+<section><h2>DLL / IL / PDB</h2><form id="managed"><label>許可済みDLL・EXEの絶対パス<input name="assemblyPath" required></label><label>型・メソッドを検索<input name="query"></label><button>メソッド一覧を読む</button></form><p id="identity"></p><label>PDBの絶対パス（任意）<input id="pdb"></label><label>C#ソースの絶対パス（任意・チェックサム確認用）<input id="source"></label><div id="methods"></div><div id="il"></div></section>
+<section><h2>ネイティブ命令 / 分岐</h2><p>完全なx86/x64命令バイトを再解読します。ARM64や不完全な一覧は理由を示して未解析とします。</p><form id="native"><label>取得済み結果の種類<select name="kind"><option value="listingPath">JIT一覧ファイル（.txt）</option><option value="localJitCaptureId">ローカルJIT保存ID</option><option value="jitExperimentId">Docker JIT実験ID</option></select></label><label>ファイルの絶対パス または 保存ID<input name="source" required></label><label>取得内のメソッド番号（0始まり）<input name="methodIndex" type="number" min="0" value="0" required></label><button>命令を解析</button></form><div id="native-result"></div><button id="pin" disabled>この選択を比較元にする</button><button id="compare" disabled>現在の選択と比較</button><p id="baseline"></p><pre id="comparison"></pre></section>
+<button id="export" disabled>表示結果をJSON出力</button><p>命令数・コードサイズ・CPUID情報は実測性能ではありません。P2は調査候補であり、バグの確定ではありません。ILの位置と機械語の位置を同一視しません。</p>
+</main></body></html>
