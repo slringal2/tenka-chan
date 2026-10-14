@@ -984,6 +984,16 @@ async function measureLocalPerformance(event) {
     const payload = { baselineAssembly, trustedBinary: true,
       repetitions, warmups, timeoutSeconds };
     if (candidateAssembly) payload.candidateAssembly = candidateAssembly;
+    const argumentsText = String(form.argumentsJson || "").trim();
+    if (argumentsText) {
+      let values;
+      try { values = JSON.parse(argumentsText); }
+      catch { throw new Error("起動引数はJSON文字列配列で指定してください。"); }
+      if (!Array.isArray(values) || values.length > 16 ||
+          !values.every(x => typeof x === "string" && x.length <= 1024))
+        throw new Error("起動引数は最大16個の文字列です。");
+      payload.arguments = values;
+    }
     toast("信頼済みアプリの反復測定を開始しました。");
     const report = await api("/local-performance/measure", { method: "POST", body: payload });
     const root = $("local-performance-result");
