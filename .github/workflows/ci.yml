@@ -187,6 +187,34 @@ jobs:
       - run: dotnet build TenkaChan.slnx --configuration Release --no-restore
       - run: docker pull mcr.microsoft.com/dotnet/sdk:10.0
       - run: docker pull mcr.microsoft.com/dotnet/sdk:8.0
+      - name: Diagnose .NET 8 NuGet startup with disposable Docker isolation
+        run: |
+          set -u
+          echo "Checking SDK8 NuGet initialization only; no application code will run."
+          for scenario in base restricted shared_memory read_only; do
+            args=(--rm --pull=never --network none --user 1654:1654
+              --tmpfs /tmp:rw,exec,size=128m,mode=1777
+              --tmpfs /work:rw,exec,size=128m,mode=1777
+              --env HOME=/work --env DOTNET_CLI_HOME=/work)
+            if [ "$scenario" != "base" ]; then
+              args+=(--cap-drop ALL --security-opt no-new-privileges
+                --pids-limit 128 --memory 2g --cpus 2)
+            fi
+            if [ "$scenario" = "shared_memory" ]; then
+              args+=(--tmpfs /dev/shm:rw,nosuid,nodev,size=64m,mode=1777)
+            fi
+            if [ "$scenario" = "read_only" ]; then
+              args+=(--read-only)
+            fi
+            if docker run "${args[@]}" mcr.microsoft.com/dotnet/sdk:8.0 \
+                dotnet nuget locals global-packages --list >/tmp/tenka-sdk8-check.log 2>&1; then
+              echo "SDK8_${scenario}: PASS"
+            else
+              echo "SDK8_${scenario}: FAIL"
+              grep -m 1 -E 'NuGet-Migrations|Unauthorized|IOException' \
+                /tmp/tenka-sdk8-check.log || true
+            fi
+          done
       - name: Test generated xUnit code in network-disabled Docker
         run: dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj --configuration Release --no-build --filter FullyQualifiedName~DockerExperimentSmokeTests
         env:
