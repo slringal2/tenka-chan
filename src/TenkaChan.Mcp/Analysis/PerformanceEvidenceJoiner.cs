@@ -15,6 +15,21 @@ public sealed record PerformanceTriageEntry(
     IReadOnlyList<NativeCodeHint> NativeMethods,
     IReadOnlyList<string> Caveats);
 
+/// <summary>
+/// BenchmarkDotNet measurements remain an independent experiment-level
+/// observation; matching a benchmark case name to a profiled source method
+/// would not establish equal workload or shared call-stack attribution.
+/// </summary>
+public sealed record StandaloneBenchmarkCase(
+    string CaseId, int SampleCount,
+    double? MeanNanoseconds, double? MedianNanoseconds,
+    double? AllocatedBytesPerOperation, string EnvironmentFingerprint);
+
+public sealed record StandaloneBenchmarkEvidence(
+    string ExperimentId, string TargetFramework, string Status,
+    IReadOnlyList<StandaloneBenchmarkCase> Cases,
+    IReadOnlyList<string> Limitations);
+
 public sealed record PerformanceTriageReport(
     string SnapshotId, string PriorityBasis, string ProfileStatus,
     string? ProfileName, string? ProfileType, string? Unit,
@@ -23,7 +38,10 @@ public sealed record PerformanceTriageReport(
     bool StaticOutputTruncated, string? JitExperimentId,
     IReadOnlyList<PerformanceTriageEntry> Observed,
     IReadOnlyList<PerformanceTriageEntry> StaticOnly,
-    IReadOnlyList<string> Limitations);
+    IReadOnlyList<string> Limitations)
+{
+    public StandaloneBenchmarkEvidence? Benchmarks { get; init; }
+}
 
 public sealed record PerformanceMethodDossier(
     string MethodId, string SnapshotId, PerformanceTriageEntry? Triage,
