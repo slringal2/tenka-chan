@@ -7,7 +7,11 @@
   <title>Tenka — C# Review Console</title>
   <meta name="description" content="Tenka-chan: Roslyn, tests, performance and evidence in one local dashboard.">
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/path-picker.css">
+  <link rel="stylesheet" href="/dashboard-sync.css">
   <script src="/app.js" defer></script>
+  <script src="/dashboard-sync.js" defer></script>
+  <script src="/path-picker.js" defer></script>
 </head>
 <body>
   <div class="shell">
@@ -26,11 +30,15 @@
         <button class="nav-item" data-view="evidence"><span class="nav-icon">◉</span><span>仮説・証拠</span></button>
         <button class="nav-item" data-view="autoreview"><span class="nav-icon">✧</span><span>AI自律レビュー</span></button>
         <button class="nav-item" data-view="experiments"><span class="nav-icon">◈</span><span>テストと性能</span></button>
+        <a class="nav-item" href="/workspace-build.html"><span class="nav-icon">▧</span><span>ビルドと解析の準備 ↗</span></a>
+        <a class="nav-item" href="/assembly.html"><span class="nav-icon">⌘</span><span>アセンブリ解析 ↗</span></a>
+        <a class="nav-item" href="/trace.html"><span class="nav-icon">◉</span><span>プロファイル取得 ↗</span></a>
+        <a class="nav-item" href="/priorities.html"><span class="nav-icon">◇</span><span>調査優先度 ↗</span></a>
       </nav>
       <div class="sidebar-spacer"></div>
       <div class="sidebar-bottom">
         <div class="runtime"><span class="runtime-dot"></span><span id="runtime-status">ローカルサーバーへ接続中</span></div>
-        <div class="sidebar-note">MCP + Web UI<br>分析結果はローカルに保持されます。</div>
+        <div class="sidebar-note">MCP + Web UI<br>開いている解析は、このサーバーの起動中に共有されます。</div>
         <a href="https://github.com/slringal2/tenka-chan" target="_blank" rel="noopener noreferrer" class="repo-link">GitHub リポジトリ <span>↗</span></a>
       </div>
     </aside>
@@ -52,11 +60,23 @@
 
           <div class="section-title"><div><h2>ワークスペース</h2><p>信頼できる.NET Solution / Projectを読み込みます。</p></div></div>
           <form class="workspace-form" id="workspace-form">
-            <div class="workspace-input-group"><label for="workspace-path">ソリューションの絶対パス</label><input id="workspace-path" name="path" type="text" spellcheck="false" autocomplete="off" required placeholder="C:\Projects\MyApp\MyApp.sln" /></div>
+            <div class="workspace-input-group"><label for="workspace-path">ソリューションの絶対パス</label><input id="workspace-path" data-path-kind="project" name="path" type="text" spellcheck="false" autocomplete="off" required placeholder="C:\Projects\MyApp\MyApp.sln" /></div>
             <button type="submit" class="button button-primary" id="open-button">読み込む <span>→</span></button>
             <button type="button" class="button button-outline" id="scan-button" disabled>全体をスキャン <span>↗</span></button>
           </form>
           <div class="inline-help" id="workspace-help">最初に TENKA_ALLOWED_ROOTS と TENKA_TRUST_MSBUILD=1 を設定してください。</div>
+
+          <article class="panel dashboard-handoff" aria-labelledby="dashboard-handoff-title">
+            <div class="panel-header"><div><h3 id="dashboard-handoff-title">現在の解析と次の操作</h3><p>準備画面と同じサーバーの結果を表示します。画面更新だけでは解析・ビルドを開始しません。</p></div><button id="dashboard-refresh" type="button" class="button button-outline">結果を更新 ↻</button></div>
+            <p id="dashboard-sync-status" role="status" aria-live="polite">サーバーの解析状態を確認しています…</p>
+            <div id="dashboard-stage-summary" class="inline-help">セットアップは本体の準備です。対象プロジェクトの読み込みと解析は別に行います。</div>
+            <div class="dashboard-actions">
+              <a href="/workspace-build.html" class="button button-primary">ビルドと解析の準備へ →</a>
+              <button type="button" class="button button-outline" data-go="deterministic">決定論的解析の結果</button>
+              <button type="button" class="button button-outline" data-go="hotspots">性能ホットスポットの結果</button>
+            </div>
+            <p class="form-note">解析を終えた場合は「読み込む」を押し直す必要はありません。別タブから戻ると結果を再取得します。サーバーを再起動した場合は、プロジェクトを読み込み直してください。</p>
+          </article>
 
           <div class="metrics" aria-label="解析状況">
             <article class="metric-card"><div class="metric-top"><span>PROJECTS</span><span class="metric-glyph">▧</span></div><div class="metric-value" id="metric-projects">—</div><div class="metric-caption">読み込み済みのプロジェクト</div></article>
@@ -176,7 +196,7 @@
             </div>
             <form id="local-jit-form" class="det-controls">
               <label>ビルド済みアプリのDLL（絶対パス）
-                <input name="assemblyPath" id="local-jit-assembly" type="text" class="profile-path-input"
+                <input name="assemblyPath" data-path-kind="assembly" id="local-jit-assembly" type="text" class="profile-path-input"
                   required spellcheck="false"
                   placeholder="C:\Projects\App\bin\Release\net8.0\App.dll">
               </label>
@@ -207,12 +227,12 @@
             </div>
             <form id="local-performance-form" class="det-controls">
               <label>Baseline DLL（絶対パス）
-                <input name="baselineAssembly" class="profile-path-input"
+                <input name="baselineAssembly" data-path-kind="assembly" class="profile-path-input"
                   autocomplete="off" spellcheck="false" required
                   placeholder="C:\Projects\AppBefore\bin\Release\net8.0\App.dll">
               </label>
               <label>Candidate DLL（任意）
-                <input name="candidateAssembly" class="profile-path-input"
+                <input name="candidateAssembly" data-path-kind="assembly" class="profile-path-input"
                   autocomplete="off" spellcheck="false"
                   placeholder="C:\Projects\AppAfter\bin\Release\net8.0\App.dll">
               </label>
@@ -244,7 +264,7 @@
           <article class="panel diagnostic-panel">
             <div class="panel-header"><div><h3>実測サンプリングの取り込み</h3><p>dotnet-trace等で採取・変換したSpeedscope sampled / evented JSONを読み込みます。</p></div><span class="subtle-chip">MEASURED / WORKLOAD</span></div>
             <form id="hotspot-profile-form" class="det-controls">
-              <label>プロファイルJSONの絶対パス<input id="hotspot-profile-path" name="filePath" class="profile-path-input" type="text" required placeholder="C:\Projects\app.speedscope.json"></label>
+              <label>プロファイルJSONの絶対パス<input id="hotspot-profile-path" data-path-kind="profile" name="filePath" class="profile-path-input" type="text" required placeholder="C:\Projects\app.speedscope.json"></label>
               <label>プロファイル番号<input name="profileIndex" type="number" min="0" max="100" value="0" required></label>
               <button id="hotspot-profile-run" class="button button-outline" type="submit">実測結果を取り込む ↗</button>
             </form>
@@ -332,7 +352,7 @@
                   placeholder="100663297">
               </label>
               <label>C#ソースの絶対パス（任意）
-                <input name="sourceFilePath" autocomplete="off" placeholder="C:\Projects\App.cs">
+                <input name="sourceFilePath" data-path-kind="source" autocomplete="off" placeholder="C:\Projects\App.cs">
               </label>
               <button id="hotspot-dossier-run" class="button button-outline"
                 type="submit">メソッドの根拠を調査 ↗</button>
@@ -429,7 +449,7 @@
             <article class="panel">
               <div class="panel-header"><div><h3>新しい実験を準備</h3><p>元コードは変更しません。最適化対象は.NET 8以降です</p></div></div>
               <form id="experiment-form" class="form-stack">
-                <label>リポジトリの絶対パス<input name="repositoryRoot" id="experiment-root" required placeholder="C:\Projects\MyApp"></label>
+                <label>リポジトリの絶対パス<input name="repositoryRoot" data-path-kind="folder" id="experiment-root" required placeholder="C:\Projects\MyApp"></label>
                 <label>対象 .csproj（リポジトリからの相対パス）<input name="projectRelativePath" required placeholder="src\MyApp\MyApp.csproj"></label>
                 <label>実験種別<select name="kind" id="experiment-kind"><option value="test">xUnitテスト</option><option value="benchmark">BenchmarkDotNet</option><option value="jit">RyuJIT ネイティブ命令解析</option></select></label>
                 <label>対象.NET Framework（省略時は.csprojから推定）<input name="targetFramework" id="experiment-framework" placeholder="net8.0 / net9.0 / net10.0"></label>

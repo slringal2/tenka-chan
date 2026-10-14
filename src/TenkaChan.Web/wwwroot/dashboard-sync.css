@@ -1,0 +1,7 @@
+.dashboard-handoff { margin: 20px 0; }
+.dashboard-actions { display:flex; flex-wrap:wrap; gap:10px; margin:14px 0; }
+.dashboard-actions a, a.nav-item { text-decoration:none; }
+#dashboard-stage-summary, #dashboard-sync-status { white-space:pre-wrap; overflow-wrap:anywhere; }
+.workspace-input-group .tenka-path-message { display:block; }
+#dashboard-refresh { flex-shrink:0; }
+@media (max-width:700px) { .dashboard-handoff .panel-header { flex-wrap:wrap; gap:12px; } }
