@@ -43,7 +43,7 @@ public sealed record DeterministicAnalysisReport(
 
 public static class DeterministicRuleCatalog
 {
-    public const string Version = "2026.10.1";
+    public const string Version = "2026.10.2";
 
     public static readonly IReadOnlyList<DeterministicRuleDescriptor> Rules =
     [
@@ -87,7 +87,7 @@ public static class DeterministicRuleCatalog
             "semantic_fact", "throw ex rethrows the exception with a different stack trace.",
             "If preserving the existing stack trace is intended, consider bare throw;."),
         new("PERF2001", "Value type boxed in loop", "allocation", "info",
-            "candidate", "Conversion of a value type to object in a loop may allocate.",
+            "candidate", "Boxing conversions to object or implemented interfaces in an executable loop may allocate, including arguments and casts.",
             "Confirm boxing in IL and compare allocated bytes/op.")
     ];
 

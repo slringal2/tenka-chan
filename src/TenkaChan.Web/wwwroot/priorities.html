@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>甜花ちゃん | 調査の優先順位</title><link rel="stylesheet" href="/priorities.css"><script src="/priorities.js" defer></script></head>
+<body><main>
+<nav><a href="/">ダッシュボード</a><a href="/trace.html">プロファイル取得</a></nav>
+<header><p class="eyebrow">TENKA-CHAN / REVIEW PRIORITIES</p><h1>調べる順番と、判断の根拠</h1><p>優先度・証拠・影響を分けて表示します。P1は優先調査またはビルド修復であり、「重大なバグ確定」ではありません。</p></header>
+<section><h2>判定条件</h2><p>先にダッシュボードで信頼済みプロジェクトを開いてください。任意で計測済みプロファイルを読み込むと実測フレームも表示されます。この操作は対象アプリやLLMを実行しません。</p>
+<form id="priority-form"><div class="controls">
+<label>実測Selfの調査しきい値（%）<input name="hotSharePercent" type="number" min="0.01" max="100" step="0.01" value="10" required></label>
+<label>必要な観測数<input name="minimumObservations" type="number" min="1" max="1000000" value="20" required></label>
+<label>静的候補のP2しきい値<input name="staticSiteThreshold" type="number" min="0.01" max="10000" step="0.01" value="40" required></label>
+<label>表示件数<input name="maxItems" type="number" min="1" max="1000" value="100" required></label>
+<label>優先度<select name="priorityFilter"><option value="">すべて</option><option>P1</option><option>P2</option><option>P3</option><option value="P0">P0（自動判定しません）</option></select></label>
+<label>証拠<select name="evidenceFilter"><option value="">すべて</option><option value="observed_profile">実測で観測</option><option value="candidate">静的候補</option><option value="semantic_fact">言語仕様上の挙動</option><option value="compiler">コンパイラー</option><option value="analyzer">Analyzer</option></select></label>
+</div><label class="check"><input name="includeSuppressed" type="checkbox">理由付きで非表示にした指摘も表示する</label>
+<details><summary>今回の非表示設定（JSON・保存されません）</summary><label>項目のIDと理由を指定します<textarea id="suppressions" rows="4" spellcheck="false">[]</textarea></label></details>
+<div class="actions"><button id="priority-run" type="submit">優先順位を作成</button><button id="priority-cancel" type="button" disabled>中止</button><button id="priority-export" type="button" disabled>表示結果をJSONで保存</button></div>
+</form><p class="note">しきい値は調査方針の初期値です。検知率や統計的な信頼度ではありません。非表示・絞り込み前の件数も残します。</p></section>
+<p id="priority-status" role="status" aria-live="polite">未実行</p><section id="priority-summary" hidden></section>
+<div id="priority-results"></div><section id="priority-limitations" hidden><h2>解釈上の制約</h2><div id="priority-notes"></div></section>
+<footer>P0と問題確定の自動判定は未対応です。低優先度・指摘なしは、安全・軽量・検証済みを意味しません。</footer>
+</main></body></html>

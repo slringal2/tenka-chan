@@ -1,0 +1,41 @@
+name: Priority policy and detection evaluation
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  priorities:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - run: dotnet restore TenkaChan.slnx
+      - run: dotnet build TenkaChan.slnx -c Release --no-restore
+      - name: Evaluate labeled source patterns and priority policy boundaries
+        shell: pwsh
+        run: |
+          $env:TENKA_EVALUATION_OUTPUT = "$env:GITHUB_WORKSPACE/artifacts/detection-evaluation.json"
+          dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj -c Release --no-build --filter 'FullyQualifiedName~ReviewPriorityTests|FullyQualifiedName~Detection' --logger 'trx;LogFileName=priority-evaluation.trx'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - run: dotnet build tests/Fixtures/PrioritySample/PrioritySample.csproj -c Release
+      - run: node --check src/TenkaChan.Web/wwwroot/priorities.js
+      - name: HTTP and MCP priority integration without target execution
+        run: python tests/Fixtures/priority_workflow_smoke.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: priority-evaluation-${{ matrix.os }}
+          path: |
+            artifacts/*.json
+            tests/TenkaChan.Tests/TestResults/priority-evaluation.trx
