@@ -176,7 +176,7 @@ public sealed class DockerExecutor(WorkspaceGuard guard, ExperimentStore experim
         { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
         foreach (var arg in new[]
         {
-            "run", "--rm", "--pull=never", "--name", name, "--network", "none", "--read-only", "--cap-drop", "ALL",
+            "run", "--rm", "--pull=never", "--name", name, "--network", "none", "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges", "--pids-limit", "128", "--memory", "2g", "--cpus", "2", "--user", "1654:1654",
             "--tmpfs", "/work:rw,exec,size=1g,mode=1777", "--tmpfs", "/tmp:rw,exec,size=128m,mode=1777",
             "--tmpfs", "/dev/shm:rw,nosuid,nodev,size=64m,mode=1777",
@@ -192,6 +192,14 @@ public sealed class DockerExecutor(WorkspaceGuard guard, ExperimentStore experim
             "--mount", "type=bind,source=" + cache + ",target=/nuget,readonly",
             "--mount", "type=bind,source=" + artifacts + ",target=/artifacts"
         }) info.ArgumentList.Add(arg);
+        // The .NET 8 SDK may require its own ephemeral filesystem for the
+        // NuGet-Migrations named mutex even when HOME,/tmp,/work are writable.
+        // A writable container overlay is NOT a writable host source mount:
+        // source, generated experiment and package cache remain bind-mounted
+        // read-only; network/caps/privilege protections still apply.
+        // net10.0 has already been verified with an immutable root layer.
+        if (target.MajorVersion == 10)
+            info.ArgumentList.Add("--read-only");
         if (manifest.Kind == "jit")
         { info.ArgumentList.Add("--env"); info.ArgumentList.Add("TENKA_JIT_FILTER=" + TargetFrameworkPolicy.ValidateJitFilter(manifest.JitFilter ?? "")); }
         foreach (var arg in new[] { target.SdkImage, "sh", "-c", script }) info.ArgumentList.Add(arg);
