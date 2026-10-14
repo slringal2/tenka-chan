@@ -167,6 +167,16 @@ public static class ReviewTools
         Json(await runner.CaptureAsync(assemblyPath, jitFilter,
             trustedBinary, timeoutSeconds, arguments, cancellationToken));
 
+    [McpServerTool(Name = "trusted_local_jit_correlate")]
+    [Description("Read a saved trusted host-native JIT report and attempt unique Roslyn method-level correspondence in the opened workspace. No target process is started.")]
+    public static string CorrelateTrustedLocalJit(
+        TrustedLocalJitRunner runner, RoslynReviewService roslyn, string runId)
+    {
+        var native = runner.Get(runId).NativeDisassembly
+            ?? throw new InvalidOperationException("The trusted local run has no native JIT instructions.");
+        return Json(roslyn.CorrelateNativeCode(native));
+    }
+
     [McpServerTool(Name = "trusted_local_jit_result")]
     [Description("Return the saved local native JIT capture result by UUID. Does not execute code.")]
     public static string TrustedLocalJitResult(TrustedLocalJitRunner runner, string runId) =>
