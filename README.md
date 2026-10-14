@@ -135,6 +135,15 @@ LLM, downloaded without review, or supplied by an untrusted repository.
 For that use case, keep Docker enabled; in-depth host isolation is
 essential. See [security policy](docs/security.md).
 
+**Known SDK8 Docker compatibility issue:** under some hardened Linux
+containers, the .NET 8 SDK fails during startup with a NuGet
+`NuGet-Migrations` named-mutex error. This occurs independently of
+generated application code. The existing CI reproduction is still under
+investigation; the Docker-free trusted-local JIT feature is verified
+separately and is not affected. Do not disable container isolation
+just to conceal this failure. Upstream reference:
+[dotnet/runtime #91987](https://github.com/dotnet/runtime/issues/91987).
+
 **Measurement note:** a JIT dump shows generated instructions and helper
 calls but not their actual runtime CPU expense or allocation frequency.
 Use representative profiling + BenchmarkDotNet to establish performance
