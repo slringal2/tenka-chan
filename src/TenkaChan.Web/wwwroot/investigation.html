@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Tenka | 性能調査</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/investigation.css">
+  <script src="/investigation.js" defer></script>
+</head>
+<body>
+<main class="investigation-page">
+  <header class="investigation-header"><a href="/">← Tenka ダッシュボード</a><span class="privacy-chip">LOCAL / READ ONLY</span></header>
+  <div class="page-heading"><div class="eyebrow">PROFILE → METHOD → EVIDENCE</div><h1>実測から始める性能調査</h1><p>先にダッシュボードで信頼済みのプロジェクトを読み込んでください。実測値・静的な候補・コンパイル結果は別々の根拠として扱います。</p></div>
+  <p id="connection" role="status">接続中</p>
+  <p id="error" role="alert" hidden></p>
+  <section class="panel">
+    <div class="panel-header"><div><h2>ワークロードの観測結果</h2><p>Speedscope sampled / evented JSONを取り込みます。ここからアプリやプロファイラーは実行しません。</p></div></div>
+    <form id="profile-form" class="investigation-controls">
+      <label>JSONの絶対パス<input id="profile-path" name="filePath" required placeholder="C:\Projects\workload.speedscope.json"></label>
+      <label>プロファイル番号<input name="profileIndex" type="number" min="0" value="0" required></label>
+      <button type="submit" class="button button-outline">取り込む</button>
+    </form>
+    <form id="triage-form" class="investigation-controls">
+      <label>優先順位<select id="ranking" name="ranking"><option value="self">自身の消費量（Self）</option><option value="inclusive">呼び出し先を含む量（Inclusive）</option></select></label>
+      <button type="submit" class="button button-primary">調査対象を更新 →</button>
+    </form>
+    <p class="form-note">時間単位だけではCPU使用時間と判断できません。Inclusiveはメソッド間で重複するため、合計しません。観測がないメソッドは「未観測」であり、ゼロコストではありません。</p>
+    <div id="profile-summary" class="evidence-summary"></div>
+  </section>
+  <div class="investigation-columns">
+    <section class="panel"><div class="panel-header"><h2>優先調査メソッド</h2></div><div id="triage-list" class="stack-list"><div class="empty-mini">調査対象を更新してください。</div></div><details><summary>対応付けできないフレーム</summary><div id="unmatched" class="stack-list"></div></details></section>
+    <section class="panel"><div class="panel-header"><h2 id="method-title">メソッドの根拠</h2><button id="export" class="button button-outline" disabled>JSON保存</button></div>
+      <div id="dossier"><div class="empty-mini">左側からメソッドを選んでください。</div></div>
+    </section>
+  </div>
+  <section class="panel">
+    <div class="panel-header"><div><h2>同じ調査に、保存済みJIT実験の根拠を添付</h2><p>実験で保存したDLLを明示的に選びます。メソッド名が同じでも、プロファイルとバイナリが同じビルドとは限りません。</p></div><button id="refresh-experiments" class="button button-outline">実験を更新</button></div>
+    <form id="attach-form" class="investigation-controls">
+      <label>完了したJIT実験<select id="experiment" required><option value="">選択してください</option></select></label>
+      <label>保存されたDLL<select id="assembly" required disabled></select></label>
+      <label>メタデータトークン・署名<select id="binary-method" required disabled></select></label>
+      <button type="submit" class="button button-primary">選択中のメソッドに添付</button>
+    </form>
+    <p class="form-note">単純なメソッド署名が一致しない選択は拒否します。ジェネリック・特殊な署名はMCPのjit_source_inspectで個別に確認してください。ソースのチェックサム不一致は表示し、現在のソースをビルド当時のコードと取り違えません。</p>
+  </section>
+  <footer><p>ネイティブ命令 → ILオフセットの厳密な対応付けは未実装です。この画面は独立した根拠をまとめるもので、高速化の証明や自動修正は行いません。</p></footer>
+</main>
+</body>
+</html>
