@@ -29,11 +29,12 @@ jobs:
         env:
           TENKA_TRUST_MSBUILD: '1'
           TENKA_WEB_PORT: '5077'
+          TENKA_ENABLE_LOCAL_EXEC: '1'
           TENKA_LLM_MODEL: 'ci-fixture'
           TENKA_LLM_ENDPOINT: 'http://127.0.0.1:18081/v1/chat/completions'
         run: |
           set -euo pipefail
-          export TENKA_ALLOWED_ROOTS="$GITHUB_WORKSPACE/tests/Fixtures/UiSample"
+          export TENKA_ALLOWED_ROOTS="$GITHUB_WORKSPACE/tests/Fixtures/UiSample:$GITHUB_WORKSPACE/tests/Fixtures/TrustedLocalJitApp"
           dotnet run --project src/TenkaChan.Web/TenkaChan.Web.csproj --configuration Release --no-build --no-launch-profile >/tmp/tenka-web.log 2>&1 &
           web_pid=$!
           python3 tests/Fixtures/fake_llm_server.py >/tmp/tenka-fake-llm.log 2>&1 &
@@ -90,6 +91,20 @@ jobs:
           python3 -c 'import json; x=json.load(open("/tmp/tenka-web-hotspot-cached.json")); assert x["staticAnalysis"]["totalSites"] >= 1, x; assert x["sampledProfile"]["totalSamples"] == 3, x'
 
 
+          export LOCAL_JIT_BINARY="$GITHUB_WORKSPACE/tests/Fixtures/TrustedLocalJitApp/bin/Release/net10.0/TrustedLocalJitApp.dll"
+          local_payload=$(python3 -c 'import json,os; print(json.dumps({"assemblyPath":os.environ["LOCAL_JIT_BINARY"],"jitFilter":"LocalJitFixture:Compute","trustedBinary":True,"timeoutSeconds":45}))')
+          curl --silent --show-error --fail -X POST http://127.0.0.1:5077/api/local-jit/capture \
+            -H 'Content-Type: application/json' -H "X-Tenka-CSRF: $token" \
+            --data-binary "$local_payload" >/tmp/tenka-local-jit-http.json
+          python3 -c 'import json; x=json.load(open("/tmp/tenka-local-jit-http.json")); assert x["status"] == "jit_completed", x; assert x["nativeDisassembly"]["instructionCount"] > 0, x'
+          local_id=$(python3 -c 'import json; print(json.load(open("/tmp/tenka-local-jit-http.json"))["id"])')
+          curl --silent --show-error --fail "http://127.0.0.1:5077/api/local-jit/$local_id" >/tmp/tenka-local-jit-saved.json
+          python3 -c 'import json; x=json.load(open("/tmp/tenka-local-jit-saved.json")); assert x["status"] == "jit_completed", x'
+          denied_payload=$(python3 -c 'import json,os; print(json.dumps({"assemblyPath":os.environ["LOCAL_JIT_BINARY"],"jitFilter":"LocalJitFixture:Compute","trustedBinary":False}))')
+          denied_status=$(curl --silent -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:5077/api/local-jit/capture \
+            -H 'Content-Type: application/json' -H "X-Tenka-CSRF: $token" \
+            --data-binary "$denied_payload")
+          test "$denied_status" = '400'
           curl --silent --show-error --fail -X POST http://127.0.0.1:5077/api/reviews/start \
             -H 'Content-Type: application/json' -H "X-Tenka-CSRF: $token" \
             -d '{"maxMethods":2,"maxMinutes":1}' >/tmp/tenka-web-review-start.json
