@@ -64,7 +64,6 @@ public sealed class DockerExecutor(WorkspaceGuard guard, ExperimentStore experim
             if (stdout is not null) output = await stdout;
             if (stderr is not null) error += await stderr;
         }
-
         TestRunSummary? tests = null;
         NativeCodeReport? native = null;
         var metrics = new List<BenchmarkObservation>();
@@ -166,7 +165,9 @@ public sealed class DockerExecutor(WorkspaceGuard guard, ExperimentStore experim
                 "  head -c 5000000 /work/jit-native.txt > /artifacts/jit-disassembly.txt\nfi\nexit \"$jit_exit\"",
             _ => throw new InvalidDataException("Unsupported kind.")
         };
-        var script = "set -eu\nmkdir -p /work/repo /work/generated\n" +
+        // Both tmpfs roots are owned by the same unprivileged UID as the
+        // workload. Runtime/SDK initialization must not require root writes.
+        var script = "set -eu\nmkdir -p /work/repo /work/generated /work/.local/share /tmp/.dotnet/shm\n" +
             "tar -C /input --exclude=.git --exclude=bin --exclude=obj -cf - . | tar -C /work/repo -xf -\n" +
             "cp -R /generated/. /work/generated/\n" +
             "printf '<configuration><packageSources><clear/></packageSources></configuration>' > /work/NuGet.Config\n" +
@@ -178,8 +179,10 @@ public sealed class DockerExecutor(WorkspaceGuard guard, ExperimentStore experim
         {
             "run", "--rm", "--pull=never", "--name", name, "--network", "none", "--read-only", "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges", "--pids-limit", "128", "--memory", "2g", "--cpus", "2", "--user", "65532:65532",
-            "--tmpfs", "/work:rw,exec,size=1g,mode=1777", "--tmpfs", "/tmp:rw,exec,size=128m,mode=1777",
+            "--tmpfs", "/work:rw,exec,size=1g,mode=0700,uid=65532,gid=65532",
+            "--tmpfs", "/tmp:rw,exec,size=128m,mode=0700,uid=65532,gid=65532",
             "--env", "HOME=/work", "--env", "DOTNET_CLI_HOME=/work", "--env", "DOTNET_NOLOGO=1",
+            "--env", "XDG_DATA_HOME=/work/.local/share",
             "--env", "DOTNET_CLI_TELEMETRY_OPTOUT=1", "--env", "NUGET_PACKAGES=/nuget",
             "--mount", "type=bind,source=" + manifest.RepositoryRoot + ",target=/input,readonly",
             "--mount", "type=bind,source=" + directory + ",target=/generated,readonly",
@@ -191,7 +194,6 @@ public sealed class DockerExecutor(WorkspaceGuard guard, ExperimentStore experim
         foreach (var arg in new[] { target.SdkImage, "sh", "-c", script }) info.ArgumentList.Add(arg);
         return info;
     }
-
     private static async Task<string> DrainTail(StreamReader stream, int limit)
     {
         var tail = new StringBuilder();
