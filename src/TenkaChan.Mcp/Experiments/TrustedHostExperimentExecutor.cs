@@ -202,8 +202,12 @@ public sealed class TrustedHostExperimentExecutor(
         }
         psi.Environment["DOTNET_CLI_HOME"] = workingDirectory;
         psi.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
-        var cache = Environment.GetEnvironmentVariable("TENKA_NUGET_PACKAGES");
-        if (!string.IsNullOrWhiteSpace(cache)) psi.Environment["NUGET_PACKAGES"] = cache;
+        // DOTNET_CLI_HOME is intentionally redirected to staging. NuGet must still
+        // look in the operator's prewarmed, user-scoped global package cache.
+        var cache = Environment.GetEnvironmentVariable("TENKA_NUGET_PACKAGES")
+            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".nuget", "packages");
+        psi.Environment["NUGET_PACKAGES"] = Path.GetFullPath(cache);
         using var process = new Process { StartInfo = psi };
         if (!process.Start()) throw new InvalidOperationException("Could not launch the installed dotnet CLI.");
         var output = Drain(process.StandardOutput, 12000);
