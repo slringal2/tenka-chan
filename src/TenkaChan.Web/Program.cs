@@ -123,10 +123,10 @@ app.MapPost("/api/workspace/scan", (DashboardState dashboard,
 app.MapGet("/api/hotspots/triage", (
     DashboardState dashboard, PerformanceEvidenceService service,
     string? jitExperimentId, string? benchmarkExperimentId,
-    int? maxObserved, int? maxStatic, CancellationToken ct) =>
+    string? localJitCaptureId, int? maxObserved, int? maxStatic, CancellationToken ct) =>
     Safe(async () => (object)await dashboard.TriageEvidenceAsync(
         service, jitExperimentId, maxObserved ?? 40, maxStatic ?? 20,
-        benchmarkExperimentId, ct)));
+        benchmarkExperimentId, localJitCaptureId, ct)));
 
 app.MapPost("/api/hotspots/investigate", (
     PerformanceInvestigationRequest request, DashboardState dashboard,
@@ -134,7 +134,7 @@ app.MapPost("/api/hotspots/investigate", (
     Safe(async () => (object)await dashboard.InvestigateEvidenceAsync(
         service, request.MethodId, request.JitExperimentId,
         request.AssemblyFile, request.MethodToken, request.SourceFilePath,
-        request.MaxInstructions, ct)));
+        request.MaxInstructions, request.LocalJitCaptureId, ct)));
 
 app.MapPost("/api/local-performance/measure",
     (LocalPerformanceRequest request, TrustedLocalProcessProfiler runner,
@@ -322,7 +322,8 @@ async Task<IResult> Safe(Func<Task<object>> operation)
 public sealed record PerformanceInvestigationRequest(
     string MethodId, string? JitExperimentId = null,
     string? AssemblyFile = null, int? MethodToken = null,
-    string? SourceFilePath = null, int MaxInstructions = 1200);
+    string? SourceFilePath = null, int MaxInstructions = 1200,
+    string? LocalJitCaptureId = null);
 public sealed record HotspotScanRequest(int MaxMethods = 100, int MaxSites = 300);
 public sealed record HotspotProfileRequest(string FilePath, int ProfileIndex = 0,
     int MaxFrames = 100);

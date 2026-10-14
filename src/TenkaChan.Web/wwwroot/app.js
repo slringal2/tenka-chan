@@ -956,6 +956,7 @@ function evidenceEntry(entry) {
     row.addEventListener("click", () => {
       $("hotspot-dossier-method").value = entry.methodId;
       $("hotspot-dossier-jit").value = state.performanceTriage?.jitExperimentId || "";
+      $("hotspot-dossier-local-jit").value = state.performanceTriage?.localJitCaptureId || "";
       $("hotspot-dossier-method").scrollIntoView({ block: "center", behavior: "smooth" });
       investigatePerformanceMethod();
     });
@@ -1023,8 +1024,12 @@ async function runPerformanceTriage(event) {
     if (!Number.isInteger(maxObserved) || maxObserved < 1 || maxObserved > 200)
       throw new Error("表示件数は1〜200で指定してください。");
     const query = new URLSearchParams({ maxObserved: String(maxObserved), maxStatic: "40" });
-    if (String(form.jitExperimentId || "").trim())
-      query.set("jitExperimentId", String(form.jitExperimentId).trim());
+    const dockerJitId = String(form.jitExperimentId || "").trim();
+    const localJitId = String(form.localJitCaptureId || "").trim();
+    if (dockerJitId && localJitId)
+      throw new Error("Docker JIT実験IDとローカルJIT保存IDは同時に選べません。");
+    if (dockerJitId) query.set("jitExperimentId", dockerJitId);
+    if (localJitId) query.set("localJitCaptureId", localJitId);
     if (String(form.benchmarkExperimentId || "").trim())
       query.set("benchmarkExperimentId", String(form.benchmarkExperimentId).trim());
     state.performanceTriage = await api("/hotspots/triage?" + query);
@@ -1043,10 +1048,16 @@ async function investigatePerformanceMethod() {
     if (!methodId) throw new Error("RoslynメソッドIDが必要です。");
     const body = { methodId, maxInstructions: 1200 };
     const experimentId = String(input.jitExperimentId || "").trim();
+    const localJitId = String(input.localJitCaptureId || "").trim();
+    if (experimentId && localJitId)
+      throw new Error("JIT実験IDとローカルJIT保存IDは同時に選べません。");
     const dll = String(input.assemblyFile || "").trim();
     const token = String(input.methodToken || "").trim();
     const source = String(input.sourceFilePath || "").trim();
     if (experimentId) body.jitExperimentId = experimentId;
+    if (localJitId) body.localJitCaptureId = localJitId;
+    if (localJitId && (dll || token || source))
+      throw new Error("ローカルJIT結果では保存済みMethodDef/PDBの照合はできません。Docker JIT実験を選択してください。");
     if (dll || token) {
       if (!experimentId || !dll || !token)
         throw new Error("IL解析にはJIT実験ID、保存済みDLL名、MethodDefトークンが必要です。");

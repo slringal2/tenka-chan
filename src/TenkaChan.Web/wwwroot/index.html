@@ -250,6 +250,10 @@
                 <input name="jitExperimentId" id="hotspot-evidence-jit" type="text"
                   autocomplete="off" placeholder="実行済みJIT実験のID">
               </label>
+              <label>ローカルJIT保存ID（任意・Docker実験と排他）
+                <input name="localJitCaptureId" id="hotspot-evidence-local-jit" type="text"
+                  autocomplete="off" placeholder="保存済みローカルJIT取得結果のID">
+              </label>
               <label>BenchmarkDotNet実験ID（任意）
                 <input name="benchmarkExperimentId" id="hotspot-evidence-benchmark-id"
                   type="text" autocomplete="off" placeholder="保存済みベンチマーク実験ID">
@@ -303,6 +307,10 @@
               <label>JIT実験ID（任意）
                 <input id="hotspot-dossier-jit" name="jitExperimentId"
                   autocomplete="off" placeholder="実行済みJIT実験ID">
+              </label>
+              <label>ローカルJIT保存ID（任意・Docker実験と排他）
+                <input id="hotspot-dossier-local-jit" name="localJitCaptureId"
+                  autocomplete="off" placeholder="保存済みローカルJIT取得結果のID">
               </label>
               <label>保存済みDLL名（任意）
                 <input name="assemblyFile" autocomplete="off" placeholder="binary-App.dll">

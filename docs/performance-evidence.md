@@ -4,6 +4,23 @@ This workflow brings **representative workload observations**, **Roslyn static
 cost candidates**, **RyuJIT machine code**, and **captured IL/PDB source spans**
 into a single investigation without inventing relationships.
 
+## Previously captured local JIT evidence (Docker-free read path)
+
+For an **already saved, explicitly trusted host-native JIT capture**, pass its
+`localJitCaptureId` to `performance_evidence_triage` or
+`performance_method_dossier`, or select it in the Web UI. This is **read-only**:
+opening an evidence report never runs a process. Producing a new local capture
+is a separate, UNSANDBOXED operation that still requires
+`TENKA_ENABLE_LOCAL_EXEC=1` and per-invocation `trustedBinary=true`.
+
+`localJitCaptureId` and `jitExperimentId` are mutually exclusive. The local
+capture's recorded DLL SHA-256 is retained at collection time, but **not**
+automatically reconciled with the Roslyn snapshot or imported Speedscope
+profile. Native correlations therefore remain signature-level hints, not
+verified binary/source equality. The saved host JIT listing does not include
+the same captured, hash-checked MethodDef/PDB artifact bundle as the Docker
+JIT experiment; choose the Docker experiment for that source binding.
+
 ## Observe, then investigate
 
 Open a trusted project with `workspace_open` and import a real Speedscope
