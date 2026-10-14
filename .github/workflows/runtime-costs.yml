@@ -1,0 +1,45 @@
+name: Runtime GC allocation and contention evidence
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  runtime-costs:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - run: dotnet restore TenkaChan.slnx
+      - run: dotnet build TenkaChan.slnx -c Release --no-restore
+      - run: dotnet build tests/Fixtures/RuntimeCostApp/RuntimeCostApp.csproj -c Release
+      - name: Install pinned profiler on the controlled CI host only
+        shell: pwsh
+        run: dotnet tool install --tool-path "$env:RUNNER_TEMP/runtime-trace-tool" dotnet-trace --version 9.0.661903
+      - name: Actual .NET 8 runtime events and deterministic boundary tests
+        shell: pwsh
+        run: |
+          $suffix = if ($IsWindows) { '.exe' } else { '' }
+          $env:TENKA_TEST_TRACE_TOOL = "$env:RUNNER_TEMP/runtime-trace-tool/dotnet-trace$suffix"
+          $env:TENKA_RUNTIME_FIXTURE = "$env:GITHUB_WORKSPACE/tests/Fixtures/RuntimeCostApp/bin/Release/net8.0/RuntimeCostApp.dll"
+          $env:TENKA_RUNTIME_REPORT = "$env:GITHUB_WORKSPACE/runtime-cost-report.json"
+          $env:TENKA_RUNTIME_INTEGRATION = '1'
+          dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj -c Release --no-build --filter 'FullyQualifiedName~RuntimeCost' --logger 'trx;LogFileName=runtime-costs.trx'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-costs-${{ matrix.os }}
+          path: |
+            runtime-cost-report.json
+            tests/TenkaChan.Tests/TestResults/runtime-costs.trx
