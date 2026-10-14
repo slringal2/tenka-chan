@@ -145,6 +145,13 @@ public sealed class PerformanceEvidenceService(
         var jitEnd = jitSignature.LastIndexOf(')');
         if (ilStart < 0 || ilEnd <= ilStart || jitStart < 0 || jitEnd <= jitStart)
             return false;
+        if (ilEnd != capturedMetadataSignature.Length - 1)
+            return false;
+        var returnType = jitSignature[(jitEnd + 1)..].Trim();
+        if (returnType.Length > 0 &&
+            (!returnType.StartsWith(':') ||
+             returnType.IndexOfAny([',', ';', '(', ')']) >= 0))
+            return false;
         var il = NormalizeParameters(
             capturedMetadataSignature[(ilStart + 1)..ilEnd]);
         var jit = NormalizeParameters(jitSignature[(jitStart + 1)..jitEnd]);
