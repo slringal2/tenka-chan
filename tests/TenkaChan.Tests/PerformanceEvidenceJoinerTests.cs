@@ -141,7 +141,10 @@ public sealed class PerformanceEvidenceJoinerTests
         Assert.Single(report.Observed);
         Assert.Single(report.StaticOnly);
         Assert.True(report.ObservedOutputTruncated);
-        Assert.True(report.StaticOutputTruncated);
+        Assert.False(report.StaticOutputTruncated); // only one unobserved method
+        var staticOnly = PerformanceEvidenceJoiner.Build("snapshot",
+            StaticReport(), null, null, maxObserved: 1, maxStatic: 1);
+        Assert.True(staticOnly.StaticOutputTruncated);
     }
 
     [Fact]
