@@ -21,6 +21,16 @@ jobs:
       - run: dotnet test TenkaChan.slnx --configuration Release --no-build
       - name: Build trusted local host JIT fixture
         run: dotnet build tests/Fixtures/TrustedLocalJitApp/TrustedLocalJitApp.csproj --configuration Release
+      - name: Build paired trusted .NET 8 whole-process fixtures
+        run: |
+          dotnet build tests/Fixtures/TrustedLocalPerf/Before/Before.csproj --configuration Release
+          dotnet build tests/Fixtures/TrustedLocalPerf/After/After.csproj --configuration Release
+      - name: Verify host-only wall/CPU workload measurements and A/B comparison
+        env:
+          TENKA_LOCAL_PERF_BEFORE: ${{ github.workspace }}/tests/Fixtures/TrustedLocalPerf/Before/bin/Release/net8.0/Before.dll
+          TENKA_LOCAL_PERF_AFTER: ${{ github.workspace }}/tests/Fixtures/TrustedLocalPerf/After/bin/Release/net8.0/After.dll
+          TENKA_LOCAL_JIT_SMOKE_ASSEMBLY: ${{ github.workspace }}/tests/Fixtures/TrustedLocalJitApp/bin/Release/net8.0/TrustedLocalJitApp.dll
+        run: dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj --configuration Release --no-build --filter FullyQualifiedName~TrustedLocalProcessProfilerTests
       - name: Verify actual host-native JIT capture without Docker
         env:
           TENKA_LOCAL_JIT_SMOKE_ASSEMBLY: ${{ github.workspace }}/tests/Fixtures/TrustedLocalJitApp/bin/Release/net8.0/TrustedLocalJitApp.dll
@@ -36,7 +46,7 @@ jobs:
           TENKA_LLM_ENDPOINT: 'http://127.0.0.1:18081/v1/chat/completions'
         run: |
           set -euo pipefail
-          export TENKA_ALLOWED_ROOTS="$GITHUB_WORKSPACE/tests/Fixtures/UiSample:$GITHUB_WORKSPACE/tests/Fixtures/TrustedLocalJitApp"
+          export TENKA_ALLOWED_ROOTS="$GITHUB_WORKSPACE/tests/Fixtures/UiSample:$GITHUB_WORKSPACE/tests/Fixtures/TrustedLocalJitApp:$GITHUB_WORKSPACE/tests/Fixtures/TrustedLocalPerf"
           dotnet run --project src/TenkaChan.Web/TenkaChan.Web.csproj --configuration Release --no-build --no-launch-profile >/tmp/tenka-web.log 2>&1 &
           web_pid=$!
           python3 tests/Fixtures/fake_llm_server.py >/tmp/tenka-fake-llm.log 2>&1 &
@@ -93,6 +103,21 @@ jobs:
           python3 -c 'import json; x=json.load(open("/tmp/tenka-web-hotspot-cached.json")); assert x["staticAnalysis"]["totalSites"] >= 1, x; assert x["sampledProfile"]["totalSamples"] == 3, x'
 
 
+          export PERF_BEFORE="$GITHUB_WORKSPACE/tests/Fixtures/TrustedLocalPerf/Before/bin/Release/net8.0/Before.dll"
+          export PERF_AFTER="$GITHUB_WORKSPACE/tests/Fixtures/TrustedLocalPerf/After/bin/Release/net8.0/After.dll"
+          perf_payload=$(python3 -c 'import json,os; print(json.dumps({"baselineAssembly":os.environ["PERF_BEFORE"],"candidateAssembly":os.environ["PERF_AFTER"],"trustedBinary":True,"repetitions":5,"warmups":1,"timeoutSeconds":15}))')
+          curl --silent --show-error --fail -X POST http://127.0.0.1:5077/api/local-performance/measure \
+            -H 'Content-Type: application/json' -H "X-Tenka-CSRF: $token" \
+            --data-binary "$perf_payload" >/tmp/tenka-local-perf.json
+          python3 -c 'import json; x=json.load(open("/tmp/tenka-local-perf.json")); assert x["status"] == "completed", x; assert len(x["samples"]) == 12, x; assert x["comparison"] is not None, x'
+          perf_id=$(python3 -c 'import json; print(json.load(open("/tmp/tenka-local-perf.json"))["id"])')
+          curl --silent --show-error --fail "http://127.0.0.1:5077/api/local-performance/$perf_id" >/tmp/tenka-local-perf-saved.json
+          python3 -c 'import json; x=json.load(open("/tmp/tenka-local-perf-saved.json")); assert x["status"] == "completed", x'
+          perf_untrusted=$(python3 -c 'import json,os; print(json.dumps({"baselineAssembly":os.environ["PERF_BEFORE"],"trustedBinary":False}))')
+          perf_denied=$(curl --silent -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:5077/api/local-performance/measure \
+            -H 'Content-Type: application/json' -H "X-Tenka-CSRF: $token" \
+            --data-binary "$perf_untrusted")
+          test "$perf_denied" = '400'
           export LOCAL_JIT_BINARY="$GITHUB_WORKSPACE/tests/Fixtures/TrustedLocalJitApp/bin/Release/net8.0/TrustedLocalJitApp.dll"
           local_payload=$(python3 -c 'import json,os; print(json.dumps({"assemblyPath":os.environ["LOCAL_JIT_BINARY"],"jitFilter":"LocalJitFixture:Compute","trustedBinary":True,"timeoutSeconds":45}))')
           curl --silent --show-error --fail -X POST http://127.0.0.1:5077/api/local-jit/capture \
@@ -134,6 +159,16 @@ jobs:
       - run: dotnet restore TenkaChan.slnx
       - run: dotnet build TenkaChan.slnx --configuration Release --no-restore
       - run: dotnet build tests/Fixtures/TrustedLocalJitApp/TrustedLocalJitApp.csproj --configuration Release
+      - name: Build paired trusted .NET 8 whole-process fixtures
+        run: |
+          dotnet build tests/Fixtures/TrustedLocalPerf/Before/Before.csproj --configuration Release
+          dotnet build tests/Fixtures/TrustedLocalPerf/After/After.csproj --configuration Release
+      - name: Verify host-only wall/CPU workload measurements and A/B comparison
+        env:
+          TENKA_LOCAL_PERF_BEFORE: ${{ github.workspace }}/tests/Fixtures/TrustedLocalPerf/Before/bin/Release/net8.0/Before.dll
+          TENKA_LOCAL_PERF_AFTER: ${{ github.workspace }}/tests/Fixtures/TrustedLocalPerf/After/bin/Release/net8.0/After.dll
+          TENKA_LOCAL_JIT_SMOKE_ASSEMBLY: ${{ github.workspace }}/tests/Fixtures/TrustedLocalJitApp/bin/Release/net8.0/TrustedLocalJitApp.dll
+        run: dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj --configuration Release --no-build --filter FullyQualifiedName~TrustedLocalProcessProfilerTests
       - name: Verify local .NET 8 RyuJIT machine code on Windows without Docker
         run: dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj --configuration Release --no-build --filter FullyQualifiedName~TrustedLocalJitRunnerTests
         env:
