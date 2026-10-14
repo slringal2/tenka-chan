@@ -181,6 +181,8 @@ public sealed class DockerExecutor(WorkspaceGuard guard, ExperimentStore experim
             "--tmpfs", "/work:rw,exec,size=1g,mode=1777", "--tmpfs", "/tmp:rw,exec,size=128m,mode=1777",
             "--tmpfs", "/dev/shm:rw,nosuid,nodev,size=64m,mode=1777",
             "--env", "HOME=/work", "--env", "DOTNET_CLI_HOME=/work", "--env", "DOTNET_NOLOGO=1",
+            "--env", "XDG_DATA_HOME=/work/.local/share",
+            "--env", "XDG_CONFIG_HOME=/work/.config",
             "--env", "DOTNET_CLI_TELEMETRY_OPTOUT=1",
             "--env", "DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1",
             "--env", "DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE=1",
