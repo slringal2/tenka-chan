@@ -128,7 +128,9 @@ app.MapPost("/api/hotspots/investigate", (
     PerformanceInvestigationRequest request, DashboardState dashboard,
     PerformanceEvidenceService service, CancellationToken ct) =>
     Safe(async () => (object)await dashboard.InvestigateEvidenceAsync(
-        service, request, ct)));
+        service, request.MethodId, request.JitExperimentId,
+        request.AssemblyFile, request.MethodToken, request.SourceFilePath,
+        request.MaxInstructions, ct)));
 
 app.MapGet("/api/hotspots/report", (DashboardState dashboard) =>
     Results.Ok(new
