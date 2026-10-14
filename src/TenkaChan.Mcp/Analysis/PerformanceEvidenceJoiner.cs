@@ -105,11 +105,12 @@ public static class PerformanceEvidenceJoiner
         var observedMethods = orderedFrames.Where(f => f.MatchedMethodId is not null)
             .Select(f => f.MatchedMethodId!)
             .ToHashSet(StringComparer.Ordinal);
-        var remaining = staticReport.Methods
+        var unobserved = staticReport.Methods
             .Where(m => !observedMethods.Contains(m.Method.Id))
             .OrderByDescending(m => m.SuspicionScore)
             .ThenBy(m => m.Method.Id, StringComparer.Ordinal)
-            .Take(maxStatic)
+            .ToArray();
+        var remaining = unobserved.Take(maxStatic)
             .Select(m => Make(m.Method.Signature, m.Method.Id, "static_candidate_only",
                 "static_method_not_observed"))
             .ToArray();
@@ -139,7 +140,7 @@ public static class PerformanceEvidenceJoiner
             observed?.AmbiguousFrames ?? 0,
             (observed?.TotalFrames ?? 0) > Math.Min(maxObserved, orderedFrames.Length),
             staticReport.MethodsTruncated || staticReport.SitesTruncated ||
-                staticReport.Methods.Count > maxStatic + observedMethods.Count,
+                unobserved.Length > maxStatic,
             jitExperimentId, selected, remaining, limitations);
     }
 
