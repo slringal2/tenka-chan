@@ -166,7 +166,7 @@ public sealed class DockerExecutor(WorkspaceGuard guard, ExperimentStore experim
                 "  head -c 5000000 /work/jit-native.txt > /artifacts/jit-disassembly.txt\nfi\nexit \"$jit_exit\"",
             _ => throw new InvalidDataException("Unsupported kind.")
         };
-        var script = "set -eu\nmkdir -p /work/repo /work/generated /work/temp /work/.local/share /work/.config\n" +
+        var script = "set -eu\nmkdir -p /work/repo /work/generated\n" +
             "tar -C /input --exclude=.git --exclude=bin --exclude=obj -cf - . | tar -C /work/repo -xf -\n" +
             "cp -R /generated/. /work/generated/\n" +
             "printf '<configuration><packageSources><clear/></packageSources></configuration>' > /work/NuGet.Config\n" +
@@ -177,28 +177,22 @@ public sealed class DockerExecutor(WorkspaceGuard guard, ExperimentStore experim
         foreach (var arg in new[]
         {
             "run", "--rm", "--pull=never", "--name", name, "--network", "none", "--cap-drop", "ALL",
-            "--security-opt", "no-new-privileges", "--pids-limit", "128", "--memory", "2g", "--cpus", "2", "--user", "1654:1654",
+            "--security-opt", "no-new-privileges", "--pids-limit", "128", "--memory", "2g", "--cpus", "2", "--user",
+            target.MajorVersion is 8 or 9 ? "1654:1654" : "65532:65532",
             "--tmpfs", "/work:rw,exec,size=1g,mode=1777", "--tmpfs", "/tmp:rw,exec,size=128m,mode=1777",
-            "--tmpfs", "/dev/shm:rw,nosuid,nodev,size=64m,mode=1777",
-            "--env", "HOME=/work", "--env", "DOTNET_CLI_HOME=/work", "--env", "TMPDIR=/work/temp", "--env", "DOTNET_NOLOGO=1",
-            "--env", "XDG_DATA_HOME=/work/.local/share",
-            "--env", "XDG_CONFIG_HOME=/work/.config",
-            "--env", "DOTNET_CLI_TELEMETRY_OPTOUT=1",
-            "--env", "DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1",
-            "--env", "DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE=1",
-            "--env", "NUGET_PACKAGES=/nuget",
+            "--env", "HOME=/work", "--env", "DOTNET_CLI_HOME=/work", "--env", "DOTNET_NOLOGO=1",
+            "--env", "DOTNET_CLI_TELEMETRY_OPTOUT=1", "--env", "NUGET_PACKAGES=/nuget",
             "--mount", "type=bind,source=" + manifest.RepositoryRoot + ",target=/input,readonly",
             "--mount", "type=bind,source=" + directory + ",target=/generated,readonly",
             "--mount", "type=bind,source=" + cache + ",target=/nuget,readonly",
             "--mount", "type=bind,source=" + artifacts + ",target=/artifacts"
         }) info.ArgumentList.Add(arg);
-        // The .NET 8 SDK may require its own ephemeral filesystem for the
-        // NuGet-Migrations named mutex even when HOME,/tmp,/work are writable.
-        // A writable container overlay is NOT a writable host source mount:
-        // source, generated experiment and package cache remain bind-mounted
-        // read-only; network/caps/privilege protections still apply.
-        // net10.0 has already been verified with an immutable root layer.
-        if (target.MajorVersion == 10)
+        // Confirmed in CI: SDK8 NuGet first-use named mutex fails with
+        // --read-only even when /tmp and HOME are writable tmpfs.
+        // Use an ephemeral writable container overlay for SDK8/9, while
+        // keeping host source, generated code and NuGet packages read-only.
+        // The SDK10 image keeps its previously validated immutable root.
+        if (target.MajorVersion is not (8 or 9))
             info.ArgumentList.Add("--read-only");
         if (manifest.Kind == "jit")
         { info.ArgumentList.Add("--env"); info.ArgumentList.Add("TENKA_JIT_FILTER=" + TargetFrameworkPolicy.ValidateJitFilter(manifest.JitFilter ?? "")); }

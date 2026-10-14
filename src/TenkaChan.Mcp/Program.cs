@@ -27,6 +27,8 @@ builder.Services.AddSingleton<IReviewContextSource, McpReviewContextSource>();
 builder.Services.AddSingleton<IReviewReasoner, LocalLlmReviewReasoner>();
 builder.Services.AddSingleton<AutonomousReviewRunner>();
 builder.Services.AddSingleton<DockerExecutor>();
+builder.Services.AddSingleton<TrustedLocalJitRunner>();
+builder.Services.AddSingleton<TrustedLocalProcessProfiler>();
 builder.Services.AddMcpServer()
     .WithStdioServerTransport()
     .WithToolsFromAssembly();

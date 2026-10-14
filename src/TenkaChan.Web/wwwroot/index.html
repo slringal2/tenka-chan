@@ -156,6 +156,80 @@
             </article>
           </div>
           <article class="panel diagnostic-panel">
+            <div class="panel-header">
+              <div><h3>DockerなしでJIT機械語を取得</h3>
+                <p>信頼済みのビルド済み.NET 8以降のアプリを、現在のOS上で実行します。</p>
+              </div>
+              <span class="subtle-chip" id="local-jit-enabled">LOCAL MODE OFF</span>
+            </div>
+            <form id="local-jit-form" class="det-controls">
+              <label>ビルド済みアプリのDLL（絶対パス）
+                <input name="assemblyPath" id="local-jit-assembly" type="text" class="profile-path-input"
+                  required spellcheck="false"
+                  placeholder="C:\Projects\App\bin\Release\net8.0\App.dll">
+              </label>
+              <label>対象メソッド
+                <input name="jitFilter" type="text" required
+                  placeholder="Calculator:Sum">
+              </label>
+              <label>実行の上限（秒）
+                <input name="timeoutSeconds" type="number" min="1" max="120" value="45" required>
+              </label>
+              <button type="submit" id="local-jit-run" class="button button-primary" disabled>
+                ホスト上でJITを取得 →
+              </button>
+            </form>
+            <p class="form-note">
+              <strong>隔離されません。</strong> 実行したアプリには現在のユーザーの
+              ファイル・ネットワーク権限があります。自作・信頼済みのビルドだけで利用してください。
+              未検証の生成コードにはDockerを使ってください。
+            </p>
+            <div id="local-jit-last-result" class="inline-help"></div>
+          </article>
+          <article class="panel diagnostic-panel">
+            <div class="panel-header">
+              <div><h3>信頼済みアプリの実行時間を計測</h3>
+                <p>Dockerを使わず、同じホスト上でアプリ全体の経過時間・CPU時間を反復測定します。</p>
+              </div>
+              <span class="subtle-chip">WHOLE PROCESS · HOST</span>
+            </div>
+            <form id="local-performance-form" class="det-controls">
+              <label>Baseline DLL（絶対パス）
+                <input name="baselineAssembly" class="profile-path-input"
+                  autocomplete="off" spellcheck="false" required
+                  placeholder="C:\Projects\AppBefore\bin\Release\net8.0\App.dll">
+              </label>
+              <label>Candidate DLL（任意）
+                <input name="candidateAssembly" class="profile-path-input"
+                  autocomplete="off" spellcheck="false"
+                  placeholder="C:\Projects\AppAfter\bin\Release\net8.0\App.dll">
+              </label>
+              <label>起動引数（JSON配列・任意）
+                <input name="argumentsJson" type="text" autocomplete="off" spellcheck="false"
+                  placeholder='["--scenario","heavy"]'>
+              </label>
+              <label>測定回数（5〜10）
+                <input name="repetitions" type="number" min="5" max="10" value="5" required>
+              </label>
+              <label>ウォームアップ（0〜2）
+                <input name="warmups" type="number" min="0" max="2" value="1" required>
+              </label>
+              <label>1回の制限（秒）
+                <input name="timeoutSeconds" type="number" min="1" max="30" value="15" required>
+              </label>
+              <button id="local-performance-run" type="submit"
+                class="button button-outline" disabled>実行時間を測定 ↗</button>
+            </form>
+            <p class="form-note">
+              <strong>隔離されないローカル実行です。</strong> ビルド済みの信頼できるアプリだけで利用してください。
+              Baseline/Candidateは同じ入力を交互に実行し、標準出力が一致しなければ性能比較を行いません。
+              結果にはプロセス起動・JIT・終了処理も含まれます。メソッド単位の計測にはプロファイラを使ってください。
+            </p>
+            <div id="local-performance-result" class="evidence-detail">
+              <div class="empty-mini">ホスト上の測定結果がここに表示されます。</div>
+            </div>
+          </article>
+          <article class="panel diagnostic-panel">
             <div class="panel-header"><div><h3>実測サンプリングの取り込み</h3><p>dotnet-trace等で採取・変換したSpeedscope sampled / evented JSONを読み込みます。</p></div><span class="subtle-chip">MEASURED / WORKLOAD</span></div>
             <form id="hotspot-profile-form" class="det-controls">
               <label>プロファイルJSONの絶対パス<input id="hotspot-profile-path" name="filePath" class="profile-path-input" type="text" required placeholder="C:\Projects\app.speedscope.json"></label>
