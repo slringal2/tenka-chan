@@ -130,6 +130,7 @@ public sealed class TrustedLocalJitRunner
             "UNSANDBOXED: the trusted application ran with the host user's filesystem/network privileges. Never use for generated or unknown code.",
             "Native instructions are code-generation facts, not elapsed CPU time, optimization gains, or allocated bytes.",
             "JIT mode forces ReadyToRun=0 and TieredCompilation=0. The native code may differ from production Tiered PGO.",
+            "TargetFramework is read from runtimeconfig.json. .NET runtime roll-forward can select a different installed runtime; inspect the host runtime configuration before comparing code generation.",
             "Use a separately captured representative CPU profile and benchmarks to determine where execution is actually expensive."
         };
         var status = interrupted ?? (exitCode == 0 ? "completed_no_native_listing" : "target_exited_nonzero");
@@ -193,11 +194,21 @@ public sealed class TrustedLocalJitRunner
                 NativeDisassembly = result.NativeDisassembly is null
                     ? null : result.NativeDisassembly with
                     {
+                        Truncated = result.NativeDisassembly.Truncated ||
+                            result.NativeDisassembly.Methods.Count > 15 ||
+                            result.NativeDisassembly.Methods.Any(method =>
+                                method.Instructions.Count > 500 || method.Signals.Count > 50),
                         Methods = result.NativeDisassembly.Methods.Take(15)
                             .Select(method => method with
                             {
                                 Instructions = method.Instructions.Take(500).ToArray(),
-                                Signals = method.Signals.Take(50).ToArray()
+                                Signals = method.Signals.Take(50).ToArray(),
+                                ParseWarnings = method.Instructions.Count > 500 ||
+                                    method.Signals.Count > 50
+                                    ? method.ParseWarnings.Concat(
+                                        ["Saved report view truncated; inspect the raw local JIT text for the complete listing."])
+                                        .ToArray()
+                                    : method.ParseWarnings
                             }).ToArray()
                     }
             };
