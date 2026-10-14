@@ -62,3 +62,34 @@ Experiments targeting net8.0 and later run inside the matching pre-pulled
 .NET SDK image. Each image has its own framework runtime/JIT behavior.
 MSBuild project evaluation on the host remains gated by
 `TENKA_TRUST_MSBUILD` and is not a secure sandbox.
+
+
+## Trusted host-native JIT: no container boundary
+
+`TENKA_ENABLE_LOCAL_EXEC=1` enables a **separate, explicitly trusted
+host execution mode**. It is never the default and it does not run prepared
+LLM-generated `experiment_prepare` projects. Only a previously compiled
+runnable .NET 8+ DLL under `TENKA_ALLOWED_ROOTS`, with its adjacent
+`.runtimeconfig.json`, is eligible for this mode.
+
+Each invocation also requires `trustedBinary=true`. The browser shows a
+confirmation prompt explaining that an application run receives the
+current OS user's file, process and network privileges. The MCP client
+must supply the same affirmative parameter. Environment flags and MCP
+parameters **cannot prove a binary is trustworthy**.
+
+The local runner executes `dotnet <trusted.dll>` directly with a bounded
+argument list, without a shell. It clears the inherited environment and
+restores only basic platform variables plus its JIT configuration. It
+enforces a 1–120 second timeout and attempts to terminate the process
+tree on cancellation. It saves the binary SHA-256 before and after the
+run, a bounded output record and the JIT listing under Tenka's data
+directory. These checks are **not** a sandbox or a guarantee against
+malicious code; a trusted binary can still perform destructive actions
+before the timeout.
+
+For downloaded, generated, third-party or otherwise unreviewed code,
+prefer the separately authorized Docker runner, or stronger isolation
+such as a dedicated VM. Real host JIT output is useful for diagnosing
+Windows-specific code generation, but it still does **not** measure CPU
+usage or prove an optimization.
