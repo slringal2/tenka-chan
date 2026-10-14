@@ -85,6 +85,24 @@ class WorkspaceBuildClient {
   }
 }
 
+
+function identifyWorkspaceBuildProblem(result) {
+  if (result?.build?.status !== "build_failed") return null;
+  const output = String(result.build.output || "") + "\n" + String(result.build.stderr || "");
+  if (/\bNETSDK1004\b|\bproject\.assets\.json\b/i.test(output)) {
+    return {
+      kind: "nuget-assets-missing",
+      message: result.build.restoreRequested
+        ? "NETSDK1004: NuGet復元を許可しても資産ファイルが生成されませんでした。復元時のログ、TargetFramework、obj出力先、NuGet接続を確認してください。"
+        : "NETSDK1004: ビルド用のproject.assets.jsonがありません。NuGetの復元が必要です。プロジェクトを再読み込みしてから、復元を許可して再ビルドしてください。",
+      canRetryWithRestore: result.build.restoreRequested !== true
+    };
+  }
+  if (/\bMSB3027\b|\bMSB3021\b/.test(output))
+    return {kind: "locked-output", message: "DLLがほかのプロセスで使用されています。起動中の該当アプリを終了して再ビルドしてください。", canRetryWithRestore: false};
+  return null;
+}
+
 function describeWorkspaceBuild(result, requestedAnalysis) {
   const status = result.build.status;
   const labels = {
@@ -108,12 +126,15 @@ function startWorkspaceBuildPage() {
   const $ = id => document.getElementById(id);
   const client = new WorkspaceBuildClient((...args) => fetch(...args));
   let pageBusy = false;
+  let retryValues = null;
+  let retryWorkspacePath = null;
   function status(message) { $("build-status").textContent = message; }
   function controls(busy) {
     pageBusy = busy;
     for (const item of document.querySelectorAll("input, select, button")) item.disabled = busy;
     $("build-button").disabled = busy || !client.options?.loaded || !client.options?.buildEnabled;
     $("save-result").disabled = busy || !client.lastResult;
+    $("retry-with-restore").disabled = busy || !retryValues || !retryWorkspacePath;
   }
   function renderOptions(options) {
     const select = $("build-project");
@@ -132,6 +153,10 @@ function startWorkspaceBuildPage() {
     const summary = describeWorkspaceBuild(result, requestedAnalysis);
     $("result-summary").textContent = summary;
     $("result-note").textContent = result.note + (result.build.outputTruncated ? " ログは末尾のみを保持しています。" : "");
+    const problem = identifyWorkspaceBuildProblem(result);
+    $("build-recovery").hidden = !problem;
+    $("build-recovery-message").textContent = problem?.message || "";
+    $("retry-with-restore").hidden = !problem?.canRetryWithRestore;
     $("build-output").textContent = result.build.output || "（出力なし）";
     $("build-stderr").textContent = result.build.stderr || "（出力なし）";
     const list = $("build-assemblies");
@@ -155,36 +180,53 @@ function startWorkspaceBuildPage() {
     if (pageBusy) return;
     controls(true); status("プロジェクトを読み込んでいます…");
     $("build-result").hidden = true;
-    client.lastResult = null;
+    client.lastResult = null; retryValues = null; retryWorkspacePath = null;
     try { renderOptions(await client.open($("workspace-path").value)); }
     catch (error) { status(error.message); }
     finally { controls(false); }
   });
-  $("build-workspace").addEventListener("submit", async event => {
-    event.preventDefault();
+  async function executeBuild(values, reopenPath = null) {
     if (pageBusy) return;
-    const values = {
-      projectPath: $("build-project").value, targetFramework: $("build-framework").value,
-      allowRestore: $("allow-restore").checked, analyzeAfterBuild: $("analyze-after-build").checked,
-      timeoutSeconds: Number($("build-timeout").value)
-    };
     controls(true);
     let result = null;
     let errorMessage = null;
     try {
+      if (reopenPath) {
+        status("プロジェクトを再読み込みしています…");
+        renderOptions(await client.open(reopenPath));
+      }
+      const openedPath = client.options?.path || $("workspace-path").value.trim();
       result = await client.build(values, message => {
         const approved = window.confirm(message);
         if (approved) { $("build-result").hidden = true; status("Releaseビルドと解析の準備を実行しています…"); }
         return approved;
       });
+      if (result) {
+        const issue = identifyWorkspaceBuildProblem(result);
+        retryValues = issue?.canRetryWithRestore ? {...values, allowRestore: true} : null;
+        retryWorkspacePath = retryValues ? openedPath : null;
+      }
     } catch (error) { errorMessage = error.message; }
     finally {
-      // Only read state after completion. Never resubmit a failed/cancelled build.
+      // Only read state after completion. Never resubmit a failed/cancelled build automatically.
       try { await refresh(); } catch (error) { errorMessage = errorMessage || error.message; }
       if (result) renderResult(result, values.analyzeAfterBuild);
       if (errorMessage) status(errorMessage);
       controls(false);
     }
+  }
+  $("build-workspace").addEventListener("submit", event => {
+    event.preventDefault();
+    executeBuild({
+      projectPath: $("build-project").value, targetFramework: $("build-framework").value,
+      allowRestore: $("allow-restore").checked, analyzeAfterBuild: $("analyze-after-build").checked,
+      timeoutSeconds: Number($("build-timeout").value)
+    });
+  });
+  $("retry-with-restore").addEventListener("click", () => {
+    if (pageBusy || !retryValues || !retryWorkspacePath) return;
+    $("allow-restore").checked = true;
+    executeBuild({...retryValues, allowRestore: true}, retryWorkspacePath);
   });
   $("save-result").addEventListener("click", () => {
     if (!client.lastResult) return;
@@ -197,7 +239,7 @@ function startWorkspaceBuildPage() {
   client.connect().then(renderOptions).catch(error => status(error.message)).finally(() => controls(false));
 }
 
-if (typeof module !== "undefined" && module.exports) module.exports = { WorkspaceBuildClient, describeWorkspaceBuild };
+if (typeof module !== "undefined" && module.exports) module.exports = { WorkspaceBuildClient, describeWorkspaceBuild, identifyWorkspaceBuildProblem };
 if (typeof document !== "undefined") {
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", startWorkspaceBuildPage);
   else startWorkspaceBuildPage();

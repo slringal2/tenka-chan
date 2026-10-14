@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { WorkspaceBuildClient, describeWorkspaceBuild } = require('../../src/TenkaChan.Web/wwwroot/workspace-build.js');
+const { WorkspaceBuildClient, describeWorkspaceBuild, identifyWorkspaceBuildProblem } = require('../../src/TenkaChan.Web/wwwroot/workspace-build.js');
 const options = () => ({ loaded: true, buildEnabled: true, snapshotId: 'snapshot-1', path: 'C:\\work\\App.csproj', projects: [{ name: 'App', path: 'C:\\work\\App.csproj' }] });
 const values = () => ({ projectPath: options().projects[0].path });
 const success = () => ({ build: { status: 'build_succeeded' }, workspaceReloaded: true, snapshotId: 'snapshot-2', assemblies: [], analysis: { findings: 2, compilerErrors: 0, deterministicFindings: 3, hotspotCandidates: 4 } });
@@ -130,4 +130,24 @@ test('refresh failure discards stale choices', async () => {
   const { client } = fixture(async () => ({ ok: false, status: 409, json: async () => ({ error: 'busy' }) }));
   await assert.rejects(client.refresh(), /busy/);
   assert.equal(client.options, null);
+});
+
+test('NETSDK1004 without restore provides a specific manual recovery choice', () => {
+  const issue = identifyWorkspaceBuildProblem({build:{status:'build_failed',output:'error NETSDK1004: project.assets.json is missing',stderr:'',restoreRequested:false}});
+  assert.equal(issue.kind,'nuget-assets-missing');
+  assert.equal(issue.canRetryWithRestore,true);
+  assert.match(issue.message,/再読み込み/);
+});
+test('NETSDK1004 after explicit restore does not suggest repeating a futile recovery', () => {
+  const issue = identifyWorkspaceBuildProblem({build:{status:'build_failed',output:'error NETSDK1004',restoreRequested:true}});
+  assert.equal(issue.canRetryWithRestore,false);
+  assert.match(issue.message,/復元時のログ/);
+});
+test('DLL lock is differentiated from missing NuGet assets', () => {
+  const issue=identifyWorkspaceBuildProblem({build:{status:'build_failed',output:'error MSB3027 file locked',restoreRequested:false}});
+  assert.equal(issue.kind,'locked-output'); assert.equal(issue.canRetryWithRestore,false);
+});
+test('other failed builds do not trigger automatic NuGet retries', () => {
+  assert.equal(identifyWorkspaceBuildProblem({build:{status:'build_failed',output:'CS1002'}}),null);
+  assert.equal(identifyWorkspaceBuildProblem({build:{status:'build_succeeded',output:'NETSDK1004'}}),null);
 });

@@ -57,8 +57,16 @@ public sealed partial class DashboardState
             var result = await builder.BuildAsync(project, request.TargetFramework, request.AllowRestore,
                 request.ApproveUnisolatedBuild, request.TimeoutSeconds, ct);
             if (result.Status != "build_succeeded")
-                return new(result, false, null, [], null,
-                    "Build did not complete successfully. Previous analysis was invalidated; old DLLs were not automatically selected. Reopen the workspace before retrying.");
+            {
+                var log = result.Output + "\n" + result.Stderr;
+                var missingAssets = result.Status == "build_failed" &&
+                    (log.Contains("NETSDK1004", StringComparison.OrdinalIgnoreCase) ||
+                     log.Contains("project.assets.json", StringComparison.OrdinalIgnoreCase));
+                var message = missingAssets
+                    ? "NuGetの資産ファイルが見つかりません。プロジェクトを再読み込みし、NuGetの復元を許可してビルドしてください。復元済みでも続く場合は復元ログ・対象フレームワーク・obj出力先を確認してください。"
+                    : "ビルドは完了していません。以前の解析結果を無効化しました。古いDLLは自動選択しません。プロジェクトを再読み込みしてから再試行してください。";
+                return new(result, false, null, [], null, message);
+            }
 
             bool reloaded = false;
             IReadOnlyList<WorkspaceAssemblyChoice> assemblies = [];
