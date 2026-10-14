@@ -72,3 +72,7 @@ SDK導入時にはWindowsの許可画面が出る場合があります。会社�
 技術資料：MicrosoftのOpenFileDialog、.NET Windowsインストール、dotnet tool installの公式ドキュメントを確認して実装しています。
 
 ダッシュボード連携の追加検証：Node.jsによる26件の新規テストと13件の既存パス選択テスト、計39件が成功しました。模擬応答・簡易DOMによる検証であり、Windows実機や実際のASP.NETサーバーを通した検証ではありません。詳細は `docs/dashboard-integration.md` を参照してください。
+
+## MSB3027 / MSB3021（ファイル使用中）
+
+既存のTenkaChan.WebプロセスがTenkaChan.Mcp.dllをロックするとReleaseビルドが失敗します。起動中の甜花ちゃんの黒い画面でEnterを押して終了し、setup.bat/start.batを再実行してください。起動ウィンドウを失った場合は、タスクマネージャーでご自身のTenkaChan.Webのみを確認して停止します。全dotnetプロセスを一括停止しないでください。ランチャーはビルド前に対象DLLの使用を確認し、使用中なら原因を案内します。ほかのプロセスを勝手に停止しません。事前検査後のロック競合までは防げません。

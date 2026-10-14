@@ -111,6 +111,29 @@ function Choose-Workspace {
         return [pscustomobject]@{ root = $root; project = $project }
     }
 }
+function Assert-BuildOutputsAvailable {
+    $locked = @()
+    foreach ($file in @(
+        (Join-Path $repo 'src\TenkaChan.Web\bin\Release\net10.0\TenkaChan.Web.dll'),
+        (Join-Path $repo 'src\TenkaChan.Web\bin\Release\net10.0\TenkaChan.Mcp.dll'),
+        (Join-Path $repo 'src\TenkaChan.Mcp\bin\Release\net10.0\TenkaChan.Mcp.dll'))) {
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
+        $stream = $null
+        try {
+            $stream = [System.IO.File]::Open($file, [System.IO.FileMode]::Open,
+                [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+        } catch [System.IO.IOException] { $locked += $file }
+        catch [System.UnauthorizedAccessException] {
+            throw "DLLのアクセス権を確認してください: $file"
+        } finally { if ($null -ne $stream) { $stream.Dispose() } }
+    }
+    if ($locked.Count -eq 0) { return }
+    Write-Warning 'DLLが使用中のためビルドを開始しません。'
+    foreach ($file in $locked) { Write-Host "使用中: $file" -ForegroundColor Yellow }
+    Write-Host '先に起動した甜花ちゃんの黒い画面でEnterを押し、終了してから再起動してください。'
+    Write-Host 'ほかのdotnetやアプリは自動終了しません。'
+    throw '使用中のDLLを解放してからsetup.bat/start.batを再実行してください。'
+}
 function Quote-Argument([string]$value) {
     # Windows CreateProcess quoting; never uses cmd.exe or Invoke-Expression.
     return '"' + [regex]::Replace([regex]::Replace($value, '(\\*)"', '$1$1\"'), '(\\+)$', '$1$1') + '"'
@@ -219,6 +242,7 @@ try {
     } else { Write-Host '通常起動ではダウンロード・パッケージ復元を行いません。修復はsetup.batから行えます。' }
     if (Test-Path -LiteralPath $trace) { $env:TENKA_DOTNET_TRACE_PATH = $trace }
     Say '[4/5] 本体のReleaseビルド'
+    Assert-BuildOutputsAvailable
     if (-not (Invoke-Tool $dotnet @('build',$web,'-c','Release','--no-restore','--nologo','--disable-build-servers') '変更を確認してビルドしています…')) { throw '本体のビルドに失敗しました。setup.batで復元し直してください。解消しない場合はログの最初のerror行を共有してください。起動中の旧バージョンも終了してください。' }
     if ($setup -and $settings.defaultProject -eq $sample) {
         if (-not (Invoke-Tool $dotnet @('build',$sample,'-c','Release','--nologo') '付属の小さなサンプルをビルド中（実行はしません）…')) { $warnings.Add('付属サンプルのビルドは未完了です。ブラウザー上の「ビルドと解析の準備」からやり直せます。') }
