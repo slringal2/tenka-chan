@@ -82,6 +82,15 @@ jobs:
           python3 -c 'import json; x=json.load(open("/tmp/tenka-web-profile.json")); assert x["totalSamples"] == 3, x; assert x["linkedFrames"] >= 1, x; assert any(f["matchedMethodId"] for f in x["frames"]), x'
           curl --silent --show-error --fail http://127.0.0.1:5077/api/hotspots/report >/tmp/tenka-web-hotspot-cached.json
           python3 -c 'import json; x=json.load(open("/tmp/tenka-web-hotspot-cached.json")); assert x["staticAnalysis"]["totalSites"] >= 1, x; assert x["sampledProfile"]["totalSamples"] == 3, x'
+          curl --silent --show-error --fail 'http://127.0.0.1:5077/api/hotspots/triage?maxObserved=10&maxStatic=10' >/tmp/tenka-evidence-triage.json
+          python3 -c 'import json; x=json.load(open("/tmp/tenka-evidence-triage.json")); assert x["priorityBasis"] == "observed_exclusive_milliseconds", x; assert x["observed"], x; assert any(e["methodId"] is not None for e in x["observed"]), x'
+          export TRIAGE_METHOD_ID=$(python3 -c 'import json; x=json.load(open("/tmp/tenka-evidence-triage.json")); print(next(e["methodId"] for e in x["observed"] if e["methodId"] is not None))')
+          dossier_payload=$(python3 -c 'import json,os; print(json.dumps({"methodId":os.environ["TRIAGE_METHOD_ID"]}))')
+          curl --silent --show-error --fail -X POST http://127.0.0.1:5077/api/hotspots/investigate \
+            -H 'Content-Type: application/json' -H "X-Tenka-CSRF: $token" \
+            --data-binary "$dossier_payload" >/tmp/tenka-evidence-dossier.json
+          python3 -c 'import json,os; x=json.load(open("/tmp/tenka-evidence-dossier.json")); assert x["methodId"] == os.environ["TRIAGE_METHOD_ID"], x; assert x["triage"]["exclusivePercent"] is not None, x; assert x["ilAndSource"] is None, x'
+
 
 
           curl --silent --show-error --fail -X POST http://127.0.0.1:5077/api/reviews/start \
