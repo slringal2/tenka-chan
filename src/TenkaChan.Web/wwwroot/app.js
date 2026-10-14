@@ -997,8 +997,17 @@ async function captureLocalNativeJit(event) {
     ]));
     add(root, el("div", "json-note",
       "信頼済みアプリをホスト上で直接実行した結果です。Dockerの隔離はありません。"));
-    if (result.nativeDisassembly)
-      renderNativeDisassembly(root, result.nativeDisassembly);
+    if (result.nativeDisassembly) {
+      let native = result.nativeDisassembly;
+      if (state.overview?.loaded) {
+        try {
+          native = await api("/local-jit/" + encodeURIComponent(result.id) + "/correlate");
+        } catch (error) {
+          toast("Roslyn対応付けは未完了: " + error.message, true);
+        }
+      }
+      renderNativeDisassembly(root, native);
+    }
     if (result.stdout)
       detailSection(root, "Application stdout", el("pre", "", clip(result.stdout, 12000)));
     if (result.stderr)
