@@ -23,6 +23,9 @@ jobs:
       - run: dotnet restore TenkaChan.slnx
       - run: dotnet build TenkaChan.slnx -c Release --no-restore
       - run: dotnet build tests/Fixtures/TrustedLocalJitApp/TrustedLocalJitApp.csproj -c Release
+      - run: node --check src/TenkaChan.Web/wwwroot/assembly.js
+      - name: Read-only assembly HTTP and MCP integration
+        run: python tests/Fixtures/assembly_workflow_smoke.py
       - name: Verify decoder, callable coverage and actual .NET 8 machine code
         shell: pwsh
         run: |
@@ -36,4 +39,5 @@ jobs:
           name: assembly-analysis-${{ matrix.os }}
           path: |
             assembly-decoder-report.json
+            artifacts/assembly-*.json
             tests/TenkaChan.Tests/TestResults/assembly.trx
