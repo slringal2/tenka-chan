@@ -158,6 +158,23 @@ public static class ReviewTools
         string baselineExperimentId, string candidateExperimentId) =>
         Json(comparer.Compare(baselineExperimentId, candidateExperimentId));
 
+    [McpServerTool(Name = "trusted_local_workload_measure")]
+    [Description("UNSANDBOXED: repeatedly launch a prebuilt trusted .NET 8+ application on the actual host; optionally alternate baseline/candidate revisions. Reports whole-process elapsed/CPU time, NOT method latency. Requires TENKA_ENABLE_LOCAL_EXEC=1 and trustedBinary=true.")]
+    public static async Task<string> TrustedLocalWorkloadMeasure(
+        TrustedLocalProcessProfiler profiler, string baselineAssembly,
+        bool trustedBinary = false, string? candidateAssembly = null,
+        string[]? arguments = null, int repetitions = 5,
+        int warmups = 1, int timeoutSeconds = 15,
+        CancellationToken cancellationToken = default) =>
+        Json(await profiler.MeasureAsync(baselineAssembly, trustedBinary,
+            candidateAssembly, arguments, repetitions, warmups,
+            timeoutSeconds, cancellationToken));
+
+    [McpServerTool(Name = "trusted_local_workload_result")]
+    [Description("Read a saved trusted host whole-process performance observation without executing code.")]
+    public static string TrustedLocalWorkloadResult(
+        TrustedLocalProcessProfiler profiler, string runId) => Json(profiler.Get(runId));
+
     [McpServerTool(Name = "trusted_local_jit_capture")]
     [Description("UNSANDBOXED local execution: run a previously built trusted .NET 8+ application on the host and capture RyuJIT machine code. Requires TENKA_ENABLE_LOCAL_EXEC=1 and trustedBinary=true; NEVER use for generated/untrusted code.")]
     public static async Task<string> TrustedLocalJitCapture(
