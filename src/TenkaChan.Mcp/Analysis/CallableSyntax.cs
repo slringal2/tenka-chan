@@ -19,8 +19,8 @@ public static class CallableSyntax
             IMethodSymbol? symbol = node switch
             {
                 BaseMethodDeclarationSyntax method => model.GetDeclaredSymbol(method, cancellationToken) as IMethodSymbol,
-                AccessorDeclarationSyntax accessor => model.GetDeclaredSymbol(accessor, cancellationToken),
-                LocalFunctionStatementSyntax local => model.GetDeclaredSymbol(local, cancellationToken),
+                AccessorDeclarationSyntax accessor => model.GetDeclaredSymbol(accessor, cancellationToken) as IMethodSymbol,
+                LocalFunctionStatementSyntax local => model.GetDeclaredSymbol(local, cancellationToken) as IMethodSymbol,
                 AnonymousFunctionExpressionSyntax lambda => (model.GetOperation(lambda, cancellationToken) as IAnonymousFunctionOperation)?.Symbol,
                 PropertyDeclarationSyntax { ExpressionBody: not null } property => (model.GetDeclaredSymbol(property, cancellationToken) as IPropertySymbol)?.GetMethod,
                 IndexerDeclarationSyntax { ExpressionBody: not null } indexer => (model.GetDeclaredSymbol(indexer, cancellationToken) as IPropertySymbol)?.GetMethod,
