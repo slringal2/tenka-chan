@@ -38,7 +38,7 @@ public static class AssemblyEndpoints
     {
         try { return Results.Ok(action()); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IOException or
-            UnauthorizedAccessException or BadImageFormatException or System.Text.Json.JsonException)
+            InvalidDataException or UnauthorizedAccessException or BadImageFormatException or System.Text.Json.JsonException)
         { return Results.Json(new { error = ex.Message }, statusCode: 400); }
         catch (Exception ex)
         {

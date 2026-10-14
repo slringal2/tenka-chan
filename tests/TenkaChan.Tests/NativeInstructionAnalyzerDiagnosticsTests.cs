@@ -13,7 +13,7 @@ public sealed class NativeInstructionAnalyzerDiagnosticsTests
         if(string.IsNullOrWhiteSpace(fixture)||string.IsNullOrWhiteSpace(output)) return;
         var runner=new TrustedLocalJitRunner(new WorkspaceGuard([Path.GetDirectoryName(fixture)!],false,false),true);
         var capture=await runner.CaptureAsync(fixture,"LocalJitFixture:Compute",true,45);
-        await File.WriteAllTextAsync(output,JsonSerializer.Serialize(new {capture,listing=File.ReadAllText(capture.NativeListingPath)}));
+        await File.WriteAllTextAsync(Path.ChangeExtension(output,"capture.json"),JsonSerializer.Serialize(new {capture,listing=File.ReadAllText(capture.NativeListingPath)}));
         Assert.Equal("jit_completed",capture.Status);
     }
 }
