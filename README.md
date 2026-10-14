@@ -186,7 +186,9 @@ compare their code generation.
 ## Performance evidence: profiler → Roslyn → RyuJIT → IL/PDB
 
 For performance work, **start with an observed hotspot**, not the largest
-static warning score. The new `performance_evidence_triage` tool joins a
+static warning score. Optionally pass a saved BenchmarkDotNet experiment ID
+using `benchmarkExperimentId`; time and allocation per operation remain
+**separate measurements**, not attributed to a profile frame by name alone. The new `performance_evidence_triage` tool joins a
 loaded Speedscope profile, Roslyn static candidates, and optionally a
 completed JIT experiment. The result has **separate** observed and
 static-only rankings: self/inclusive measurements remain in the profile's
