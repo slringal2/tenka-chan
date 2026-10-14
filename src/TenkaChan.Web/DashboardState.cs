@@ -15,7 +15,7 @@ public sealed record FindingsPage(int Total, int Offset, int Limit, IReadOnlyLis
 /// the Roslyn workspace are serialized because workspace_open replaces its
 /// underlying symbol index; concurrent reads during that operation are unsafe.
 /// </summary>
-public sealed class DashboardState(RoslynReviewService roslyn) : IReviewContextSource
+public sealed partial class DashboardState(RoslynReviewService roslyn) : IReviewContextSource
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private SolutionSummary? _solution;
@@ -50,7 +50,7 @@ public sealed class DashboardState(RoslynReviewService roslyn) : IReviewContextS
             deterministicFindingCount = _deterministic?.Summary.TotalFindings ?? 0,
             deterministicComplete = _deterministic is not null,
             hotspotCandidates = _hotspots?.TotalSites ?? 0,
-            hotspotMeasuredFrames = roslyn.CurrentHotspotProfile?.LinkedFrames ?? 0,
+            hotspotMeasuredFrames = snapshot is null ? 0 : roslyn.CurrentHotspotProfile?.LinkedFrames ?? 0,
             scanned = _lastScanned is not null,
             lastOpened = _lastOpened,
             lastScanned = _lastScanned
@@ -59,10 +59,18 @@ public sealed class DashboardState(RoslynReviewService roslyn) : IReviewContextS
 
     public WorkspaceQuickConfig QuickConfig(WorkspaceBinaryDiscovery discovery)
     {
-        var opened = _solution ?? throw new InvalidOperationException(
-            "Open a trusted .sln/.csproj before preparing a one-click analysis.");
-        return new WorkspaceQuickConfig(opened.SnapshotId,
-            discovery.Discover(opened.Projects), roslyn.ListJitMethods());
+        // Do not read the method dictionary while OpenAsync replaces it.
+        // Fail fast rather than blocking an HTTP thread behind a long build.
+        if (!_gate.Wait(0))
+            throw new InvalidOperationException("Workspace is busy; retry after the current operation.");
+        try
+        {
+            var opened = _solution ?? throw new InvalidOperationException(
+                "Open a trusted .sln/.csproj before preparing a one-click analysis.");
+            return new WorkspaceQuickConfig(opened.SnapshotId,
+                discovery.Discover(opened.Projects), roslyn.ListJitMethods());
+        }
+        finally { _gate.Release(); }
     }
 
     public async Task<SolutionSummary> OpenAsync(string path, CancellationToken ct)
@@ -141,7 +149,7 @@ public sealed class DashboardState(RoslynReviewService roslyn) : IReviewContextS
 
     public StaticHotspotReport? StaticHotspotReport => _hotspots;
     public SampledHotspotReport? MeasuredHotspotReport =>
-        roslyn.CurrentHotspotProfile;
+        _solution is null ? null : roslyn.CurrentHotspotProfile;
 
     public async Task<StaticHotspotReport> ScanHotspotsAsync(
         int maxMethods, int maxSites, CancellationToken ct)

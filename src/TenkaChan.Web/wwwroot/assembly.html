@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>甜花ちゃん | アセンブリ解析</title><link rel="stylesheet" href="assembly.css"><script defer src="assembly.js"></script></head>
-<body><main><nav><a href="/">ダッシュボード</a> · <a href="/priorities.html">調査優先度</a> · <a href="/trace.html">プロファイル取得</a></nav>
+<body><main><nav><a href="/workspace-build.html">ビルドと解析の準備</a> · <a href="/">ダッシュボード</a> · <a href="/priorities.html">調査優先度</a> · <a href="/trace.html">プロファイル取得</a></nav>
 <h1>アセンブリ解析</h1><p>DLLのメタデータ・ILと、保存済みJIT機械語を調べます。この画面では対象コードを実行しません。</p>
 <p id="status" role="status">接続中…</p>
 <section><h2>DLL / IL / PDB</h2><form id="managed"><label>許可済みDLL・EXEの絶対パス<input name="assemblyPath" required></label><label>型・メソッドを検索<input name="query"></label><button>メソッド一覧を読む</button></form><p id="identity"></p><label>PDBの絶対パス（任意）<input id="pdb"></label><label>C#ソースの絶対パス（任意・チェックサム確認用）<input id="source"></label><div id="methods"></div><div id="il"></div></section>

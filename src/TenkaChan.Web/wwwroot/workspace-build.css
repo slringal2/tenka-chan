@@ -1,0 +1,4 @@
+input[type="checkbox"] { display:inline-block; width:auto; margin-right:.5rem; }
+#build-project { max-width:100%; }
+#build-assemblies p, #build-status, #result-note { white-space:pre-wrap; overflow-wrap:anywhere; }
+[hidden] { display:none !important; }

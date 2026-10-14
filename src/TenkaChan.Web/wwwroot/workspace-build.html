@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>甜花ちゃん | ビルドと解析の準備</title>
+<link rel="stylesheet" href="assembly.css"><link rel="stylesheet" href="workspace-build.css"><script defer src="workspace-build.js"></script>
+</head>
+<body><main>
+<nav><a href="/">ダッシュボード</a> · <a href="/assembly.html">アセンブリ解析</a> · <a href="/trace.html">プロファイル取得</a></nav>
+<h1>ビルドと解析の準備</h1>
+<p>信頼済みプロジェクトをReleaseビルドし、ソース・DLL候補・静的解析結果を更新します。Dockerは不要です。</p>
+<p id="build-status" role="status" aria-live="polite">接続中…</p>
+<section>
+<h2>プロジェクトを読み込む</h2>
+<form id="open-workspace">
+<label>許可済みの .csproj / .sln / .slnx の絶対パス<input id="workspace-path" required></label>
+<button type="submit" id="open-button">読み込む</button>
+<button type="button" id="refresh-options">現在の設定を更新</button>
+</form>
+</section>
+<section>
+<h2>ビルドして解析する</h2>
+<form id="build-workspace">
+<label>読み込み済みのプロジェクト<select id="build-project" required></select></label>
+<label>対象フレームワーク（空欄ならプロジェクトの設定どおり）<input id="build-framework" placeholder="例: net8.0 / net8.0-windows"></label>
+<label>ビルドの制限時間（秒）<input id="build-timeout" type="number" min="10" max="300" value="180" required></label>
+<label><input id="allow-restore" type="checkbox"> 不足するNuGet依存関係の復元を許可する（ネット接続を使用する場合があります）</label>
+<label><input id="analyze-after-build" type="checkbox" checked> 成功後に静的・決定論・性能ホットスポット解析をまとめて実行する</label>
+<p><strong>隔離のないローカル実行です。</strong>MSBuildの独自ターゲット・ジェネレーター・パッケージの処理は、現在のユーザー権限で動きます。復元を無効にしても、独自処理のネット接続やファイル操作は制限されません。</p>
+<button type="submit" id="build-button" disabled>Releaseビルドして準備する</button>
+</form>
+<p>JIT取得・テスト・ベンチマーク・AIレビューは自動では実行しません。それぞれの画面で開始してください。</p>
+</section>
+<section id="build-result" hidden>
+<h2>実行結果</h2><p id="result-summary"></p><p id="result-note"></p>
+<h3>検出したDLL候補</h3><div id="build-assemblies"></div>
+<p>一覧は出力候補です。ソースとの同一性や実際のCPU・GC負荷を保証しません。複数候補を無断で一つに決めることはしません。</p>
+<h3>ビルドの標準出力（末尾）</h3><pre id="build-output"></pre>
+<h3>ビルドの標準エラー（末尾）</h3><pre id="build-stderr"></pre>
+<button type="button" id="save-result">結果をJSONで保存</button>
+</section>
+</main></body></html>

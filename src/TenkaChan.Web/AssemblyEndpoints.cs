@@ -8,6 +8,7 @@ public static class AssemblyEndpoints
 {
     public static void MapAssemblyEndpoints(this WebApplication app)
     {
+        app.MapWorkspaceBuildEndpoints();
         // Same loopback, Origin and CSRF middleware as every other local API.
         app.MapGet("/assembly", () => Results.Redirect("/assembly.html"));
         app.MapPost("/api/assembly/methods", (MethodsRequest request, WorkspaceGuard guard) =>
