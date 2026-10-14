@@ -1,0 +1,47 @@
+name: Trusted EventPipe trace capture
+on:
+  pull_request:
+  push:
+    branches: [main, 'feature/trusted-eventpipe-capture']
+permissions:
+  contents: read
+jobs:
+  trace:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+      - run: dotnet restore TenkaChan.slnx
+      - run: dotnet build TenkaChan.slnx -c Release --no-restore
+      - run: dotnet build tests/Fixtures/TrustedTraceApp/TrustedTraceApp.csproj -c Release
+      - name: Install a pinned trusted profiler on the CI worker only
+        shell: pwsh
+        run: dotnet tool install --tool-path "$env:RUNNER_TEMP/trace-tool" dotnet-trace --version 9.0.661903
+      - name: Real .NET 8 trace, conversion, hotspot mapping, integrity and timeout checks
+        shell: pwsh
+        run: |
+          $suffix = if ($IsWindows) { '.exe' } else { '' }
+          $env:TENKA_TEST_TRACE_TOOL = "$env:RUNNER_TEMP/trace-tool/dotnet-trace$suffix"
+          $env:TENKA_TRACE_FIXTURE = "$env:GITHUB_WORKSPACE/tests/Fixtures/TrustedTraceApp/bin/Release/net8.0/TrustedTraceApp.dll"
+          $env:TENKA_TRACE_INTEGRATION = '1'
+          dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj -c Release --no-build --filter 'FullyQualifiedName~TrustedTraceCaptureTests' --logger 'trx;LogFileName=trusted-trace.trx'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check src/TenkaChan.Web/wwwroot/trace.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tests/Fixtures/trace_web_smoke.py
+          exit $LASTEXITCODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trusted-trace-${{ matrix.os }}
+          path: tests/TenkaChan.Tests/TestResults/*.trx
