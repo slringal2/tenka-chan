@@ -45,7 +45,7 @@ public sealed class QuickHostWorkflowTests
                 "net8.0");
             await Assert.ThrowsAsync<UnauthorizedAccessException>(()=>executor.RunAsync(test.Id,false));
             var tests=await executor.RunAsync(test.Id,true);
-            Assert.Equal("tests_passed",tests.Status);
+            Assert.True(tests.Status=="tests_passed", tests.Status+"\n"+tests.Output+"\n"+tests.Stderr+"\n"+tests.Note);
             Assert.True(tests.Tests?.Passed>=1,tests.Stderr+"\n"+tests.Output);
             Assert.Contains("UNSANDBOXED",tests.Note);
             Assert.Equal(tests.Status,store.ReadExecutionResult(test.Id).Status);
@@ -55,7 +55,7 @@ public sealed class QuickHostWorkflowTests
                 "using BenchmarkDotNet.Attributes; using PriorityFixture; [DryJob] public class BenchCode { [Benchmark] public int Run() => Work.Run(new int[]{1,2,3}); }",
                 "net8.0");
             var result=await executor.RunAsync(bench.Id,true);
-            Assert.Equal("benchmark_completed",result.Status);
+            Assert.True(result.Status=="benchmark_completed", result.Status+"\n"+result.Output+"\n"+result.Stderr+"\n"+result.Note);
             Assert.Contains(result.Benchmarks,x=>x.MeanNanoseconds is > 0);
             Assert.Equal(oldHash,Convert.ToHexString(
                 SHA256.HashData(File.ReadAllBytes(original.AssemblyPath))));
