@@ -192,7 +192,7 @@ public sealed class DockerExecutor(WorkspaceGuard guard, ExperimentStore experim
         // Use an ephemeral writable container overlay for SDK8/9, while
         // keeping host source, generated code and NuGet packages read-only.
         // The SDK10 image keeps its previously validated immutable root.
-        if (target.MajorVersion == 10)
+        if (target.MajorVersion is not (8 or 9))
             info.ArgumentList.Add("--read-only");
         if (manifest.Kind == "jit")
         { info.ArgumentList.Add("--env"); info.ArgumentList.Add("TENKA_JIT_FILTER=" + TargetFrameworkPolicy.ValidateJitFilter(manifest.JitFilter ?? "")); }
