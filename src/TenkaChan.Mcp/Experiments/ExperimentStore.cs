@@ -112,7 +112,7 @@ public sealed class ExperimentStore
         File.WriteAllText(Path.Combine(directory, "manifest.json"), JsonSerializer.Serialize(manifest, _json));
         return new ExperimentReceipt(id, kind, directory, "syntax_valid",
             $"Prepared {selection.TargetFramework} ({selection.Resolution}); not executed. " +
-            "Run with Docker, or explicitly approve UNSANDBOXED host execution with an offline package cache.")
+            "A matching pre-pulled .NET SDK image and offline package cache are required.")
         {
             TargetFramework = selection.TargetFramework
         };

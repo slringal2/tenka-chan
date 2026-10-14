@@ -121,13 +121,6 @@ public static class ReviewTools
         string experimentId, CancellationToken cancellationToken = default) =>
         Json(await executor.RunAsync(experimentId, cancellationToken));
 
-    [McpServerTool(Name = "experiment_run_host")]
-    [Description("Explicit UNSANDBOXED host execution of a prepared xUnit or BenchmarkDotNet experiment. Requires both host execution environment gates plus per-run approval. Generated code has current user privileges; no Docker and no network sandbox.")]
-    public static async Task<string> RunTrustedHost(TrustedHostExperimentExecutor executor,
-        string experimentId, bool approveUnisolatedExecution,
-        CancellationToken cancellationToken = default) =>
-        Json(await executor.RunAsync(experimentId, approveUnisolatedExecution, cancellationToken));
-
     [McpServerTool(Name = "experiments_list")]
     [Description("List recent prepared and executed tests/benchmarks from the persistent experiment store.")]
     public static string ExperimentsList(ExperimentStore experiments, int limit = 50) =>

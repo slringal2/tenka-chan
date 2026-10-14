@@ -9,6 +9,7 @@ using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.FindSymbols;
 using Microsoft.CodeAnalysis.Operations;
 using TenkaChan.Mcp.Security;
+using TenkaChan.Mcp.Experiments;
 
 namespace TenkaChan.Mcp.Analysis;
 

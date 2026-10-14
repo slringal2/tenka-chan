@@ -2,7 +2,7 @@
 
 const state = {
   csrf: "", session: null, overview: null, view: "overview",
-  selectedMethod: null, targets: [], findingsOffset: 0
+  selectedMethod: null, targets: [], findingsOffset: 0, quick: null
 };
 const $ = id => document.getElementById(id);
 
@@ -55,6 +55,92 @@ async function withButton(button, operation) {
   try { return await operation(); }
   catch (error) { toast(error.message || "操作に失敗しました。", true); }
   finally { if (button) button.disabled = false; }
+}
+
+
+function quickAssembly() {
+  return state.quick?.assemblies?.find(a=>a.assemblyPath===$("quick-dll").value);
+}
+function syncQuickMethods() {
+  const asset=quickAssembly(), select=$("quick-method"), before=select.value;
+  clear(select);
+  const methods=state.quick?.jitMethods?.filter(m=>!asset||m.project===asset.project)||[];
+  for(const m of methods){const option=el("option","",m.signature);option.value=m.jitFilter;add(select,option);}
+  if(methods.some(m=>m.jitFilter===before))select.value=before;
+  else {
+    const pick=methods.find(m=>/:(Busy|Compute|Run)$/.test(m.jitFilter))||
+      methods.find(m=>/:Main$/.test(m.jitFilter))||methods[0];
+    if(pick)select.value=pick.jitFilter;
+  }
+  syncQuickFields();
+}
+function syncQuickFields() {
+  const asset=quickAssembly(), filter=$("quick-method").value;
+  $("local-jit-assembly").value=asset?.runnable?asset.assemblyPath:"";
+  $("local-jit-form").elements.jitFilter.value=filter||"";
+  $("local-performance-form").elements.baselineAssembly.value=asset?.runnable?asset.assemblyPath:"";
+  $("quick-jit").disabled=!(asset?.runnable&&filter&&state.session?.trustedLocalExecutionEnabled);
+  if(!asset)return;
+  const p=asset.projectPath,i=Math.max(p.lastIndexOf("\\"),p.lastIndexOf("/"));
+  $("experiment-root").value=p.slice(0,i);
+  $("experiment-form").elements.projectRelativePath.value=p.slice(i+1);
+  $("experiment-framework").value=asset.targetFramework;
+  $("experiment-jit-filter").value=filter||"";
+  $("quick-status").textContent=asset.runnable
+    ?"ビルド済みDLL: "+asset.assemblyPath+" / 対象: "+filter
+    :"ライブラリDLLです。静的解析・IL解析は可能です。JIT実行には呼び出し元アプリが必要です。";
+}
+async function updateQuickConfig() {
+  if(!state.overview?.loaded)return;
+  state.quick=await api("/workspace/quick-config");
+  const list=$("quick-dll"),before=list.value;clear(list);
+  for(const a of state.quick.assemblies){
+    const option=el("option","",a.project+" / "+a.configuration+" / "+a.targetFramework+
+      (a.runnable?" / 実行可":" / Library"));
+    option.value=a.assemblyPath;add(list,option);
+  }
+  if(state.quick.assemblies.some(a=>a.assemblyPath===before))list.value=before;
+  $("quick-static").disabled=false;
+  if(!state.quick.assemblies.length){
+    $("quick-status").textContent="ビルド済みDLLはまだありません。静的解析は可能です。JITはReleaseビルド後に利用できます。";
+    $("quick-jit").disabled=true;
+    const p=state.overview.projects?.find(x=>x.path?.toLowerCase().endsWith(".csproj"))?.path;
+    if(p){const i=Math.max(p.lastIndexOf("\\"),p.lastIndexOf("/"));
+      $("experiment-root").value=p.slice(0,i);
+      $("experiment-form").elements.projectRelativePath.value=p.slice(i+1);
+    }
+  }
+  syncQuickMethods();
+}
+async function runQuickStatic() {
+  if(!state.overview?.loaded)throw new Error("ワークスペースを読み込んでください。");
+  const scan=await api("/workspace/scan",{method:"POST",body:{}});
+  state.deterministic=await api("/deterministic/run",{method:"POST",
+    body:{maxFindings:500,maxMethodMetrics:100}});
+  renderDeterministic();
+  state.hotspotStatic=await api("/hotspots/scan",{method:"POST",
+    body:{maxMethods:100,maxSites:300}});
+  renderHotspotReports();
+  await loadOverview();
+  $("quick-status").textContent="解析完了: "+scan.findingCount+
+    "件の候補。下のホットスポットと優先度ページから詳細を確認できます。";
+  toast("静的・決定論・ホットスポット解析が完了しました。");
+}
+async function runQuickJit() {
+  const asset=quickAssembly(),filter=$("quick-method").value;
+  if(!asset?.runnable||!filter)throw new Error("実行可能なDLLとメソッドを選んでください。");
+  if(!window.confirm("このDLLを隔離なしでOSユーザー権限で実行します。信頼済みアプリであることを確認して続けますか？"))return;
+  const report=await api("/local-jit/capture",{method:"POST",body:{
+    assemblyPath:asset.assemblyPath,jitFilter:filter,trustedBinary:true,timeoutSeconds:45}});
+  $("local-jit-last-result").textContent="取得結果 "+report.id+" / "+report.status+
+    " / "+report.nativeListingPath;
+  if(report.status==="jit_completed"){
+    $("hotspot-evidence-local-jit").value=report.id;
+    $("quick-status").textContent="JIT取得成功。下の「根拠をまとめる」またはアセンブリ解析画面へ進めます。";
+  }else{
+    $("quick-status").textContent="JIT未取得: "+report.status+
+      "。実行中に対象メソッドが呼び出されるか確認してください。";
+  }
 }
 
 function showView(view) {
@@ -360,11 +446,13 @@ async function loadExperiments() {
     add(row, left);
     const actions = el("div", "item-actions");
     if (item.status === "prepared") {
-      const button = el("button", "mini-button", "実行");
-      button.disabled = !state.session?.dockerEnabled;
-      button.title = button.disabled ? "TENKA_ENABLE_DOCKER=1 が必要です" : "Dockerで隔離実行";
-      button.addEventListener("click", () => runExperiment(item.id, button));
-      add(actions, button);
+      const host=state.session?.hostExperimentsEnabled&&item.kind!=="jit";
+      const button=el("button","mini-button",host?"ホストで実行":"実行");
+      button.disabled=!(host||state.session?.dockerEnabled);
+      button.title=host?"生成コードを隔離なしで実行（毎回承認）":
+        button.disabled?"実験ランナーが無効です":"Dockerで実行";
+      button.addEventListener("click",()=>runExperiment(item.id,button,host));
+      add(actions,button);
     } else {
       const button = el("button", "mini-button", "結果を見る");
       button.addEventListener("click", () => openExperiment(item.id));
@@ -374,11 +462,14 @@ async function loadExperiments() {
     add(root, row);
   }
 }
-async function runExperiment(id, button) {
-  if (!window.confirm("生成したコードをDockerの隔離環境で実行します。よろしいですか？")) return;
-  await withButton(button, async () => {
-    toast("Dockerでの検証を開始しました。");
-    const result = await api("/experiments/" + encodeURIComponent(id) + "/run", { method: "POST", body: {} });
+async function runExperiment(id, button, host=false) {
+  if(!window.confirm(host?
+    "生成したC#コードを隔離なしで実行します。ファイル・ネットワークに現在のユーザー権限でアクセスできます。\nコードを確認し、信頼できる場合のみ実行してください。":
+    "生成したコードをDockerで実行しますか？"))return;
+  await withButton(button,async()=>{
+    toast(host?"隔離なしのホスト実験を開始しました。":"Docker実験を開始しました。");
+    const result=await api("/experiments/"+encodeURIComponent(id)+(host?"/run-host":"/run"),
+      {method:"POST",body:host?{approveUnisolatedExecution:true}:{}});
     toast("実行結果: " + result.status, result.status.includes("failed") || result.status.includes("unverified"));
     await loadExperiments();
     await openExperiment(id);
@@ -1364,8 +1455,7 @@ async function initialize() {
       toast("読み込み成功: " + summary.projects.length + " projects / " + summary.methodCount + " methods");
       await loadOverview();
       await loadTargets();
-      const root = path.replace(/[\\/][^\\/]+$/, "");
-      if (!$("experiment-root").value) $("experiment-root").value = root;
+      await updateQuickConfig();
     });
   });
   $("scan-button").addEventListener("click", () =>
@@ -1426,6 +1516,10 @@ async function initialize() {
     event.preventDefault();
     investigatePerformanceMethod();
   });
+  $("quick-dll").addEventListener("change",syncQuickMethods);
+  $("quick-method").addEventListener("change",syncQuickFields);
+  $("quick-static").addEventListener("click",()=>withButton($("quick-static"),runQuickStatic));
+  $("quick-jit").addEventListener("click",()=>withButton($("quick-jit"),runQuickJit));
   $("hotspot-static-form").addEventListener("submit", runStaticHotspotScan);
   $("local-jit-form").addEventListener("submit", captureLocalNativeJit);
   $("local-performance-form").addEventListener("submit", measureLocalPerformance);
@@ -1454,12 +1548,13 @@ async function initialize() {
     $("auto-endpoint").textContent = state.session.llmEndpoint || "127.0.0.1";
 
     $("runtime-status").textContent = "ローカルサーバー接続済み";
-    $("docker-note").textContent = state.session.dockerEnabled
-      ? "Docker実行が有効です。生成コードは隔離コンテナ内で実行されます。"
-      : "Docker実行は無効です。TENKA_ENABLE_DOCKER=1で明示的に有効にしてください。";
+    $("docker-note").textContent = state.session.hostExperimentsEnabled
+      ? "Dockerなしの生成xUnit・BenchmarkDotNet実行が有効です。隔離なし・実験ごとに確認します。"
+      : state.session.dockerEnabled ? "Docker実験が有効です。"
+      : "Dockerなしの生成実験にはTENKA_ENABLE_UNSANDBOXED_EXPERIMENTS=1とTENKA_ENABLE_LOCAL_EXEC=1を設定してください。";
     await loadOverview();
     await loadExperiments();
-    if (state.overview?.loaded) await loadTargets();
+    if (state.overview?.loaded) { await loadTargets(); await updateQuickConfig(); }
     await refreshReview();
     if (state.review) await loadReviewHistory();
     window.setInterval(() => {

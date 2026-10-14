@@ -122,6 +122,18 @@
         </section>
 
         <section class="view" id="view-hotspots" hidden>
+          <article class="panel diagnostic-panel">
+            <div class="panel-header"><div><h3>ワンクリック解析（Docker不要）</h3><p>読み込んだプロジェクトから既存のDLL・JITメソッドを自動検出します。指定し直す必要はありません。</p></div></div>
+            <div class="det-controls">
+              <label>自動検出DLL<select id="quick-dll"><option value="">プロジェクトを開いてください</option></select></label>
+              <label>JIT解析対象<select id="quick-method"><option value="">プロジェクトを開いてください</option></select></label>
+              <button id="quick-static" type="button" class="button button-primary" disabled>静的・決定論・性能解析をまとめて実行</button>
+              <button id="quick-jit" type="button" class="button button-outline" disabled>選択メソッドのJITを取得</button>
+              <a href="/assembly.html">DLL / IL / 機械語 ↗</a>
+              <a href="/trace.html">GC / プロファイル ↗</a>
+            </div>
+            <p class="form-note" id="quick-status">プロジェクトを読み込んでください。静的解析ではアプリを実行しません。</p>
+          </article>
           <div class="page-heading">
             <div class="eyebrow">PERFORMANCE / HOTSPOT INVESTIGATION</div>
             <h1>性能ホットスポット</h1>
@@ -408,7 +420,7 @@
         </section>
 
         <section class="view" id="view-experiments" hidden>
-          <div class="page-heading"><div class="eyebrow">TESTS / PERFORMANCE</div><h1>テストと性能</h1><p>生成テストを隔離実行し、TRX・BenchmarkDotNetの観測結果を確認します。</p></div>
+          <div class="page-heading"><div class="eyebrow">TESTS / PERFORMANCE</div><h1>テストと性能</h1><p>生成xUnit・BenchmarkDotNetも明示承認すればDockerなしで実行できます（ホスト実行は隔離なし）。</p></div>
           <div class="two-column experiments-layout">
             <article class="panel">
               <div class="panel-header"><div><h3>実験履歴</h3><p>保存されたテスト・ベンチマーク・JIT機械語</p></div><button class="text-link" id="refresh-experiments">更新 ↻</button></div>
@@ -425,7 +437,7 @@
                 <label>C#コード<textarea name="generatedCode" rows="9" spellcheck="false" class="code-input" required placeholder="using Xunit;&#10;public class MyTests {&#10;    [Fact] public void Case() { /* ... */ }&#10;}"></textarea></label>
                 <button class="button button-primary" type="submit">実験を準備する →</button>
               </form>
-              <p class="form-note" id="docker-note">Docker実行は許可されていません。TENKA_ENABLE_DOCKER=1で有効にできます。</p>
+              <p class="form-note" id="docker-note">ホスト実行は隔離なしで行われます。生成コードを実行する際は毎回の承認が必要です。</p>
             </article>
           </div>
           <article class="panel comparison-panel">

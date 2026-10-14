@@ -12,4 +12,14 @@ $("native").addEventListener("submit", event => { event.preventDefault(); run(as
 $("pin").addEventListener("click",()=>{if(busy)return; baseline=selection ? {...selection}:null; $("baseline").textContent=baseline?"比較元: "+JSON.stringify(baseline):""; $("compare").disabled=!baseline;});
 $("compare").addEventListener("click",()=>run(async()=>{if(!baseline||!selection)throw new Error("比較元と比較先を解析してください"); const r=await api("assembly/compare",{baseline,candidate:selection}); $("comparison").textContent=JSON.stringify({sameSelectionSignature:r.sameSelectionSignature,sameReportedEnvironment:r.sameReportedEnvironment,bothDecoded:r.bothDecoded,sameCodeBytes:r.sameCodeBytes,codeSizeDelta:r.codeSizeDelta,instructionCountDelta:r.instructionCountDelta,addedCpuFeatures:r.addedCpuFeatures,removedCpuFeatures:r.removedCpuFeatures,verdict:r.verdict,limitations:r.limitations},null,2);remember(r);}));
 $("export").addEventListener("click",()=>{if(!lastReport)return;const url=URL.createObjectURL(new Blob([JSON.stringify(lastReport,null,2)],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download="tenka-assembly-report.json";a.click();URL.revokeObjectURL(url);});
-run(async()=>{csrf=(await api("session")).csrfToken;});
+run(async()=>{
+  csrf=(await api("session")).csrfToken;
+  try {
+    const quick=await api("workspace/quick-config");
+    const asset=quick.assemblies?.find(x=>x.runnable)||quick.assemblies?.[0];
+    if(asset){
+      $("managed").elements.assemblyPath.value=asset.assemblyPath;
+      $("status").textContent="ビルド済みDLLを自動検出しました。メソッド一覧を読むを押してください。";
+    }
+  }catch{ /* workspace未選択 */ }
+});

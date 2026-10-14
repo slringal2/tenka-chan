@@ -6,6 +6,9 @@ using TenkaChan.Mcp.Security;
 
 namespace TenkaChan.Mcp.Experiments;
 
+public sealed record WorkspaceJitMethodChoice(string MethodId, string Project,
+    string Signature, string JitFilter);
+
 public sealed record WorkspaceAssemblyChoice(
     string Project, string ProjectPath, string AssemblyPath, string TargetFramework,
     bool Runnable, string Configuration, string Explanation);

@@ -4,8 +4,6 @@ using TenkaChan.Mcp.Review;
 
 namespace TenkaChan.Web;
 
-public sealed record WorkspaceJitMethodChoice(string MethodId, string Project,
-    string Signature, string JitFilter);
 public sealed record WorkspaceQuickConfig(string SnapshotId,
     IReadOnlyList<WorkspaceAssemblyChoice> Assemblies,
     IReadOnlyList<WorkspaceJitMethodChoice> JitMethods);
