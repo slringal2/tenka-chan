@@ -176,7 +176,7 @@ public sealed class DockerExecutor(WorkspaceGuard guard, ExperimentStore experim
         { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
         foreach (var arg in new[]
         {
-            "run", "--rm", "--pull=never", "--name", name, "--network", "none", "--cap-drop", "ALL",
+            "run", "--rm", "--pull=never", "--name", name, "--network", "none", "--read-only", "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges", "--pids-limit", "128", "--memory", "2g", "--cpus", "2", "--user", "65532:65532",
             "--tmpfs", "/work:rw,exec,size=1g,mode=1777", "--tmpfs", "/tmp:rw,exec,size=128m,mode=1777",
             "--env", "HOME=/work", "--env", "DOTNET_CLI_HOME=/work", "--env", "DOTNET_NOLOGO=1",
@@ -186,13 +186,6 @@ public sealed class DockerExecutor(WorkspaceGuard guard, ExperimentStore experim
             "--mount", "type=bind,source=" + cache + ",target=/nuget,readonly",
             "--mount", "type=bind,source=" + artifacts + ",target=/artifacts"
         }) info.ArgumentList.Add(arg);
-        // SDK8's NuGet first-use named mutex fails with a read-only
-        // container root on some Linux hosts even when /tmp and HOME are
-        // writable tmpfs. Keep an ephemeral disposable container overlay
-        // for net8/9; source, generated code and NuGet mounts stay read-only.
-        // The validated SDK10 worker retains its immutable root filesystem.
-        if (target.MajorVersion == 10)
-            info.ArgumentList.Add("--read-only");
         if (manifest.Kind == "jit")
         { info.ArgumentList.Add("--env"); info.ArgumentList.Add("TENKA_JIT_FILTER=" + TargetFrameworkPolicy.ValidateJitFilter(manifest.JitFilter ?? "")); }
         foreach (var arg in new[] { target.SdkImage, "sh", "-c", script }) info.ArgumentList.Add(arg);
