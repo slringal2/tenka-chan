@@ -304,6 +304,34 @@ uses `--pull=never` and `--network none`. Cross-version runtime
 experiments should use the same architecture/workload if you wish to
 compare their code generation.
 
+## Performance evidence: profiler → Roslyn → RyuJIT → IL/PDB
+
+For performance work, **start with an observed hotspot**, not the largest
+static warning score. Optionally pass a saved BenchmarkDotNet experiment ID
+using `benchmarkExperimentId`; time and allocation per operation remain
+**separate measurements**, not attributed to a profile frame by name alone. The new `performance_evidence_triage` tool joins a
+loaded Speedscope profile, Roslyn static candidates, and optionally a
+completed JIT experiment. The result has **separate** observed and
+static-only rankings: self/inclusive measurements remain in the profile's
+unit, and never get summed with Roslyn risk scores.
+
+`performance_method_dossier` then gathers evidence for a selected,
+unambiguously linked Roslyn method. Supply an optional JIT experiment ID
+for native machine-code context. For an authenticated captured-build
+IL/PDB lookup, choose an exact `binary-*.dll` and MethodDef token returned by
+`jit_binary_files` and `jit_binary_methods`; providing a local C# source path
+allows checksum verification before displaying code excerpts.
+
+The **性能ホットスポット** Web view exposes these workflows under
+**実測優先の根拠レポート** and **メソッド別の詳細調査**. The API endpoints are
+`GET /api/hotspots/triage` and `POST /api/hotspots/investigate`.
+
+This is **evidence aggregation, not automatic CPU profiling or an
+optimization verdict**. Imported profiles can contain waiting/thread time;
+unmatched frames remain unresolved; Portable PDB cannot map individual
+native machine instructions to IL offsets. More details:
+[performance evidence guide](docs/performance-evidence.md).
+
 ## Finding real performance hotspots
 
 The **性能ホットスポット** screen separates two very different questions:
@@ -488,6 +516,7 @@ free of bugs or performance regressions.
 | --- | --- |
 | `autonomous_review_start` / `autonomous_review_status` | Bounded local-LLM method investigation and current run state |
 | `autonomous_review_stop` / `autonomous_review_history` | Cancel a run and retrieve persisted history |
+| `performance_evidence_triage` / `performance_method_dossier` | Prioritize real workload cost and inspect code-generation/IL/PDB evidence for a single matched method |
 | `trusted_local_workload_measure` / `trusted_local_workload_result` | Trusted host whole-process elapsed/CPU measurements and optional A/B comparison |
 | `trusted_local_jit_capture` / `trusted_local_jit_result` | Docker-free JIT machine-code capture of explicitly trusted, already built applications |
 | `performance_hotspots` / `performance_profile_import` / `performance_profile_current` | Static candidate ranking plus separately imported measured workload profile |

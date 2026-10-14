@@ -933,6 +933,197 @@ function renderHotspotReports() {
   }
 }
 
+function evidenceEntry(entry) {
+  const row = el("button", "item-row clickable");
+  row.type = "button";
+  const content = el("div");
+  add(content, el("strong", "", entry.name));
+  const observed = entry.evidenceOrigin === "observed_profile";
+  const pct = observed && Number.isFinite(entry.exclusivePercent)
+    ? "Self " + entry.exclusivePercent.toFixed(2) + "% · Inclusive " +
+        entry.inclusivePercent.toFixed(2) + "%" : "実測なし";
+  add(content, el("small", "",
+    pct + " · " + (entry.unit || "静的のみ") +
+    " · 静的スコア: " + (entry.staticSuspicionScore ?? "不明") +
+    " · " + entry.matchStatus));
+  if (entry.staticReasons?.length)
+    add(content, el("small", "", entry.staticReasons.join(" / ")));
+  row.append(content, badge(observed ? "OBSERVED" : "STATIC", !observed));
+  if (!entry.methodId) {
+    row.disabled = true;
+    row.title = "対応するRoslynメソッドを一意に特定できません。";
+  } else {
+    row.addEventListener("click", () => {
+      $("hotspot-dossier-method").value = entry.methodId;
+      $("hotspot-dossier-jit").value = state.performanceTriage?.jitExperimentId || "";
+      $("hotspot-dossier-method").scrollIntoView({ block: "center", behavior: "smooth" });
+      investigatePerformanceMethod();
+    });
+  }
+  return row;
+}
+
+function renderPerformanceTriage() {
+  const report = state.performanceTriage;
+  const observed = $("hotspot-evidence-observed");
+  const candidates = $("hotspot-evidence-static");
+  clear(observed); clear(candidates);
+  $("hotspot-evidence-basis").textContent = report?.priorityBasis || "未集約";
+  if (!report) {
+    empty(observed, "実測優先レポートを作成してください。");
+    empty(candidates, "実測優先レポートを作成してください。");
+    return;
+  }
+  if (!report.observed.length)
+    empty(observed, "実測プロファイルがありません。静的候補のみ表示します。");
+  else
+    for (const item of report.observed)
+      add(observed, evidenceEntry(item));
+  if (!report.staticOnly.length)
+    empty(candidates, "未観測の静的候補はありません。");
+  else
+    for (const item of report.staticOnly)
+      add(candidates, evidenceEntry(item));
+  const benchmarks = $("hotspot-evidence-benchmarks");
+  clear(benchmarks);
+  if (!report.benchmarks) {
+    empty(benchmarks, "ベンチマーク実験IDを指定して集約すると表示されます。");
+  } else {
+    const data = report.benchmarks;
+    add(benchmarks, el("div", "json-note",
+      data.experimentId + " · " + data.targetFramework + " · " + data.status));
+    for (const sample of data.cases.slice(0, 100)) {
+      const row = el("div", "item-row");
+      const details = el("div");
+      add(details, el("strong", "", sample.caseId));
+      const duration = Number.isFinite(sample.meanNanoseconds)
+        ? sample.meanNanoseconds.toFixed(2) + " ns/op" : "time not measured";
+      const allocation = Number.isFinite(sample.allocatedBytesPerOperation)
+        ? sample.allocatedBytesPerOperation.toFixed(0) + " B/op" : "allocation unknown";
+      add(details, el("small", "",
+        duration + " · " + allocation + " · " +
+        count(sample.sampleCount) + " samples"));
+      add(row, details);
+      add(benchmarks, row);
+    }
+    for (const warning of data.limitations)
+      add(benchmarks, el("p", "inline-help", warning));
+  }
+  if (report.observedOutputTruncated || report.staticOutputTruncated)
+    toast("表示件数に上限があります。未表示はコストが低いことを意味しません。");
+}
+
+async function runPerformanceTriage(event) {
+  event.preventDefault();
+  const button = $("hotspot-evidence-run");
+  await withButton(button, async () => {
+    if (!state.overview?.loaded) throw new Error("先に.NET Solutionを読み込んでください。");
+    const form = Object.fromEntries(new FormData(event.currentTarget));
+    const maxObserved = Number(form.maxObserved);
+    if (!Number.isInteger(maxObserved) || maxObserved < 1 || maxObserved > 200)
+      throw new Error("表示件数は1〜200で指定してください。");
+    const query = new URLSearchParams({ maxObserved: String(maxObserved), maxStatic: "40" });
+    if (String(form.jitExperimentId || "").trim())
+      query.set("jitExperimentId", String(form.jitExperimentId).trim());
+    if (String(form.benchmarkExperimentId || "").trim())
+      query.set("benchmarkExperimentId", String(form.benchmarkExperimentId).trim());
+    state.performanceTriage = await api("/hotspots/triage?" + query);
+    renderPerformanceTriage();
+    toast("実測・静的解析の根拠を別々の指標として統合しました。");
+  });
+}
+
+async function investigatePerformanceMethod() {
+  const button = $("hotspot-dossier-run");
+  await withButton(button, async () => {
+    if (!state.overview?.loaded) throw new Error("先に.NET Solutionを読み込んでください。");
+    const form = $("hotspot-dossier-form");
+    const input = Object.fromEntries(new FormData(form));
+    const methodId = String(input.methodId || "").trim();
+    if (!methodId) throw new Error("RoslynメソッドIDが必要です。");
+    const body = { methodId, maxInstructions: 1200 };
+    const experimentId = String(input.jitExperimentId || "").trim();
+    const dll = String(input.assemblyFile || "").trim();
+    const token = String(input.methodToken || "").trim();
+    const source = String(input.sourceFilePath || "").trim();
+    if (experimentId) body.jitExperimentId = experimentId;
+    if (dll || token) {
+      if (!experimentId || !dll || !token)
+        throw new Error("IL解析にはJIT実験ID、保存済みDLL名、MethodDefトークンが必要です。");
+      const integer = Number(token);
+      if (!Number.isSafeInteger(integer) || integer < 100663297)
+        throw new Error("正しいMethodDefトークンを指定してください。");
+      body.assemblyFile = dll;
+      body.methodToken = integer;
+      if (source) body.sourceFilePath = source;
+    } else if (source) throw new Error("C#ソースの照合には保存済みDLLとMethodDefトークンが必要です。");
+
+    const report = await api("/hotspots/investigate", { method: "POST", body });
+    renderMethodEvidenceDossier(report);
+  });
+}
+
+function renderMethodEvidenceDossier(report) {
+  const root = $("hotspot-dossier-result");
+  clear(root);
+  const title = el("div", "json-note",
+    "結合状態: " + report.bindingStatus +
+    " ／ プロファイルの名前対応とJIT実験のビルド同一性は別の証拠です。");
+  add(root, title);
+  const entry = report.triage;
+  if (entry) {
+    const details = [
+      "Source: " + entry.name,
+      "Profiler self: " + (entry.exclusivePercent === null
+        ? "not measured" : entry.exclusivePercent + "%"),
+      "Profiler inclusive: " + (entry.inclusivePercent === null
+        ? "not measured" : entry.inclusivePercent + "%"),
+      "Static suspicion: " + (entry.staticSuspicionScore ?? "not ranked"),
+      "Unit: " + (entry.unit || "none")
+    ].join("\n");
+    const block = el("pre", "", details);
+    add(root, block);
+  }
+  if (report.nativeCode) {
+    const native = report.nativeCode;
+    add(root, el("h3", "evidence-subtitle", "JIT MACHINE CODE"));
+    add(root, el("div", "json-note",
+      native.jitSignature + " · " + native.jitMode +
+      " · bytes=" + native.codeSizeBytes + " · encoding=" + native.offsetValidation));
+    const lines = (native.instructions || []).slice(0, 180).map(op =>
+      (op.nativeOffset === null ? "????" : op.nativeOffset.toString(16).padStart(4, "0")) +
+      "  " + (op.encodedBytes || "").padEnd(20) + "  " +
+      op.mnemonic + " " + op.operands);
+    add(root, el("pre", "native-code", lines.join("\n")));
+  }
+  if (report.ilAndSource) {
+    add(root, el("h3", "evidence-subtitle", "CAPTURED IL / PORTABLE PDB"));
+    const il = report.ilAndSource;
+    add(root, el("div", "json-note",
+      il.signature + " · token=" + il.metadataToken +
+      " · PDB=" + il.pdbStatus + " · IL SHA256=" + il.ilSha256));
+    const list = el("div", "stack-list");
+    for (const site of il.costSites.slice(0, 50)) {
+      const row = el("div", "item-row");
+      const content = el("div");
+      add(content, el("strong", "", "IL_" + site.ilOffset.toString(16) +
+        " · " + site.kind + " · " + site.operand));
+      add(content, el("small", "", site.source
+        ? (site.source.document + ":" + site.source.startLine +
+          " · " + site.source.localSourceStatus)
+        : site.mappingStatus));
+      if (site.source?.verifiedSourceExcerpt)
+        add(content, el("small", "", site.source.verifiedSourceExcerpt));
+      add(row, content); add(list, row);
+    }
+    if (!il.costSites.length)
+      empty(list, "このMethodDefには対象となるILコスト命令がありません。");
+    add(root, list);
+  }
+  for (const note of report.limitations || [])
+    add(root, el("p", "inline-help", note));
+}
+
 async function loadHotspotReports() {
   const result = await api("/hotspots/report");
   state.hotspotStatic = result.staticAnalysis;
@@ -954,6 +1145,8 @@ async function runStaticHotspotScan(event) {
       method: "POST", body: { maxMethods, maxSites }
     });
     renderHotspotReports();
+    state.performanceTriage = null;
+    renderPerformanceTriage();
     toast(count(state.hotspotStatic.totalSites) + " 件の静的コスト候補を解析しました。");
   });
 }
@@ -1118,6 +1311,8 @@ async function importSampledHotspot(event) {
       method: "POST", body: { filePath, profileIndex, maxFrames: 100 }
     });
     renderHotspotReports();
+    state.performanceTriage = null;
+    renderPerformanceTriage();
     toast(count(state.hotspotMeasured.linkedFrames) +
       " 件の実測フレームをRoslynメソッドへ対応付けました。");
   });
@@ -1153,6 +1348,8 @@ async function initialize() {
       state.hotspotStatic = null;
       state.hotspotMeasured = null;
       renderHotspotReports();
+      state.performanceTriage = null;
+      renderPerformanceTriage();
       toast("読み込み成功: " + summary.projects.length + " projects / " + summary.methodCount + " methods");
       await loadOverview();
       await loadTargets();
@@ -1213,6 +1410,11 @@ async function initialize() {
   $("auto-stop").addEventListener("click", stopReview);
   $("auto-history-refresh").addEventListener("click", () =>
     loadReviewHistory().catch(error => toast(error.message, true)));
+  $("hotspot-evidence-form").addEventListener("submit", runPerformanceTriage);
+  $("hotspot-dossier-form").addEventListener("submit", event => {
+    event.preventDefault();
+    investigatePerformanceMethod();
+  });
   $("hotspot-static-form").addEventListener("submit", runStaticHotspotScan);
   $("local-jit-form").addEventListener("submit", captureLocalNativeJit);
   $("local-performance-form").addEventListener("submit", measureLocalPerformance);

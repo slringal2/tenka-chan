@@ -1,5 +1,6 @@
 using Microsoft.Build.Locator;
 using TenkaChan.Mcp.Analysis;
+using TenkaChan.Mcp.Experiments;
 using TenkaChan.Mcp.Security;
 using Xunit;
 
@@ -45,7 +46,8 @@ public sealed class RoslynIntegrationTests
                 }
                 """);
 
-            using var service = new RoslynReviewService(new WorkspaceGuard([root], true, false));
+            var guard = new WorkspaceGuard([root], true, false);
+            using var service = new RoslynReviewService(guard);
             var summary = await service.OpenAsync(projectPath);
             Assert.True(summary.MethodCount >= 2);
             var add = Assert.Single(service.FindMethods("Demo.Add"));
@@ -85,6 +87,39 @@ public sealed class RoslynIntegrationTests
 
             var results = await service.ScanAsync();
             Assert.Contains(results, f => f.RuleId == "PERF1001" && f.MethodId is not null);
+            var trace = Path.Combine(root, "workload.speedscope.json");
+            File.WriteAllText(trace, """
+                {
+                  "shared":{"frames":[
+                    {"name":"Fixture.Demo.Use(int[])"},
+                    {"name":"Fixture.Demo.Add(int,int)"}
+                  ]},
+                  "profiles":[{
+                    "type":"sampled","name":"fixture-workload","unit":"milliseconds",
+                    "samples":[[0],[0],[1]],"weights":[4,3,2]
+                  }]
+                }
+                """);
+            await service.ImportHotspotProfileAsync(trace);
+            var store = new ExperimentStore(guard);
+            var evidence = new PerformanceEvidenceService(
+                service, store, new JitBinarySourceService(store, guard));
+            var triage = await evidence.TriageAsync(maxObserved: 10, maxStatic: 10);
+            Assert.Equal(summary.SnapshotId, triage.SnapshotId);
+            Assert.Equal("observed_exclusive_milliseconds", triage.PriorityBasis);
+            var first = Assert.Single(triage.Observed,
+                item => item.Name.StartsWith("Fixture.Demo.Use", StringComparison.Ordinal));
+            Assert.NotNull(first.MethodId);
+            Assert.Equal(7d, first.ExclusiveWeight);
+            Assert.NotNull(first.StaticSuspicionScore);
+            var dossier = await evidence.InvestigateAsync(first.MethodId!);
+            Assert.Equal(first.MethodId, dossier.MethodId);
+            Assert.NotNull(dossier.Triage?.ExclusivePercent);
+            Assert.Null(dossier.NativeCode);
+            Assert.Null(dossier.IlAndSource);
+            Assert.Contains(dossier.Limitations,
+                note => note.Contains("No captured IL", StringComparison.Ordinal));
+
         }
         finally
         {

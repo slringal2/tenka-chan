@@ -239,6 +239,89 @@
             <p class="form-note">ファイルは許可済みのディレクトリに置いてください。計測処理そのものはここでは実行しません。サンプリングは入力・実行環境の影響を受けます。</p>
           </article>
           <article class="panel diagnostic-panel">
+            <div class="panel-header">
+              <div><h3>実測優先の根拠レポート</h3>
+                <p>実測のExclusiveで順位付けし、静的候補と機械語を別の証拠として表示します。</p>
+              </div>
+              <span id="hotspot-evidence-basis" class="subtle-chip">未集約</span>
+            </div>
+            <form id="hotspot-evidence-form" class="det-controls">
+              <label>JIT実験ID（任意）
+                <input name="jitExperimentId" id="hotspot-evidence-jit" type="text"
+                  autocomplete="off" placeholder="実行済みJIT実験のID">
+              </label>
+              <label>BenchmarkDotNet実験ID（任意）
+                <input name="benchmarkExperimentId" id="hotspot-evidence-benchmark-id"
+                  type="text" autocomplete="off" placeholder="保存済みベンチマーク実験ID">
+              </label>
+              <label>表示する実測フレーム数
+                <input name="maxObserved" type="number" min="1" max="200" value="40" required>
+              </label>
+              <button id="hotspot-evidence-run" class="button button-primary" type="submit">
+                根拠をまとめる →
+              </button>
+            </form>
+            <p class="form-note">静的スコアと実測時間は合算しません。プロファイル未読込なら静的候補だけ表示します。</p>
+            <div class="two-column">
+              <div>
+                <h3 class="evidence-subtitle">実測で重い順</h3>
+                <div id="hotspot-evidence-observed" class="stack-list">
+                  <div class="empty-mini">集約レポートを作成してください。</div>
+                </div>
+              </div>
+              <div>
+                <h3 class="evidence-subtitle">未観測の静的候補</h3>
+                <div id="hotspot-evidence-static" class="stack-list">
+                  <div class="empty-mini">集約レポートを作成してください。</div>
+                </div>
+              </div>
+            </div>
+          </article>
+          <article class="panel diagnostic-panel">
+            <div class="panel-header">
+              <div><h3>BenchmarkDotNetの独立した測定結果</h3>
+                <p>同じ名前でもプロファイルのフレームとは自動的に同一視しません。</p>
+              </div>
+              <span class="subtle-chip">MEASURED / PER OPERATION</span>
+            </div>
+            <div id="hotspot-evidence-benchmarks" class="stack-list">
+              <div class="empty-mini">ベンチマーク実験IDを指定して集約すると表示されます。</div>
+            </div>
+          </article>
+          <article class="panel diagnostic-panel">
+            <div class="panel-header">
+              <div><h3>メソッド別の詳細調査</h3>
+                <p>実測フレーム → Roslynメソッド → JIT命令 → 保存済みDLLのIL/PDB根拠</p>
+              </div>
+              <span class="subtle-chip">SOURCE EVIDENCE</span>
+            </div>
+            <form id="hotspot-dossier-form" class="det-controls">
+              <label>RoslynメソッドID
+                <input id="hotspot-dossier-method" name="methodId" required
+                  autocomplete="off" placeholder="上のメソッドを選択">
+              </label>
+              <label>JIT実験ID（任意）
+                <input id="hotspot-dossier-jit" name="jitExperimentId"
+                  autocomplete="off" placeholder="実行済みJIT実験ID">
+              </label>
+              <label>保存済みDLL名（任意）
+                <input name="assemblyFile" autocomplete="off" placeholder="binary-App.dll">
+              </label>
+              <label>MethodDefトークン（DLL指定時必須）
+                <input name="methodToken" type="number" min="100663297" step="1"
+                  placeholder="100663297">
+              </label>
+              <label>C#ソースの絶対パス（任意）
+                <input name="sourceFilePath" autocomplete="off" placeholder="C:\Projects\App.cs">
+              </label>
+              <button id="hotspot-dossier-run" class="button button-outline"
+                type="submit">メソッドの根拠を調査 ↗</button>
+            </form>
+            <div id="hotspot-dossier-result" class="evidence-detail">
+              <div class="empty-mini">実測と静的候補の対応があるメソッドを選択してください。</div>
+            </div>
+          </article>
+          <article class="panel diagnostic-panel">
             <div class="panel-header"><div><h3>実測プロファイルの重いフレーム</h3><p>Exclusive（自身で消費）とInclusive（呼び出し先を含む）を分けて表示します。</p></div><span id="hotspot-profile-unit" class="subtle-chip">プロファイル未読込</span></div>
             <div id="hotspot-measured" class="stack-list"><div class="empty-mini">SpeedscopeプロファイルJSONを取り込んでください。</div></div>
           </article>

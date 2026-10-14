@@ -329,3 +329,53 @@ button.item-row:hover,.item-row.clickable:hover { background:#1b3037; border-col
 @media (max-width: 760px) {
   #view-hotspots .profile-path-input { width: 100%; }
 }
+
+
+/* Measured-first performance evidence */
+#hotspot-evidence-observed, #hotspot-evidence-static {
+  max-height: 640px;
+  overflow-y: auto;
+  gap: 8px;
+}
+#hotspot-evidence-observed .item-row,
+#hotspot-evidence-static .item-row {
+  width: 100%;
+  align-items: flex-start;
+  overflow-wrap: anywhere;
+}
+#hotspot-evidence-observed .item-row small,
+#hotspot-evidence-static .item-row small {
+  white-space: normal;
+  line-height: 1.7;
+}
+.evidence-subtitle {
+  font-size: 12px;
+  letter-spacing: .05em;
+  color: var(--mint);
+  font-weight: 700;
+  margin: 7px 0 14px;
+}
+.evidence-detail {
+  border-top: 1px solid var(--border-soft);
+  margin-top: 20px;
+  padding-top: 18px;
+  overflow-wrap: anywhere;
+}
+.evidence-detail pre {
+  white-space: pre;
+  overflow-x: auto;
+  max-height: 420px;
+  color: #d9edf0;
+  font: 11px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace;
+  background: #091219;
+  border: 1px solid #2b4248;
+  border-radius: 9px;
+  padding: 13px;
+}
+.evidence-detail .json-note { margin-top: 12px; }
+#hotspot-evidence-form input[name="jitExperimentId"],
+#hotspot-dossier-form input[name="methodId"],
+#hotspot-dossier-form input[name="jitExperimentId"],
+#hotspot-dossier-form input[name="sourceFilePath"] {
+  width: min(300px, 100%);
+}
