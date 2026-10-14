@@ -1,0 +1,27 @@
+.investigation-page { max-width: 1480px; margin: auto; padding: 30px clamp(16px, 4vw, 60px) 50px; }
+.investigation-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 34px; }
+.investigation-header a { text-decoration: none; color: var(--mint); }
+.investigation-page h2 { font-size: 17px; margin: 0; }
+.investigation-page .panel { margin-bottom: 20px; }
+.investigation-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 15px 0; }
+.investigation-controls label { display: flex; flex-direction: column; flex: 1 1 200px; gap: 7px; color: var(--muted-light); font-size: 12px; }
+.investigation-controls input, .investigation-controls select { padding: 11px; width: 100%; }
+.investigation-controls label:has(input[type=number]) { flex: 0 1 150px; }
+.investigation-columns { display: grid; grid-template-columns: minmax(280px, .85fr) minmax(0, 1.4fr); gap: 20px; }
+.evidence-summary { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.evidence-summary span { background: var(--surface-raised); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 12px; overflow-wrap: anywhere; }
+#triage-list { max-height: 760px; overflow: auto; }
+#triage-list button { flex-wrap: wrap; }
+#method-title { overflow-wrap: anywhere; }
+#dossier section { margin-bottom: 24px; }
+#dossier h3 { color: var(--mint); font-size: 13px; margin: 0 0 8px; }
+#dossier p, #dossier li { color: var(--muted-light); font-size: 12px; overflow-wrap: anywhere; }
+#dossier pre { background: #091219; border: 1px solid var(--border); border-radius: 9px; padding: 15px; font: 12px/1.8 ui-monospace, Consolas, monospace; overflow: auto; max-height: 480px; white-space: pre; }
+#dossier details { margin: 12px 0; }
+#dossier summary, #unmatched { font-size: 12px; }
+#connection { color: var(--muted-light); font-size: 12px; }
+#error { background: #39252b; border: 1px solid #945662; border-radius: 10px; padding: 14px; overflow-wrap: anywhere; }
+.investigation-page summary { cursor: pointer; color: var(--mint); margin: 14px 0; }
+.investigation-page footer { font-size: 12px; color: var(--muted); }
+.investigation-page [aria-busy=true] { opacity: .65; }
+@media (max-width: 840px) { .investigation-columns { grid-template-columns: 1fr; } #triage-list { max-height: 400px; } .investigation-controls .button { flex: 1; } }
