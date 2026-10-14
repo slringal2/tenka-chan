@@ -97,14 +97,15 @@ public sealed class DashboardState(RoslynReviewService roslyn) : IReviewContextS
 
     public async Task<PerformanceTriageReport> TriageEvidenceAsync(
         PerformanceEvidenceService service, string? jitExperimentId,
-        int maxObserved, int maxStatic, CancellationToken ct)
+        int maxObserved, int maxStatic, string? benchmarkExperimentId,
+        CancellationToken ct)
     {
         await _gate.WaitAsync(ct);
         try
         {
             EnsureOpen();
             return await service.TriageAsync(jitExperimentId,
-                maxObserved, maxStatic, ct);
+                maxObserved, maxStatic, benchmarkExperimentId, ct);
         }
         finally { _gate.Release(); }
     }
