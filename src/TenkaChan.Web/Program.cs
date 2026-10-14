@@ -23,6 +23,8 @@ builder.Services.AddSingleton<ExperimentStore>();
 builder.Services.AddSingleton<DockerExecutor>();
 builder.Services.AddSingleton<BenchmarkRunComparer>();
 builder.Services.AddSingleton<NativeExperimentComparer>();
+builder.Services.AddSingleton<JitBinarySourceService>();
+builder.Services.AddSingleton<PerformanceEvidenceService>();
 builder.Services.AddSingleton<ReviewLedger>();
 builder.Services.AddSingleton<ReviewRunStore>();
 builder.Services.AddSingleton<IReviewContextSource>(
@@ -114,6 +116,19 @@ app.MapPost("/api/workspace/scan", (DashboardState dashboard,
         if (runner.IsActive) throw new InvalidOperationException("Stop active review before rescanning.");
         return await dashboard.ScanAsync(ct);
     }));
+
+app.MapGet("/api/hotspots/triage", (
+    DashboardState dashboard, PerformanceEvidenceService service,
+    string? jitExperimentId, int? maxObserved, int? maxStatic,
+    CancellationToken ct) =>
+    Safe(async () => (object)await dashboard.TriageEvidenceAsync(
+        service, jitExperimentId, maxObserved ?? 40, maxStatic ?? 20, ct)));
+
+app.MapPost("/api/hotspots/investigate", (
+    PerformanceInvestigationRequest request, DashboardState dashboard,
+    PerformanceEvidenceService service, CancellationToken ct) =>
+    Safe(async () => (object)await dashboard.InvestigateEvidenceAsync(
+        service, request, ct)));
 
 app.MapGet("/api/hotspots/report", (DashboardState dashboard) =>
     Results.Ok(new
@@ -267,6 +282,10 @@ async Task<IResult> Safe(Func<Task<object>> operation)
     }
 }
 
+public sealed record PerformanceInvestigationRequest(
+    string MethodId, string? JitExperimentId = null,
+    string? AssemblyFile = null, int? MethodToken = null,
+    string? SourceFilePath = null, int MaxInstructions = 1200);
 public sealed record HotspotScanRequest(int MaxMethods = 100, int MaxSites = 300);
 public sealed record HotspotProfileRequest(string FilePath, int ProfileIndex = 0,
     int MaxFrames = 100);
