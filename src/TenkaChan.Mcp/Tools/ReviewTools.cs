@@ -58,9 +58,10 @@ public static class ReviewTools
     public static async Task<string> PerformanceEvidenceTriage(
         PerformanceEvidenceService service, string? jitExperimentId = null,
         int maxObserved = 40, int maxStatic = 20,
+        string? benchmarkExperimentId = null,
         CancellationToken cancellationToken = default) =>
         Json(await service.TriageAsync(jitExperimentId, maxObserved,
-            maxStatic, cancellationToken));
+            maxStatic, benchmarkExperimentId, cancellationToken));
 
     [McpServerTool(Name = "performance_method_dossier")]
     [Description("Inspect a profiler-matched Roslyn method; optionally attach native JIT instructions and an explicitly selected, hash-verified captured MethodDef IL/PDB source mapping. No native-to-IL offset inference.")]
