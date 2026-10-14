@@ -107,6 +107,21 @@ public sealed class TrustedLocalProcessProfilerTests
     }
 
     [Fact]
+    public async Task IdenticalBinaryCannotProduceARevisionSpeedupClaim()
+    {
+        var before = Environment.GetEnvironmentVariable("TENKA_LOCAL_PERF_BEFORE");
+        if (string.IsNullOrWhiteSpace(before)) return;
+        var profiler = new TrustedLocalProcessProfiler(
+            new WorkspaceGuard([Path.GetDirectoryName(before)!], false, false),
+            enabled: true);
+        var run = await profiler.MeasureAsync(before, trustedBinary: true,
+            candidateAssembly: before, repetitions: 5, warmups: 0);
+        Assert.Equal("identical_binaries_no_revision_comparison", run.Status);
+        Assert.Null(run.Comparison);
+        Assert.Equal(10, run.Samples.Count);
+    }
+
+    [Fact]
     public async Task NonEquivalentOutputInvalidatesPerformanceComparison()
     {
         var before = Environment.GetEnvironmentVariable("TENKA_LOCAL_PERF_BEFORE");
