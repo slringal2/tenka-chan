@@ -14,6 +14,29 @@ server never requires an LLM API key.
 > **not yet implemented**. Native RyuJIT instructions can now be collected
 > with an explicitly authorized, sandboxed JIT harness.
 
+## One-click Docker-free Windows setup
+
+From the repository root, run
+`powershell -ExecutionPolicy Bypass -File .\scripts\start-tenka-local.ps1`.
+It starts the local Web dashboard, enables the trusted-app JIT and trace
+paths, attempts installation of a pinned dotnet-trace tool if missing,
+prewarms official xUnit/BenchmarkDotNet packages and keeps Docker **OFF**.
+The startup script's default directory allowlist is this repository only;
+set `-WorkspaceRoot "C:\MyProject"` for another trusted project.
+
+After loading a .csproj/.sln the "性能ホットスポット" page discovers
+previously built .NET 8+ DLLs and Roslyn JIT method choices. Click
+"静的・決定論・性能解析をまとめて実行" for no-execution analysis or
+"選択メソッドのJITを取得" for an explicitly approved trusted app run.
+The assembly/trace pages also prefill the chosen existing binary.
+
+"テストと性能" supports prepared **xUnit and BenchmarkDotNet without Docker**
+via explicit "ホストで実行" consent. Each such run is UNSANDBOXED,
+using current user privileges. The script sets both required environment
+flags; every single experiment still requires approval, and only previously
+built, reviewed DLLs can be referenced. Do NOT run untrusted generated code
+this way. More details: [Docker-free setup](docs/one-click-host-analysis.md).
+
 ## Local Web dashboard
 
 The **ASP.NET Core Web UI** is a separate, optional entry point alongside the

@@ -125,4 +125,11 @@ $("runtime-export").addEventListener("click", () => {
 api("/session").then(session => {
   csrf = session.csrfToken; enabled = session.trustedLocalExecutionEnabled === true; $("capture-button").disabled = !enabled;
   $("setup").textContent = enabled ? "ローカル実行は有効です。TENKA_DOTNET_TRACE_PATHに信頼済みdotnet-traceの絶対パスが必要です。" : "実行は無効です。許可する場合はTENKA_ENABLE_LOCAL_EXEC=1とTENKA_DOTNET_TRACE_PATHを設定してください。保存結果の解析には実行許可は不要です。";
+  api("/workspace/quick-config").then(quick=>{
+    const asset=quick.assemblies?.find(x=>x.runnable);
+    if(!asset)return;
+    $("capture").elements.assemblyPath.value=asset.assemblyPath;
+    $("compare").elements.assemblyPath.value=asset.assemblyPath;
+    $("capture").elements.outputDirectory.value=asset.projectPath.replace(/[\\/][^\\/]+$/,"");
+  }).catch(()=>{});
 }).catch(error => message(error.message, true));

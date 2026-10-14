@@ -22,6 +22,8 @@ builder.Services.AddSingleton<DashboardState>();
 builder.Services.AddSingleton<ExperimentStore>();
 builder.Services.AddSingleton<DockerExecutor>();
 builder.Services.AddSingleton<TrustedLocalJitRunner>();
+builder.Services.AddSingleton<WorkspaceBinaryDiscovery>();
+builder.Services.AddSingleton<TrustedHostExperimentExecutor>();
 builder.Services.AddSingleton<TrustedLocalProcessProfiler>();
 builder.Services.AddSingleton<BenchmarkRunComparer>();
 builder.Services.AddSingleton<NativeExperimentComparer>();
@@ -98,10 +100,16 @@ app.MapGet("/api/session", (WorkspaceGuard guard) => Results.Ok(new
     msbuildEnabled = guard.TrustMsBuild,
     dockerEnabled = guard.AllowDocker,
     trustedLocalExecutionEnabled = Environment.GetEnvironmentVariable("TENKA_ENABLE_LOCAL_EXEC") == "1",
+    hostExperimentsEnabled = Environment.GetEnvironmentVariable("TENKA_ENABLE_LOCAL_EXEC") == "1"
+        && Environment.GetEnvironmentVariable("TENKA_ENABLE_UNSANDBOXED_EXPERIMENTS") == "1",
     model = Environment.GetEnvironmentVariable("TENKA_LLM_MODEL") ?? "local",
     llmEndpoint = LocalLlmSettings.FromEnvironment().Endpoint.ToString(),
     port
 }));
+
+app.MapGet("/api/workspace/quick-config",
+    (DashboardState dashboard, WorkspaceBinaryDiscovery discovery) =>
+        Safe(() => Task.FromResult((object)dashboard.QuickConfig(discovery))));
 
 app.MapGet("/api/overview", (DashboardState dashboard) => Results.Ok(dashboard.Overview()));
 
@@ -267,6 +275,12 @@ app.MapPost("/api/experiments/prepare", (PrepareExperimentRequest request, Exper
         request.ProjectRelativePath, request.Kind, request.GeneratedCode,
         request.TargetFramework, request.JitDisasmFilter))));
 
+app.MapPost("/api/experiments/{id}/run-host",
+    (HostExperimentRequest request, TrustedHostExperimentExecutor executor,
+        string id, CancellationToken ct) =>
+        Safe(async () => (object)await executor.RunAsync(
+            id, request.ApproveUnisolatedExecution, ct)));
+
 app.MapPost("/api/experiments/{id}/run", (DockerExecutor executor, string id, CancellationToken ct) =>
     Safe(async () => (object)await executor.RunAsync(id, ct)));
 
@@ -343,6 +357,7 @@ public sealed record LocalJitCaptureRequest(
 public sealed record OpenWorkspaceRequest(string Path);
 public sealed record CreateHypothesisRequest(string SnapshotId, string MethodId,
     string Category, string Claim, string FailureCondition);
+public sealed record HostExperimentRequest(bool ApproveUnisolatedExecution);
 public sealed record PrepareExperimentRequest(string RepositoryRoot,
     string ProjectRelativePath, string Kind, string GeneratedCode,
     string? TargetFramework = null, string? JitDisasmFilter = null);
