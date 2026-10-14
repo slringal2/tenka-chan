@@ -53,6 +53,27 @@ public static class ReviewTools
         rules = DeterministicRuleCatalog.Rules
     });
 
+    [McpServerTool(Name = "performance_evidence_triage")]
+    [Description("Prioritize observed profiler frames by exclusive weight, with separate Roslyn static cost candidates and optional method-level JIT evidence. NEVER adds static risk scores to measured time.")]
+    public static async Task<string> PerformanceEvidenceTriage(
+        PerformanceEvidenceService service, string? jitExperimentId = null,
+        int maxObserved = 40, int maxStatic = 20,
+        CancellationToken cancellationToken = default) =>
+        Json(await service.TriageAsync(jitExperimentId, maxObserved,
+            maxStatic, cancellationToken));
+
+    [McpServerTool(Name = "performance_method_dossier")]
+    [Description("Inspect a profiler-matched Roslyn method; optionally attach native JIT instructions and an explicitly selected, hash-verified captured MethodDef IL/PDB source mapping. No native-to-IL offset inference.")]
+    public static async Task<string> PerformanceMethodDossier(
+        PerformanceEvidenceService service, string methodId,
+        string? jitExperimentId = null, string? assemblyFile = null,
+        int? methodToken = null, string? sourceFilePath = null,
+        int maxInstructions = 1200,
+        CancellationToken cancellationToken = default) =>
+        Json(await service.InvestigateAsync(methodId, jitExperimentId,
+            assemblyFile, methodToken, sourceFilePath, maxInstructions,
+            cancellationToken));
+
     [McpServerTool(Name = "performance_hotspots")]
     [Description("Deterministic static hotspot screening: nested loops, repeated allocations/enumerations, blocking/I/O, and bounded callee-risk propagation. Scores are NOT CPU measurements.")]
     public static async Task<string> PerformanceHotspots(
