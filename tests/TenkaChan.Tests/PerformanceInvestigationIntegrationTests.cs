@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.Json;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Emit;
@@ -72,7 +71,6 @@ public sealed class PerformanceInvestigationIntegrationTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.InvestigateAsync(hot.Id,
             receipt.Id, "binary-Demo.dll", coldBinary.MetadataToken));
         await Assert.ThrowsAsync<ArgumentException>(() => service.InvestigateAsync(hot.Id, receipt.Id));
-
         File.AppendAllText(fixture.Source, "\n// changed since build");
         var stale = await service.InvestigateAsync(hot.Id, receipt.Id, "binary-Demo.dll", hotBinary.MetadataToken);
         Assert.Contains(stale.CompiledEvidence!.IlAndSource.Instructions,
@@ -93,7 +91,6 @@ public sealed class PerformanceInvestigationIntegrationTests
         public WorkspaceGuard Guard { get; }
         public ExperimentStore Store { get; }
         private readonly List<string> _experimentDirectories = [];
-
         public Fixture()
         {
             Directory.CreateDirectory(Root);
@@ -107,14 +104,13 @@ public sealed class PerformanceInvestigationIntegrationTests
             Guard = new WorkspaceGuard([Root], true, false);
             Store = new ExperimentStore(Guard);
         }
-
         public ExperimentReceipt PrepareSyntheticExecution()
         {
             var receipt = Store.Create(Root, "Demo.csproj", "jit",
                 "public static class Entry { public static int Main() => 0; }", jitDisasmFilter: "App.Work:Hot");
             _experimentDirectories.Add(receipt.Directory);
             var artifacts = Store.CreateArtifactsDirectory(receipt.Id);
-            var tree = CSharpSyntaxTree.ParseText(SourceText.From(Code, Encoding.UTF8, SourceHashAlgorithm.Sha256), path: Source);
+            var tree = CSharpSyntaxTree.ParseText(SourceText.From(Code, new UTF8Encoding(false), SourceHashAlgorithm.Sha256), path: Source);
             var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator)
                 .Select(path => MetadataReference.CreateFromFile(path)).ToArray();
             var compilation = CSharpCompilation.Create("Demo", [tree], references,
@@ -125,8 +121,8 @@ public sealed class PerformanceInvestigationIntegrationTests
                 var emitted = compilation.Emit(pe, pdb, options: new EmitOptions(debugInformationFormat: DebugInformationFormat.PortablePdb));
                 Assert.True(emitted.Success, string.Join("\n", emitted.Diagnostics));
             }
-            // Synthetic execution metadata validates the evidence join only.
-            // Actual .NET8 JIT execution remains covered by the Docker CI job.
+            // Synthetic execution metadata validates only the evidence join.
+            // The separate Docker job verifies actual .NET8 JIT execution.
             var native = NativeJitDisassemblyParser.Parse("""
                 ; Assembly listing for method App.Work:Hot(int):int (FullOpts)
                 ; Emitting BLENDED_CODE for X64
@@ -142,7 +138,6 @@ public sealed class PerformanceInvestigationIntegrationTests
             });
             return receipt;
         }
-
         public void Dispose()
         {
             foreach (var dir in _experimentDirectories)
