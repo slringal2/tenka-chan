@@ -176,6 +176,10 @@
                 <input name="jitExperimentId" id="hotspot-evidence-jit" type="text"
                   autocomplete="off" placeholder="実行済みJIT実験のID">
               </label>
+              <label>BenchmarkDotNet実験ID（任意）
+                <input name="benchmarkExperimentId" id="hotspot-evidence-benchmark-id"
+                  type="text" autocomplete="off" placeholder="保存済みベンチマーク実験ID">
+              </label>
               <label>表示する実測フレーム数
                 <input name="maxObserved" type="number" min="1" max="200" value="40" required>
               </label>
@@ -197,6 +201,17 @@
                   <div class="empty-mini">集約レポートを作成してください。</div>
                 </div>
               </div>
+            </div>
+          </article>
+          <article class="panel diagnostic-panel">
+            <div class="panel-header">
+              <div><h3>BenchmarkDotNetの独立した測定結果</h3>
+                <p>同じ名前でもプロファイルのフレームとは自動的に同一視しません。</p>
+              </div>
+              <span class="subtle-chip">MEASURED / PER OPERATION</span>
+            </div>
+            <div id="hotspot-evidence-benchmarks" class="stack-list">
+              <div class="empty-mini">ベンチマーク実験IDを指定して集約すると表示されます。</div>
             </div>
           </article>
           <article class="panel diagnostic-panel">
