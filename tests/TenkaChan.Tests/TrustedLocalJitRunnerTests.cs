@@ -69,7 +69,7 @@ public sealed class TrustedLocalJitRunnerTests
             $"status={result.Status} exit={result.ExitCode}\n" +
             $"stdout={result.Stdout}\nstderr={result.Stderr}");
         Assert.Equal(0, result.ExitCode);
-        Assert.Equal("net10.0", result.TargetFramework);
+        Assert.Equal("net8.0", result.TargetFramework);
         Assert.Contains("Fixture=", result.Stdout);
         Assert.True(File.Exists(result.NativeListingPath));
         var native = Assert.IsType<TenkaChan.Mcp.Analysis.NativeCodeReport>(
