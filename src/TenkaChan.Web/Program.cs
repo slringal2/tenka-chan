@@ -119,10 +119,11 @@ app.MapPost("/api/workspace/scan", (DashboardState dashboard,
 
 app.MapGet("/api/hotspots/triage", (
     DashboardState dashboard, PerformanceEvidenceService service,
-    string? jitExperimentId, int? maxObserved, int? maxStatic,
-    CancellationToken ct) =>
+    string? jitExperimentId, string? benchmarkExperimentId,
+    int? maxObserved, int? maxStatic, CancellationToken ct) =>
     Safe(async () => (object)await dashboard.TriageEvidenceAsync(
-        service, jitExperimentId, maxObserved ?? 40, maxStatic ?? 20, ct)));
+        service, jitExperimentId, maxObserved ?? 40, maxStatic ?? 20,
+        benchmarkExperimentId, ct)));
 
 app.MapPost("/api/hotspots/investigate", (
     PerformanceInvestigationRequest request, DashboardState dashboard,
