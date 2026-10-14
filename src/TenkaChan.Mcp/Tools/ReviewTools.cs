@@ -158,6 +158,20 @@ public static class ReviewTools
         string baselineExperimentId, string candidateExperimentId) =>
         Json(comparer.Compare(baselineExperimentId, candidateExperimentId));
 
+    [McpServerTool(Name = "trusted_local_jit_capture")]
+    [Description("UNSANDBOXED local execution: run a previously built trusted .NET 8+ application on the host and capture RyuJIT machine code. Requires TENKA_ENABLE_LOCAL_EXEC=1 and trustedBinary=true; NEVER use for generated/untrusted code.")]
+    public static async Task<string> TrustedLocalJitCapture(
+        TrustedLocalJitRunner runner, string assemblyPath,
+        string jitFilter, bool trustedBinary = false, int timeoutSeconds = 45,
+        string[]? arguments = null, CancellationToken cancellationToken = default) =>
+        Json(await runner.CaptureAsync(assemblyPath, jitFilter,
+            trustedBinary, timeoutSeconds, arguments, cancellationToken));
+
+    [McpServerTool(Name = "trusted_local_jit_result")]
+    [Description("Return the saved local native JIT capture result by UUID. Does not execute code.")]
+    public static string TrustedLocalJitResult(TrustedLocalJitRunner runner, string runId) =>
+        Json(runner.Get(runId));
+
     [McpServerTool(Name = "native_disassembly_result")]
     [Description("Return structured RyuJIT native machine instructions and code bytes from a completed kind=jit experiment. Never interprets instruction counts as elapsed time.")]
     public static string NativeDisassemblyResult(ExperimentStore experiments, string experimentId) =>
