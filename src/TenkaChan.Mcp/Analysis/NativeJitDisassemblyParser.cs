@@ -107,13 +107,18 @@ public static class NativeJitDisassemblyParser
             var trimmed = line.TrimStart();
             if (trimmed.StartsWith("; Emitting ", StringComparison.Ordinal))
                 architecture = line.Contains("ARM64", StringComparison.OrdinalIgnoreCase) ? "arm64"
-                    : line.Contains("X64", StringComparison.OrdinalIgnoreCase) ? "x64" : "unknown";
+                    : line.Contains("X64", StringComparison.OrdinalIgnoreCase) ? "x64"
+                    : line.Contains("X86", StringComparison.OrdinalIgnoreCase) ? "x86" : "unknown";
             var footer = Footer.Match(line);
             if (footer.Success)
             { if (int.TryParse(footer.Groups["n"].Value, out var n)) size = n; continue; }
             if (trimmed.StartsWith(';') || trimmed.Length == 0 || trimmed.EndsWith(':')) continue;
             var comment = line.IndexOf(";;", StringComparison.Ordinal);
             if (comment >= 0) line = line[..comment];
+            // A zero-byte JIT alignment directive is metadata, not an instruction.
+            // Nonzero padding without encodings is intentionally NOT skipped.
+            if (Regex.IsMatch(line, @"^\s+align\s+\[0 bytes(?: for IG[0-9A-Fa-f]+)?\]\s*$",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)) continue;
             var match = WithBytes.Match(line);
             var bytes = match.Success ? match.Groups["bytes"].Value : "";
             if (!match.Success) match = WithoutBytes.Match(line);

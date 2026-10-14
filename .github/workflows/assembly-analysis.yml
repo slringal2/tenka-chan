@@ -31,7 +31,7 @@ jobs:
         run: |
           $env:TENKA_ASSEMBLY_SMOKE_DLL = "$env:GITHUB_WORKSPACE/tests/Fixtures/TrustedLocalJitApp/bin/Release/net8.0/TrustedLocalJitApp.dll"
           $env:TENKA_ASSEMBLY_TEST_REPORT = "$env:GITHUB_WORKSPACE/assembly-decoder-report.json"
-          dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj -c Release --no-build --filter 'FullyQualifiedName~NativeInstructionAnalyzer|FullyQualifiedName~CallableCoverageTests' --logger 'trx;LogFileName=assembly.trx'
+          dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj -c Release --no-build --filter 'FullyQualifiedName~NativeInstruction|FullyQualifiedName~CallableCoverageTests' --logger 'trx;LogFileName=assembly.trx'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Read-only assembly HTTP and MCP integration
         if: ${{ !cancelled() && steps.fixture.outcome == 'success' }}
