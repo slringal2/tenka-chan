@@ -18,7 +18,7 @@ public sealed class PerformanceEvidenceService(
     {
         var snapshot = roslyn.CurrentSnapshotId;
         var staticReport = await roslyn.AnalyzePerformanceHotspotsAsync(
-            maxMethods: 500, maxSites: 2000, cancellationToken);
+            maxMethods: 500, maxSites: 2000, ct: cancellationToken);
         var profile = roslyn.CurrentHotspotProfile;
         var native = LoadNative(jitExperimentId);
         var correlated = native is null ? null : roslyn.CorrelateNativeCode(native);
@@ -78,15 +78,20 @@ public sealed class PerformanceEvidenceService(
             // and MUST NOT be returned as the source for the observed hotspot.
             if (selected is null ||
                 !string.Equals(declared.Name, selected.MethodName, StringComparison.Ordinal) ||
-                !TypeNamesAgree(declared.Type, selected.DeclaringType))
+                !TypeNamesAgree(declared.Type, selected.DeclaringType) ||
+                !MethodParametersAgree(declared.Signature, selected.JitSignature))
                 throw new InvalidOperationException(
                     "Selected captured IL MethodDef is not the uniquely matched JIT method. No cross-layer source link is asserted.");
 
-            var locallyVerified = sourceFilePath is not null &&
+            var pdbVerified = il.PdbStatus is
+                "verified_external_portable_pdb" or "verified_embedded_portable_pdb";
+            var locallyVerified = pdbVerified && sourceFilePath is not null &&
                 il.Instructions.Any(i => i.Source?.LocalSourceStatus == "checksum_verified");
             status = locallyVerified
-                ? "captured_il_pdb_and_local_source_checksum_verified__native_method_name_only"
-                : "captured_il_pdb_verified__source_checksum_not_verified__native_method_name_only";
+                ? "captured_il_pdb_and_local_source_checksum_verified__native_method_signature_only"
+                : pdbVerified
+                    ? "captured_il_pdb_verified__source_checksum_not_verified__native_method_signature_only"
+                    : "captured_il_without_verified_pdb__native_method_signature_only";
         }
 
         if (roslyn.CurrentSnapshotId != triage.SnapshotId)
@@ -124,6 +129,44 @@ public sealed class PerformanceEvidenceService(
             throw new InvalidOperationException(
                 "A completed JIT experiment with native disassembly is required.");
         return result.NativeDisassembly;
+    }
+
+    /// <summary>
+    /// Verify the captured MethodDef's parameter list against the printed JIT
+    /// method signature. Reject names containing unsupported formatting rather
+    /// than silently choosing a different overload.
+    /// </summary>
+    internal static bool MethodParametersAgree(
+        string capturedMetadataSignature, string jitSignature)
+    {
+        var ilStart = capturedMetadataSignature.IndexOf('(');
+        var ilEnd = capturedMetadataSignature.LastIndexOf(')');
+        var jitStart = jitSignature.IndexOf('(');
+        var jitEnd = jitSignature.LastIndexOf(')');
+        if (ilStart < 0 || ilEnd <= ilStart || jitStart < 0 || jitEnd <= jitStart)
+            return false;
+        var il = NormalizeParameters(
+            capturedMetadataSignature[(ilStart + 1)..ilEnd]);
+        var jit = NormalizeParameters(jitSignature[(jitStart + 1)..jitEnd]);
+        if (il.Length > 600 || jit.Length > 600) return false;
+        return string.Equals(il, jit, StringComparison.Ordinal);
+    }
+
+    private static string NormalizeParameters(string input)
+    {
+        var compact = new string(input.Where(c => !char.IsWhiteSpace(c)).ToArray());
+        return compact
+            .Replace("System.Int32", "int", StringComparison.Ordinal)
+            .Replace("System.Int64", "long", StringComparison.Ordinal)
+            .Replace("System.Int16", "short", StringComparison.Ordinal)
+            .Replace("System.UInt32", "uint", StringComparison.Ordinal)
+            .Replace("System.UInt64", "ulong", StringComparison.Ordinal)
+            .Replace("System.Boolean", "bool", StringComparison.Ordinal)
+            .Replace("System.Char", "char", StringComparison.Ordinal)
+            .Replace("System.String", "string", StringComparison.Ordinal)
+            .Replace("System.Single", "float", StringComparison.Ordinal)
+            .Replace("System.Double", "double", StringComparison.Ordinal)
+            .Replace("System.Object", "object", StringComparison.Ordinal);
     }
 
     private static bool TypeNamesAgree(string metadataType, string jitType) =>
