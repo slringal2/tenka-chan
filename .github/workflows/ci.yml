@@ -121,6 +121,24 @@ jobs:
           python3 -c 'import json; x=json.load(open("/tmp/tenka-web-review-hypotheses.json")); assert x and all(h["status"] == "suspected" for h in x), x'
 
 
+  windows-local-jit:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.x
+            8.0.x
+      - run: dotnet restore TenkaChan.slnx
+      - run: dotnet build TenkaChan.slnx --configuration Release --no-restore
+      - run: dotnet build tests/Fixtures/TrustedLocalJitApp/TrustedLocalJitApp.csproj --configuration Release
+      - name: Verify local .NET 8 RyuJIT machine code on Windows without Docker
+        run: dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj --configuration Release --no-build --filter FullyQualifiedName~TrustedLocalJitRunnerTests
+        env:
+          TENKA_LOCAL_JIT_SMOKE_ASSEMBLY: ${{ github.workspace }}/tests/Fixtures/TrustedLocalJitApp/bin/Release/net8.0/TrustedLocalJitApp.dll
+
   docker-smoke:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
