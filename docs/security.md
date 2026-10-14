@@ -93,3 +93,20 @@ prefer the separately authorized Docker runner, or stronger isolation
 such as a dedicated VM. Real host JIT output is useful for diagnosing
 Windows-specific code generation, but it still does **not** measure CPU
 usage or prove an optimization.
+
+
+### Docker SDK8 compatibility
+
+On certain Linux hosts the .NET 8 SDK cannot initialize NuGet's named
+migration mutex while its container root filesystem is mounted read-only,
+even if HOME and /tmp use tmpfs. For this SDK/runtime, Tenka uses a
+**disposable, writable container overlay**, while retaining disabled
+networking, dropped capabilities, no-new-privileges, restricted resources
+and read-only bind mounts of source, generated experiment and package
+cache. The container is deleted after execution; it does **not** grant
+write access to the host repository. The previously validated .NET 10
+worker keeps its read-only container root filesystem.
+
+A writable ephemeral container layer provides less filesystem
+hardening than an immutable one, but remains fundamentally separate from
+UNSANDBOXED local execution of a trusted app.
