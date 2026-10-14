@@ -48,8 +48,11 @@ public sealed class TrustedLocalProcessProfilerTests
         Assert.All(result.Samples, x =>
         {
             Assert.True(x.WallMilliseconds > 0);
-            Assert.True(x.CpuMilliseconds >= 0);
-            Assert.True(x.PeakWorkingSetBytes >= 0);
+            Assert.True(x.CpuMilliseconds is null or >= 0);
+            Assert.True(x.PeakWorkingSetBytes is null or >= 0);
+            Assert.Contains(x.CounterStatus,
+                new[] { "cpu_counter_unavailable", "cpu_sampled_before_exit",
+                    "cpu_final_process_counter" });
             Assert.Equal(0, x.ExitCode);
             Assert.Equal(64, x.StdoutSha256.Length);
         });
