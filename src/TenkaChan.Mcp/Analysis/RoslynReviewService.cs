@@ -111,6 +111,24 @@ public sealed class RoslynReviewService : IDisposable
         }
     }
 
+    public IReadOnlyList<WorkspaceJitMethodChoice> ListJitMethods(int limit = 150)
+    {
+        EnsureOpen();
+        return _methods.Values
+            .Where(x => x.Symbol.MethodKind == MethodKind.Ordinary &&
+                !x.Symbol.IsGenericMethod && x.Symbol.ContainingType.TypeParameters.Length == 0 &&
+                x.Symbol.Name is not (".ctor" or ".cctor"))
+            .Select(x => new WorkspaceJitMethodChoice(
+                x.Summary.Id, x.Summary.Project, x.Summary.Signature,
+                x.Symbol.ContainingType.Name + ":" + x.Symbol.MetadataName))
+            .Where(x => x.JitFilter.Length <= 160 &&
+                System.Text.RegularExpressions.Regex.IsMatch(x.JitFilter,
+                    @"^[A-Za-z_][A-Za-z0-9_.+<>\[\],*\x60-]*:[A-Za-z_*][A-Za-z0-9_<>*\x60]*$"))
+            .OrderBy(x => x.Project, StringComparer.Ordinal)
+            .ThenBy(x => x.Signature, StringComparer.Ordinal)
+            .Take(Math.Clamp(limit, 1, 300)).ToArray();
+    }
+
     public IReadOnlyList<MethodSummary> FindMethods(string query, int limit = 50)
     {
         EnsureOpen();

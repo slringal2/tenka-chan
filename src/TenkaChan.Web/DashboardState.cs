@@ -4,6 +4,12 @@ using TenkaChan.Mcp.Review;
 
 namespace TenkaChan.Web;
 
+public sealed record WorkspaceJitMethodChoice(string MethodId, string Project,
+    string Signature, string JitFilter);
+public sealed record WorkspaceQuickConfig(string SnapshotId,
+    IReadOnlyList<WorkspaceAssemblyChoice> Assemblies,
+    IReadOnlyList<WorkspaceJitMethodChoice> JitMethods);
+
 public sealed record FindingsPage(int Total, int Offset, int Limit, IReadOnlyList<RuleFinding> Items);
 
 /// <summary>
@@ -51,6 +57,14 @@ public sealed class DashboardState(RoslynReviewService roslyn) : IReviewContextS
             lastOpened = _lastOpened,
             lastScanned = _lastScanned
         };
+    }
+
+    public WorkspaceQuickConfig QuickConfig(WorkspaceBinaryDiscovery discovery)
+    {
+        var opened = _solution ?? throw new InvalidOperationException(
+            "Open a trusted .sln/.csproj before preparing a one-click analysis.");
+        return new WorkspaceQuickConfig(opened.SnapshotId,
+            discovery.Discover(opened.Projects), roslyn.ListJitMethods());
     }
 
     public async Task<SolutionSummary> OpenAsync(string path, CancellationToken ct)
