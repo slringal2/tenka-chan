@@ -20,6 +20,10 @@ Call `performance_evidence_triage(maxObserved,maxStatic,jitExperimentId)`:
   sampled weight or declared to be actual bottlenecks.
 - **Unmatched/ambiguous** frames remain separate. Lack of a unique link
   does not warrant displaying arbitrary source code or claiming low cost.
+- Passing a saved `benchmarkExperimentId` adds a **separate**
+  BenchmarkDotNet evidence group: mean/median ns/op, B/op and runtime
+  fingerprint. Case names do not establish matching workloads or source
+  frame identity; use `benchmark_compare_runs` before evaluating changes.
 - Passing a completed `kind=jit` experiment ID adds optional JIT method
   summaries with signature-level correlation. This does not establish
   that the loaded profiler trace came from the same binary build.
