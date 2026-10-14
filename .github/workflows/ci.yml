@@ -128,11 +128,14 @@ jobs:
             --tmpfs /work:rw,exec,size=128m,mode=1777 \
             --tmpfs /tmp:rw,exec,size=128m,mode=1777 \
             --tmpfs /dev/shm:rw,nosuid,nodev,size=64m,mode=1777 \
-            -e HOME=/work -e DOTNET_CLI_HOME=/work \
+            -e HOME=/work -e DOTNET_CLI_HOME=/work -e TMPDIR=/work/temp \
             -e XDG_DATA_HOME=/work/.local/share \
             -e XDG_CONFIG_HOME=/work/.config \
             -e DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
-            mcr.microsoft.com/dotnet/sdk:8.0 dotnet --version
+            mcr.microsoft.com/dotnet/sdk:8.0 sh -ec \
+              'mkdir -p /work/temp /work/.local/share /work/.config; \
+               dotnet --version; \
+               dotnet nuget locals global-packages --list'
 
       - name: Test generated xUnit code in network-disabled Docker
         run: dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj --configuration Release --no-build --filter FullyQualifiedName~DockerExperimentSmokeTests
