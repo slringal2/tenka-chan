@@ -984,6 +984,31 @@ function renderPerformanceTriage() {
   else
     for (const item of report.staticOnly)
       add(candidates, evidenceEntry(item));
+  const benchmarks = $("hotspot-evidence-benchmarks");
+  clear(benchmarks);
+  if (!report.benchmarks) {
+    empty(benchmarks, "ベンチマーク実験IDを指定して集約すると表示されます。");
+  } else {
+    const data = report.benchmarks;
+    add(benchmarks, el("div", "json-note",
+      data.experimentId + " · " + data.targetFramework + " · " + data.status));
+    for (const sample of data.cases.slice(0, 100)) {
+      const row = el("div", "item-row");
+      const details = el("div");
+      add(details, el("strong", "", sample.caseId));
+      const duration = Number.isFinite(sample.meanNanoseconds)
+        ? sample.meanNanoseconds.toFixed(2) + " ns/op" : "time not measured";
+      const allocation = Number.isFinite(sample.allocatedBytesPerOperation)
+        ? sample.allocatedBytesPerOperation.toFixed(0) + " B/op" : "allocation unknown";
+      add(details, el("small", "",
+        duration + " · " + allocation + " · " +
+        count(sample.sampleCount) + " samples"));
+      add(row, details);
+      add(benchmarks, row);
+    }
+    for (const warning of data.limitations)
+      add(benchmarks, el("p", "inline-help", warning));
+  }
   if (report.observedOutputTruncated || report.staticOutputTruncated)
     toast("表示件数に上限があります。未表示はコストが低いことを意味しません。");
 }
@@ -1000,6 +1025,8 @@ async function runPerformanceTriage(event) {
     const query = new URLSearchParams({ maxObserved: String(maxObserved), maxStatic: "40" });
     if (String(form.jitExperimentId || "").trim())
       query.set("jitExperimentId", String(form.jitExperimentId).trim());
+    if (String(form.benchmarkExperimentId || "").trim())
+      query.set("benchmarkExperimentId", String(form.benchmarkExperimentId).trim());
     state.performanceTriage = await api("/hotspots/triage?" + query);
     renderPerformanceTriage();
     toast("実測・静的解析の根拠を別々の指標として統合しました。");
