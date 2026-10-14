@@ -17,7 +17,11 @@ public sealed record TraceCaptureReport(
     string ToolPath, string ToolVersion, int? CollectorExitCode, int? ConverterExitCode,
     IReadOnlyList<string> Arguments, IReadOnlyList<TraceFileIdentity> Inputs,
     TraceFileIdentity? NetTrace, TraceFileIdentity? Speedscope,
-    IReadOnlyList<TraceProfileChoice> Profiles, string Output, IReadOnlyList<string> Limitations);
+    IReadOnlyList<TraceProfileChoice> Profiles, string Output, IReadOnlyList<string> Limitations)
+{
+    // Null identifies older manifests, not a declaration that events were disabled.
+    public string? RuntimeProviderConfiguration { get; init; }
+}
 public sealed record TraceBinaryComparison(string Status, bool SameRecordedInputs,
     IReadOnlyList<TraceFileIdentity> Recorded, IReadOnlyList<TraceFileIdentity> Current,
     string Limitation);
@@ -30,6 +34,7 @@ public sealed record TraceBinaryComparison(string Status, bool SameRecordedInput
 public sealed class TrustedTraceCapture
 {
     internal const string Providers = "Microsoft-DotNETCore-SampleProfiler:0xF00000000000:4,Microsoft-Windows-DotNETRuntime:0x14C14FCCBD:4";
+    internal const string RuntimeCostProviders = "Microsoft-DotNETCore-SampleProfiler:0xF00000000000:4,Microsoft-Windows-DotNETRuntime:0x14C14FCCBD:5";
     internal const long MaxTraceBytes = 128_000_000;
     internal const long MaxProfileBytes = 25_000_000;
     private static readonly SemaphoreSlim CaptureGate = new(1, 1);
@@ -49,7 +54,8 @@ public sealed class TrustedTraceCapture
 
     public async Task<TraceCaptureReport> CaptureAsync(string assemblyPath,
         string outputDirectory, bool trustedBinary, int timeoutSeconds = 60,
-        IReadOnlyList<string>? arguments = null, CancellationToken ct = default)
+        IReadOnlyList<string>? arguments = null, CancellationToken ct = default,
+        bool runtimeCostEvents = false)
     {
         if (!_enabled || !trustedBinary)
             throw new UnauthorizedAccessException("Set TENKA_ENABLE_LOCAL_EXEC=1 and explicitly supply trustedBinary=true. This launches UNSANDBOXED code with your OS permissions.");
@@ -90,6 +96,8 @@ public sealed class TrustedTraceCapture
                 "Timeout and file-size checks are best-effort process-tree cleanup, not an OS sandbox or disk quota. Partial captures cannot be imported as completed measurements.",
                 "Stored SHA-256 values detect accidental file changes, not a malicious operator replacing both files and their unsigned manifest. Application arguments and traces may contain sensitive data."
             };
+            if (runtimeCostEvents)
+                limits.Add("Verbose runtime-event collection was explicitly requested. Allocation ticks and additional runtime events increase overhead and trace size; tick counts are not total object counts.");
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
             deadline.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
             try
@@ -98,7 +106,7 @@ public sealed class TrustedTraceCapture
                 if (v.ExitCode != 0) throw new InvalidOperationException("dotnet-trace version probe failed: " + v.Output);
                 version = v.Output.Trim();
                 if (version.Length > 500) version = version[..500];
-                var collect = await RunAsync(BuildCollectCommand(tool, host, assembly, folder, arguments ?? []), folder, deadline.Token);
+                var collect = await RunAsync(BuildCollectCommand(tool, host, assembly, folder, arguments ?? [], runtimeCostEvents), folder, deadline.Token);
                 collectorExit = collect.ExitCode;
                 output.AppendLine(collect.Output);
                 if (collectorExit != 0) throw new InvalidOperationException("Collector exited nonzero; no completed profile is asserted.");
@@ -124,7 +132,8 @@ public sealed class TrustedTraceCapture
             var report = new TraceCaptureReport(id, status, reportPath, assembly, tfm,
                 "eventpipe_sampled_thread_time", started, DateTimeOffset.UtcNow.ToString("O"),
                 tool, version, collectorExit, converterExit, (arguments ?? []).ToArray(),
-                inputs, trace, profile, profiles, text, limits);
+                inputs, trace, profile, profiles, text, limits)
+            { RuntimeProviderConfiguration = runtimeCostEvents ? RuntimeCostProviders : Providers };
             SaveNew(reportPath, report);
             return report;
         }
@@ -156,7 +165,6 @@ public sealed class TrustedTraceCapture
     {
         if (report.Status != "trace_completed") throw new InvalidOperationException("Only a completed, unchanged capture may be imported.");
         var path = VerifyArtifact(report, report.Speedscope, "workload.speedscope.json", MaxProfileBytes);
-        // Read choices from verified bytes, not from an editable display list in the manifest.
         var choices = ReadProfileChoices(path);
         if (profileIndex < 0 || profileIndex >= choices.Count)
             throw new ArgumentOutOfRangeException(nameof(profileIndex), "Select an explicit thread/profile index from the capture.");
@@ -218,10 +226,11 @@ public sealed class TrustedTraceCapture
             throw new ArgumentException("At most 16 single-line arguments of at most 1024 characters each.");
     }
 
-    internal static ProcessStartInfo BuildCollectCommand(string tool, string host, string assembly, string folder, IReadOnlyList<string> args)
+    internal static ProcessStartInfo BuildCollectCommand(string tool, string host, string assembly, string folder,
+        IReadOnlyList<string> args, bool runtimeCostEvents = false)
     {
         ValidateArguments(args, 60);
-        return Command(tool, folder, new[] { "collect", "--buffersize", "32", "--providers", Providers,
+        return Command(tool, folder, new[] { "collect", "--buffersize", "32", "--providers", runtimeCostEvents ? RuntimeCostProviders : Providers,
             "--format", "NetTrace", "--output", Path.Combine(folder, "workload.nettrace"), "--", host, "exec", assembly }.Concat(args));
     }
 
@@ -271,11 +280,11 @@ public sealed class TrustedTraceCapture
         if (new FileInfo(path).Length > MaxProfileBytes) throw new InvalidDataException("Speedscope file exceeds 25 MB.");
         using var json = JsonDocument.Parse(File.ReadAllText(path), new JsonDocumentOptions { MaxDepth = 160 });
         if (!json.RootElement.TryGetProperty("profiles", out var profiles) || profiles.ValueKind != JsonValueKind.Array ||
-            profiles.GetArrayLength() is < 1 or > 512) throw new InvalidDataException("Invalid or excessive profile/thread count.");
+            profiles.GetArrayLength() > 10000) throw new InvalidDataException("Missing or oversized Speedscope profile list.");
         var result = new List<TraceProfileChoice>();
         foreach (var p in profiles.EnumerateArray())
         {
-            if (p.ValueKind != JsonValueKind.Object || !p.TryGetProperty("type", out var type) ||
+            if (!p.TryGetProperty("type", out var type) ||
                 type.ValueKind != JsonValueKind.String || type.GetString() is not ("sampled" or "evented") ||
                 !p.TryGetProperty("unit", out var unit) || unit.ValueKind != JsonValueKind.String ||
                 !p.TryGetProperty(type.GetString() == "sampled" ? "samples" : "events", out var observations) ||
@@ -296,7 +305,7 @@ public sealed class TrustedTraceCapture
         if (!process.Start()) throw new InvalidOperationException("Could not start dotnet-trace.");
         var stdout = DrainAsync(process.StandardOutput);
         var stderr = DrainAsync(process.StandardError);
-        // Keep stdin open without sending commands. Closing it may stop collection on some tool versions.
+        // Keep stdin open; closing it may stop collection on some tool versions.
         try
         {
             var exit = process.WaitForExitAsync(CancellationToken.None);

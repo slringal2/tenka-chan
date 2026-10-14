@@ -7,7 +7,6 @@
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Iced" Version="1.21.0" />
     <PackageReference Include="Microsoft.Build.Framework" Version="17.11.48" ExcludeAssets="runtime" PrivateAssets="all" />
     <PackageReference Include="ModelContextProtocol" Version="2.2.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
@@ -17,5 +16,7 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
     <!-- Override the older native SQLite brought in transitively, which NuGet flags as vulnerable. -->
     <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.13" />
+    <PackageReference Include="Iced" Version="1.21.0" />
+    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.2.8" />
   </ItemGroup>
 </Project>
