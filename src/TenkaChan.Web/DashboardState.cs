@@ -1,4 +1,5 @@
 using TenkaChan.Mcp.Analysis;
+using TenkaChan.Mcp.Experiments;
 using TenkaChan.Mcp.Review;
 
 namespace TenkaChan.Web;
@@ -90,6 +91,36 @@ public sealed class DashboardState(RoslynReviewService roslyn) : IReviewContextS
                 diagnosticErrors = diagnostics.ErrorCount,
                 diagnosticWarnings = diagnostics.WarningCount,
                 scannedAt = _lastScanned };
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task<PerformanceTriageReport> TriageEvidenceAsync(
+        PerformanceEvidenceService service, string? jitExperimentId,
+        int maxObserved, int maxStatic, CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            EnsureOpen();
+            return await service.TriageAsync(jitExperimentId,
+                maxObserved, maxStatic, ct);
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task<PerformanceMethodDossier> InvestigateEvidenceAsync(
+        PerformanceEvidenceService service, string methodId,
+        string? jitExperimentId, string? assemblyFile, int? methodToken,
+        string? sourceFilePath, int maxInstructions, CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            EnsureOpen();
+            return await service.InvestigateAsync(methodId,
+                jitExperimentId, assemblyFile, methodToken, sourceFilePath,
+                maxInstructions, ct);
         }
         finally { _gate.Release(); }
     }
