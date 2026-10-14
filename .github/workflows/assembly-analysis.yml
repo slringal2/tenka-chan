@@ -23,12 +23,12 @@ jobs:
       - run: dotnet restore TenkaChan.slnx
       - run: dotnet build TenkaChan.slnx -c Release --no-restore
       - run: dotnet build tests/Fixtures/TrustedLocalJitApp/TrustedLocalJitApp.csproj -c Release
-      - name: Verify decoder and actual .NET 8 machine code
+      - name: Verify decoder, callable coverage and actual .NET 8 machine code
         shell: pwsh
         run: |
           $env:TENKA_ASSEMBLY_SMOKE_DLL = "$env:GITHUB_WORKSPACE/tests/Fixtures/TrustedLocalJitApp/bin/Release/net8.0/TrustedLocalJitApp.dll"
           $env:TENKA_ASSEMBLY_TEST_REPORT = "$env:GITHUB_WORKSPACE/assembly-decoder-report.json"
-          dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj -c Release --no-build --filter 'FullyQualifiedName~NativeInstructionAnalyzerTests' --logger 'trx;LogFileName=assembly.trx'
+          dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj -c Release --no-build --filter 'FullyQualifiedName~NativeInstructionAnalyzer|FullyQualifiedName~CallableCoverageTests' --logger 'trx;LogFileName=assembly.trx'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         if: always()
