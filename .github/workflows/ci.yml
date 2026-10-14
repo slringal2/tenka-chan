@@ -17,6 +17,12 @@ jobs:
       - run: dotnet restore TenkaChan.slnx
       - run: dotnet build TenkaChan.slnx --configuration Release --no-restore
       - run: dotnet test TenkaChan.slnx --configuration Release --no-build
+      - name: Build trusted local host JIT fixture
+        run: dotnet build tests/Fixtures/TrustedLocalJitApp/TrustedLocalJitApp.csproj --configuration Release
+      - name: Verify actual host-native JIT capture without Docker
+        env:
+          TENKA_LOCAL_JIT_SMOKE_ASSEMBLY: ${{ github.workspace }}/tests/Fixtures/TrustedLocalJitApp/bin/Release/net10.0/TrustedLocalJitApp.dll
+        run: dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj --configuration Release --no-build --filter FullyQualifiedName~TrustedLocalJitRunnerTests
       - name: Validate browser JavaScript syntax
         run: node --check src/TenkaChan.Web/wwwroot/app.js
       - name: Smoke test localhost Web UI and Roslyn API
