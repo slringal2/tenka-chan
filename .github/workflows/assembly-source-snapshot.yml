@@ -1,0 +1,24 @@
+name: Assembly source snapshot
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: assembly-source-snapshot
+          retention-days: 1
+          path: |
+            src/
+            tests/
+            docs/
+            README.md
+            global.json
+            TenkaChan.slnx
+            !**/bin/**
+            !**/obj/**
