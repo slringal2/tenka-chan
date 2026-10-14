@@ -11,8 +11,9 @@ namespace TenkaChan.Mcp.Experiments;
 
 public sealed record TrustedProcessSample(
     int Sequence, string Variant, bool IsWarmup, double WallMilliseconds,
-    double CpuMilliseconds, long PeakWorkingSetBytes,
-    int ExitCode, string StdoutSha256, string StderrTail);
+    double? CpuMilliseconds, long? PeakWorkingSetBytes,
+    int ExitCode, string StdoutSha256, string StderrTail,
+    string CounterStatus);
 
 public sealed record TrustedProcessComparison(
     string Status, double BaselineWallMedianMs, double CandidateWallMedianMs,
@@ -162,6 +163,7 @@ public sealed class TrustedLocalProcessProfiler
                 "UNSANDBOXED: this tool executes previously compiled, explicitly trusted applications with the user's OS privileges.",
                 "WallMilliseconds and CpuMilliseconds measure the entire child process, not individual methods. Process start, JIT compilation and shutdown are included.",
                 "PeakWorkingSetBytes is process resident working set, not .NET managed allocations or GC heap size.",
+                "On some Linux runtimes, final per-process CPU/RSS counters become unavailable on exit. A last observed counter is labeled sampled_before_exit and may underestimate actual CPU use.",
                 "Even alternating runs and bootstrap uncertainty cannot establish a causal optimization without controlled representative workloads.",
                 "Output equality is assessed using SHA-256 of raw stdout bytes, not arbitrary application state or file side effects.",
                 "Comparisons between identical DLL hashes are suppressed; the same binary cannot establish a revision speedup.",
@@ -236,6 +238,9 @@ public sealed class TrustedLocalProcessProfiler
         var elapsed = Stopwatch.StartNew();
         var output = HashOutputAsync(process.StandardOutput.BaseStream);
         var error = TailAsync(process.StandardError);
+        using var monitorStop = new CancellationTokenSource();
+        var monitor = MonitorResourcesAsync(process, monitorStop.Token);
+        (double? Cpu, long? Peak) monitored = default;
         var timedOut = false;
         try
         {
@@ -254,6 +259,8 @@ public sealed class TrustedLocalProcessProfiler
                 await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
             }
             elapsed.Stop();
+            monitorStop.Cancel();
+            monitored = await monitor;
         }
         // A descendant can inherit stdout/stderr after the main process exits.
         // Do not let that hold the profiling request open indefinitely.
@@ -262,11 +269,49 @@ public sealed class TrustedLocalProcessProfiler
         var errorTail = await error;
         if (ct.IsCancellationRequested) ct.ThrowIfCancellationRequested();
         var exit = timedOut ? -2 : process.ExitCode;
+        var cpu = monitored.Cpu;
+        var peak = monitored.Peak;
+        var counterStatus = cpu is null ? "cpu_counter_unavailable" : "cpu_sampled_before_exit";
+        // Windows and some Linux process APIs retain final counters after
+        // exit. Prefer those when available, but never manufacture zeroes
+        // when the OS has already released per-process statistics.
+        try
+        {
+            cpu = process.TotalProcessorTime.TotalMilliseconds;
+            counterStatus = "cpu_final_process_counter";
+        }
+        catch (InvalidOperationException) { }
+        catch (Win32Exception) { }
+        try { peak = Math.Max(peak ?? 0, process.PeakWorkingSet64); }
+        catch (InvalidOperationException) { }
+        catch (Win32Exception) { }
+
         return new TrustedProcessSample(sequence, variant, warmup,
             Math.Round(elapsed.Elapsed.TotalMilliseconds, 4),
-            Math.Round(process.TotalProcessorTime.TotalMilliseconds, 4),
-            process.PeakWorkingSet64, exit, outputHash,
-            errorTail);
+            cpu is null ? null : Math.Round(cpu.Value, 4), peak,
+            exit, outputHash, errorTail, counterStatus);
+    }
+
+    private static async Task<(double? Cpu, long? Peak)> MonitorResourcesAsync(
+        Process process, CancellationToken cancellationToken)
+    {
+        double? cpu = null;
+        long? peak = null;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                cpu = Math.Max(cpu ?? 0, process.TotalProcessorTime.TotalMilliseconds);
+                peak = Math.Max(peak ?? 0, process.WorkingSet64);
+            }
+            catch (InvalidOperationException) { }
+            catch (Win32Exception) { }
+
+            if (process.HasExited) break;
+            try { await Task.Delay(10, cancellationToken); }
+            catch (OperationCanceledException) { break; }
+        }
+        return (cpu, peak);
     }
 
     private static async Task<string> HashOutputAsync(Stream stream)
