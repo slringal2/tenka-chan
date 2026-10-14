@@ -1,0 +1,9 @@
+bin/
+obj/
+**/bin/
+**/obj/
+BenchmarkDotNet.Artifacts/
+**/BenchmarkDotNet.Artifacts/
+profiles/*
+!profiles/.gitkeep
+TestResults/

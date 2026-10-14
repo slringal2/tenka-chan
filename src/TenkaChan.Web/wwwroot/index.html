@@ -9,6 +9,8 @@
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/path-picker.css">
   <link rel="stylesheet" href="/dashboard-sync.css">
+  <link rel="stylesheet" href="/common-shell.css">
+  <script src="/common-shell.js" defer></script>
   <script src="/app.js" defer></script>
   <script src="/dashboard-sync.js" defer></script>
   <script src="/path-picker.js" defer></script>
@@ -30,10 +32,10 @@
         <button class="nav-item" data-view="evidence"><span class="nav-icon">◉</span><span>仮説・証拠</span></button>
         <button class="nav-item" data-view="autoreview"><span class="nav-icon">✧</span><span>AI自律レビュー</span></button>
         <button class="nav-item" data-view="experiments"><span class="nav-icon">◈</span><span>テストと性能</span></button>
-        <a class="nav-item" href="/workspace-build.html"><span class="nav-icon">▧</span><span>ビルドと解析の準備 ↗</span></a>
-        <a class="nav-item" href="/assembly.html"><span class="nav-icon">⌘</span><span>アセンブリ解析 ↗</span></a>
-        <a class="nav-item" href="/trace.html"><span class="nav-icon">◉</span><span>プロファイル取得 ↗</span></a>
-        <a class="nav-item" href="/priorities.html"><span class="nav-icon">◇</span><span>調査優先度 ↗</span></a>
+        <a class="nav-item" href="/workspace-build.html"><span class="nav-icon">▧</span><span>ビルドと解析の準備</span></a>
+        <a class="nav-item" href="/assembly.html"><span class="nav-icon">⌘</span><span>アセンブリ解析</span></a>
+        <a class="nav-item" href="/trace.html"><span class="nav-icon">◉</span><span>プロファイル取得</span></a>
+        <a class="nav-item" href="/priorities.html"><span class="nav-icon">◇</span><span>調査優先度</span></a>
       </nav>
       <div class="sidebar-spacer"></div>
       <div class="sidebar-bottom">
@@ -51,6 +53,7 @@
 
       <div class="content">
         <section class="view" id="view-overview">
+          <div class="guide-banner"><div><h2>はじめて使うときは、比較サンプルから。</h2><p>ゲームの持ち物検索で、指摘を探す → 同じ結果か確認 → 性能を測る、を一巡できます。</p></div><a class="button button-primary" href="/guide.html">使い方・サンプルを開く</a></div>
           <div class="hero">
             <div class="hero-kicker"><span class="hero-line"></span> STATIC ANALYSIS + EVIDENCE</div>
             <h1>コードの品質を、<br><em>推測ではなく証拠</em>で。</h1>

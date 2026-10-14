@@ -4,7 +4,8 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $web = Join-Path $repo 'src\TenkaChan.Web\TenkaChan.Web.csproj'
-$sample = Join-Path $repo 'tests\Fixtures\WorkspaceBuildSample\WorkspaceBuildSample.csproj'
+$sample = Join-Path $repo 'samples\Tenka.Sample.GameLab\Tenka.Sample.GameLab.csproj'
+$legacySample = Join-Path $repo 'tests\Fixtures\WorkspaceBuildSample\WorkspaceBuildSample.csproj'
 $stateRoot = Join-Path $env:LOCALAPPDATA 'TenkaChan\launcher'
 $hash = [Security.Cryptography.SHA256]::Create()
 try { $key = ([BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($repo.ToLowerInvariant())))).Replace('-','').Substring(0,16) }
@@ -193,6 +194,8 @@ try {
         Write-Host 'JIT・計測・ビルドはローカル実行です。生成xUnit／BenchmarkDotNetもDockerなしで使えますが、隔離はありません。'
         $settings.generatedExperiments = Ask '生成テスト・ベンチマークの「ホストで実行」を有効にしますか？（実行時にも毎回確認）'
     }
+    # Migrate only the old built-in sample selection, not an operator's own project.
+    if ($setup -and $settings.defaultProject -eq $legacySample) { $settings.defaultProject = $sample }
     $workspace = Require-Root ([string]$settings.workspaceRoot)
     Say '[2/5] .NETの確認'
     $dotnet = Find-Dotnet
@@ -245,7 +248,7 @@ try {
     Assert-BuildOutputsAvailable
     if (-not (Invoke-Tool $dotnet @('build',$web,'-c','Release','--no-restore','--nologo','--disable-build-servers') '変更を確認してビルドしています…')) { throw '本体のビルドに失敗しました。setup.batで復元し直してください。解消しない場合はログの最初のerror行を共有してください。起動中の旧バージョンも終了してください。' }
     if ($setup -and $settings.defaultProject -eq $sample) {
-        if (-not (Invoke-Tool $dotnet @('build',$sample,'-c','Release','--nologo') '付属の小さなサンプルをビルド中（実行はしません）…')) { $warnings.Add('付属サンプルのビルドは未完了です。ブラウザー上の「ビルドと解析の準備」からやり直せます。') }
+        if (-not (Invoke-Tool $dotnet @('build',$sample,'-c','Release','--nologo') '比較教材GameLabをビルド中（実行はしません）…')) { $warnings.Add('付属サンプルのビルドは未完了です。ブラウザー上の「ビルドと解析の準備」からやり直せます。') }
     }
     $settings.workspaceRoot = $workspace
     $temp = $settingsFile + '.tmp'
@@ -278,8 +281,8 @@ try {
             $server.Refresh()
         }
         if (-not $ready) { throw "サーバーの起動を確認できませんでした。詳細ログ: $stdout / $stderr" }
-        $url = $base + '/workspace-build.html'
-        if ($settings.defaultProject) { $url += '?project=' + [Uri]::EscapeDataString([string]$settings.defaultProject) }
+        $url = if ($settings.defaultProject -eq $sample -or $settings.defaultProject -eq $legacySample) { $base + '/guide.html' } else { $base + '/workspace-build.html' }
+        if ($settings.defaultProject -and $url.EndsWith('/workspace-build.html')) { $url += '?project=' + [Uri]::EscapeDataString([string]$settings.defaultProject) }
         Start-Process $url
         Say "起動しました: $url"
         Write-Host 'ブラウザーで「参照…」からプロジェクトを選び、「読み込む」を押してください。'
