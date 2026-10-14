@@ -21,6 +21,7 @@ builder.Services.AddSingleton<RoslynReviewService>();
 builder.Services.AddSingleton<DashboardState>();
 builder.Services.AddSingleton<ExperimentStore>();
 builder.Services.AddSingleton<DockerExecutor>();
+builder.Services.AddSingleton<TrustedLocalJitRunner>();
 builder.Services.AddSingleton<BenchmarkRunComparer>();
 builder.Services.AddSingleton<NativeExperimentComparer>();
 builder.Services.AddSingleton<ReviewLedger>();
@@ -93,6 +94,7 @@ app.MapGet("/api/session", (WorkspaceGuard guard) => Results.Ok(new
     listening = "loopback",
     msbuildEnabled = guard.TrustMsBuild,
     dockerEnabled = guard.AllowDocker,
+    trustedLocalExecutionEnabled = Environment.GetEnvironmentVariable("TENKA_ENABLE_LOCAL_EXEC") == "1",
     model = Environment.GetEnvironmentVariable("TENKA_LLM_MODEL") ?? "local",
     llmEndpoint = LocalLlmSettings.FromEnvironment().Endpoint.ToString(),
     port
@@ -114,6 +116,15 @@ app.MapPost("/api/workspace/scan", (DashboardState dashboard,
         if (runner.IsActive) throw new InvalidOperationException("Stop active review before rescanning.");
         return await dashboard.ScanAsync(ct);
     }));
+
+app.MapPost("/api/local-jit/capture",
+    (LocalJitCaptureRequest request, TrustedLocalJitRunner runner, CancellationToken ct) =>
+    Safe(async () => (object)await runner.CaptureAsync(
+        request.AssemblyPath, request.JitFilter, request.TrustedBinary,
+        request.TimeoutSeconds, request.Arguments, ct)));
+
+app.MapGet("/api/local-jit/{id}", (TrustedLocalJitRunner runner, string id) =>
+    Safe(() => Task.FromResult((object)runner.Get(id))));
 
 app.MapGet("/api/hotspots/report", (DashboardState dashboard) =>
     Results.Ok(new
@@ -273,6 +284,9 @@ public sealed record HotspotProfileRequest(string FilePath, int ProfileIndex = 0
 public sealed record DeterministicRunRequest(int MaxFindings = 500,
     int MaxMethodMetrics = 100);
 public sealed record StartAutonomousReviewRequest(int MaxMethods = 10, int MaxMinutes = 15);
+public sealed record LocalJitCaptureRequest(
+    string AssemblyPath, string JitFilter, bool TrustedBinary,
+    int TimeoutSeconds = 45, string[]? Arguments = null);
 public sealed record OpenWorkspaceRequest(string Path);
 public sealed record CreateHypothesisRequest(string SnapshotId, string MethodId,
     string Category, string Claim, string FailureCondition);
