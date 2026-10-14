@@ -123,6 +123,16 @@ app.MapPost("/api/local-jit/capture",
         request.AssemblyPath, request.JitFilter, request.TrustedBinary,
         request.TimeoutSeconds, request.Arguments, ct)));
 
+app.MapGet("/api/local-jit/{id}/correlate",
+    (TrustedLocalJitRunner runner, DashboardState dashboard,
+        string id, CancellationToken ct) =>
+    Safe(async () =>
+    {
+        var native = runner.Get(id).NativeDisassembly
+            ?? throw new InvalidOperationException("The local JIT capture has no native code to correlate.");
+        return (object)await dashboard.CorrelateNativeAsync(native, ct);
+    }));
+
 app.MapGet("/api/local-jit/{id}", (TrustedLocalJitRunner runner, string id) =>
     Safe(() => Task.FromResult((object)runner.Get(id))));
 
