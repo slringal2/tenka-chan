@@ -22,8 +22,8 @@ public static class CallableSyntax
                 AccessorDeclarationSyntax accessor => model.GetDeclaredSymbol(accessor, cancellationToken),
                 LocalFunctionStatementSyntax local => model.GetDeclaredSymbol(local, cancellationToken),
                 AnonymousFunctionExpressionSyntax lambda => (model.GetOperation(lambda, cancellationToken) as IAnonymousFunctionOperation)?.Symbol,
-                PropertyDeclarationSyntax { ExpressionBody: not null } property => model.GetDeclaredSymbol(property, cancellationToken)?.GetMethod,
-                IndexerDeclarationSyntax { ExpressionBody: not null } indexer => model.GetDeclaredSymbol(indexer, cancellationToken)?.GetMethod,
+                PropertyDeclarationSyntax { ExpressionBody: not null } property => (model.GetDeclaredSymbol(property, cancellationToken) as IPropertySymbol)?.GetMethod,
+                IndexerDeclarationSyntax { ExpressionBody: not null } indexer => (model.GetDeclaredSymbol(indexer, cancellationToken) as IPropertySymbol)?.GetMethod,
                 _ => null
             };
             if (symbol is not null) yield return new(node, symbol);
@@ -55,8 +55,7 @@ public static class CallableSyntax
     public static ControlFlowGraph? TryCreateGraph(SyntaxNode node, SemanticModel model,
         CancellationToken cancellationToken = default)
     {
-        // Never climb from a lambda/local-function operation into its enclosing method:
-        // that would return the parent's CFG under the nested callable's identity.
+        // Do not return the enclosing method's CFG under a nested callable's identity.
         if (node is AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax) return null;
         try { return ControlFlowGraph.Create(node, model, cancellationToken); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { return null; }
