@@ -17,7 +17,7 @@ namespace TenkaChan.Mcp.Analysis;
 /// In-memory session cache for stdio MCP clients. Reopening a solution gives a
 /// new snapshot ID. The experiment store, unlike this cache, is durable.
 /// </summary>
-public sealed class RoslynReviewService : IDisposable
+public sealed partial class RoslynReviewService : IDisposable
 {
     private sealed record Entry(MethodSummary Summary, Document Document,
         SyntaxNode Syntax, IMethodSymbol Symbol);
@@ -51,6 +51,7 @@ public sealed class RoslynReviewService : IDisposable
             _methods.Clear();
             _warnings.Clear();
             _solution = null;
+            _explorerIndex = null;
             _hotspotProfile = null;
             _workspace = MSBuildWorkspace.Create();
             _workspace.RegisterWorkspaceFailedHandler(args =>

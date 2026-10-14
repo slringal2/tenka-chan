@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>甜花ちゃん | プロジェクト調査</title>
+<link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/common-shell.css"><link rel="stylesheet" href="/path-picker.css"><link rel="stylesheet" href="/project.css">
+<script defer src="/common-shell.js"></script><script defer src="/path-picker.js"></script><script defer src="/project-client.js"></script><script defer src="/project.js"></script>
+</head>
+<body><main class="project-workbench">
+<header><p class="eyebrow">PROJECT / INVESTIGATION</p><h1>プロジェクトから、気になる処理へ。</h1><p>最初にプロジェクトを選ぶだけ。クラス・メソッドを選んで、根拠を順に調べます。</p></header>
+<div class="project-status" role="status" aria-live="polite"><span id="project-status">接続を確認しています…</span><button type="button" id="cancel-action" hidden>処理を中止</button></div>
+<section class="project-setup">
+<details id="project-switch" open><summary id="project-summary">① プロジェクトを選ぶ</summary>
+<form id="project-open"><label for="project-path">ソリューション / プロジェクト<input id="project-path" data-path-kind="project" required autocomplete="off" spellcheck="false" placeholder="参照…から .sln / .slnx / .csproj を選択"></label>
+<div class="actions"><button type="submit" id="project-open-button">選択したプロジェクトを読み込む</button><button type="button" id="use-sample">GameLabサンプルを選ぶ</button></div>
+<p class="small">読み込みでは信頼済みMSBuildの評価が行われます。選択だけではビルド・計測・AIの実行は始まりません。</p></form></details>
+<div class="project-toolbar"><label>調査するプロジェクト<select id="selected-project" aria-label="調査するプロジェクト"></select></label><label>調査するビルド出力<select id="selected-assembly" aria-label="調査するビルド出力"></select></label><button type="button" id="refresh-project">状態を更新</button></div>
+<div class="project-steps"><article><span>② 準備と静的解析</span><div class="actions"><button type="button" id="project-build">Releaseビルド＋解析</button><button type="button" id="project-scan">静的解析だけ実行</button></div><p id="build-help">プロジェクトを読み込んでください。</p></article><article><span>③ クラスを選んで調べる</span><p>一覧からクラス → メソッドを選びます。参照・ソース・IL・JITの調査へ進めます。</p><a href="/#findings">全体の検出候補を見る</a> · <a href="/priorities.html">調査の優先順位</a></article></div>
+<details class="small"><summary>自動で選択されたファイル・保存先を確認</summary><pre id="resolved-files">未選択</pre></details>
+</section>
+<div class="project-explorer">
+<section class="panel class-panel"><h2>クラス・型</h2><label for="class-search" class="sr-only">クラス名で絞り込み</label><input id="class-search" type="search" placeholder="名前空間・クラス名で検索" autocomplete="off"><p id="class-count" class="small">プロジェクトを読み込むと表示されます。</p><div id="class-list" class="choice-list"></div><button type="button" id="more-classes" hidden>さらに表示</button></section>
+<section class="panel class-detail"><div id="class-empty" class="empty-state"><strong>まずクラスを選んでください</strong><p>構成・ソース・メソッドと、解析済みの指摘をまとめて表示します。</p></div>
+<div id="class-content" hidden><div class="detail-heading"><div><p id="type-kind" class="eyebrow"></p><h2 id="type-name"></h2><p id="type-structure"></p></div><button type="button" id="type-references">このクラスの参照を探す</button></div>
+<div id="type-findings"></div><details><summary>フィールド・プロパティ・その他のメンバー</summary><div id="type-members"></div></details><details><summary>クラスのソース（partialはまとめて表示）</summary><div id="type-sources"></div></details>
+<h3>メソッドを選ぶ</h3><label for="method-search" class="sr-only">メソッド名で絞り込み</label><input id="method-search" type="search" placeholder="メソッド名・引数で検索"><div id="method-list" class="choice-list"></div><p id="type-notes" class="small"></p></div></section>
+</div>
+<section id="method-section" hidden><div class="detail-heading"><div><p class="eyebrow">METHOD / SOURCE</p><h2 id="method-title"></h2><p id="method-location" class="small"></p></div></div>
+<div class="actions"><button type="button" id="method-references">参照を探す</button><button type="button" id="inspect-il">IL・PDBを調べる</button><button type="button" id="capture-jit">JIT機械語を取得</button><button type="button" id="test-plan">境界値テスト案を見る</button></div><p id="method-help" class="small"></p>
+<details open><summary>ソース</summary><pre id="method-source"></pre></details><div class="method-facts"><article><h3>呼び出すメソッド</h3><div id="method-callees"></div></article><article><h3>直接の呼び出し元</h3><div id="method-callers"></div></article></div><details><summary>制御フロー・読み書き・コンパイル診断</summary><div id="method-flow"></div></details>
+<div id="binary-choice-panel" hidden><label>対応するバイナリの署名<select id="binary-method"></select></label><button type="button" id="load-il">この署名のILを表示</button><p id="binary-note" class="small"></p></div>
+</section>
+<section><h2>④ 実際に動かして確かめる</h2><p>対象アプリの通常の起動処理を実行します。選んだメソッドだけを呼び出す機能ではありません。JIT取得には起動後にそのメソッドが呼ばれる必要があります。</p>
+<div class="runtime-grid"><article><h3>負荷を計測</h3><label>実行するアプリ<select id="launch-assembly"></select></label><button type="button" id="capture-trace">プロファイル＋詳細イベントを取得</button><p id="trace-help" class="small"></p></article><article><h3>既存のテスト・ベンチマーク</h3><label>自動検出したプロジェクト<select id="companion-project"></select></label><button type="button" id="run-companion">選択したテスト／ベンチマークを実行</button><p id="companion-help" class="small">読み込み済みプロジェクトと、直下のTests・Benchmarksを探します。</p></article></div>
+<details><summary>実行条件（必要なときだけ）</summary><label><input id="allow-restore" type="checkbox" checked> ビルド・テスト時に不足するパッケージの復元を許可（通信あり）</label><label>教材用の起動条件<select id="argument-preset"><option value="">通常起動（引数なし）</option><option value="inventory">GameLab：所持品検索を4秒観測</option><option value="contention">GameLab：ロック競合を4秒観測</option></select></label><label>アプリの起動引数（1行につき1引数。通常は空欄で使用）<textarea id="runtime-arguments" rows="4" spellcheck="false"></textarea></label><p class="small">引数はシェルコマンドとして解釈しません。プロファイルは対象プロジェクトの .tenka/profiles に保存します。隔離はなく、対象コードはユーザー権限で動きます。</p></details>
+</section>
+<section id="result-section"><div class="detail-heading"><div><p class="eyebrow">RESULTS / EVIDENCE</p><h2>調査結果</h2></div><button type="button" id="export-result" disabled>表示結果をJSONで保存</button></div><label>この調査画面で取得した結果<select id="result-history"></select></label><p id="result-title">まだ調査結果はありません。</p><div id="result-body"></div>
+<div id="native-actions" hidden><label>取得できたメソッド<select id="native-method"></select></label><div class="actions"><button type="button" id="decode-native">命令・分岐を詳しく見る</button><button type="button" id="pin-native">この結果を比較元にする</button><button type="button" id="compare-native">比較元との差分を見る</button></div><p id="native-baseline" class="small">比較元は未選択です。</p></div>
+<div id="trace-actions" hidden><label>観測されたスレッド<select id="trace-thread"></select></label><div class="actions"><button type="button" id="import-thread">このスレッドをホットスポットへ反映</button><button type="button" id="runtime-costs">GC・割り当て・ロック競合を調べる</button></div></div>
+<p class="small">候補・言語仕様上の事実・観測した測定値を区別します。命令数は速度ではありません。結果一覧はこのサーバーの現在のソーススナップショットに紐づく直近20件です。</p>
+</section>
+</main></body></html>

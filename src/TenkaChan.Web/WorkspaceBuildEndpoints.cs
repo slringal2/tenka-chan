@@ -10,6 +10,7 @@ public static class WorkspaceBuildEndpoints
     {
         app.MapNativePathDialogEndpoints();
         app.MapGameLabEndpoints();
+        app.MapExplorerEndpoints();
         app.MapGet("/workspace-build", () => Results.Redirect("/workspace-build.html"));
         app.MapGet("/api/workspace/build-options", (DashboardState dashboard,
             WorkspaceGuard guard, CancellationToken ct) => Safe(app, async () =>
