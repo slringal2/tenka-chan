@@ -1,5 +1,6 @@
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
+using System.Xml;
 using System.Xml.Linq;
 using TenkaChan.Mcp.Analysis;
 using TenkaChan.Mcp.Security;
@@ -33,7 +34,12 @@ public sealed class WorkspaceBinaryDiscovery(WorkspaceGuard guard)
             // AssemblyName is an optional literal override. Do not evaluate properties or imports.
             try
             {
-                var xml = XDocument.Load(file);
+                using var reader = XmlReader.Create(file, new XmlReaderSettings
+                {
+                    DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null,
+                    MaxCharactersInDocument = 2_000_000
+                });
+                var xml = XDocument.Load(reader);
                 foreach (var value in xml.Descendants().Where(x => x.Name.LocalName == "AssemblyName")
                     .Select(x => x.Value.Trim()))
                     if (value.Length is > 0 and < 120 && !value.Contains('$') &&
