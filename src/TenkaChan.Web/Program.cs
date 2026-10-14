@@ -293,6 +293,7 @@ app.MapPost("/api/reviews/start", (StartAutonomousReviewRequest request,
 app.MapPost("/api/reviews/{id}/stop", (AutonomousReviewRunner runner, string id) =>
     Safe(() => Task.FromResult((object)runner.Stop(id))));
 
+app.MapTrustedTraceEndpoints();
 app.Logger.LogInformation("Tenka-chan dashboard: http://127.0.0.1:{Port}", port);
 await app.RunAsync();
 

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>実測プロファイル取得 | 甜花ちゃん</title>
+  <link rel="stylesheet" href="/trace.css">
+  <script src="/trace.js" defer></script>
+</head>
+<body>
+<main>
+  <header><a href="/">← ダッシュボードへ</a><h1>実測プロファイルの取得</h1>
+    <p>ビルド済みアプリを計測し、選択したスレッドを性能ホットスポット解析へ読み込みます。</p></header>
+  <aside><strong>CPU使用率そのものではありません。</strong> 待機を含むスレッド時間のサンプリングです。ソースとの対応はメソッド名に基づき、同一ビルドを保証しません。</aside>
+  <section><h2>1. 信頼済みアプリを実行して取得</h2>
+    <p>アプリは現在のOSユーザーの権限で実行されます。Dockerによる隔離はありません。ダウンロードしただけのコードやAI生成コードには使用しないでください。</p>
+    <form id="capture">
+      <label>ビルド済み実行DLLの絶対パス<input name="assemblyPath" required placeholder="C:\Projects\App\bin\Release\net8.0\App.dll"></label>
+      <label>保存先ディレクトリ（既存・許可済み）<input name="outputDirectory" required placeholder="C:\Profiles"></label>
+      <label>制限時間（取得・変換を含む、1～120秒）<input name="timeoutSeconds" type="number" min="1" max="120" value="60" required></label>
+      <label>アプリ引数（JSON文字列配列）<input name="arguments" value="[]" required></label>
+      <label class="check"><input name="trustedBinary" type="checkbox" required>このアプリを信頼し、隔離なしの実行を許可します。</label>
+      <button id="capture-button" disabled>実行して取得</button><button type="button" id="cancel" disabled>取得を中止</button>
+    </form>
+    <p id="setup">サーバー設定を確認しています。</p>
+  </section>
+  <section><h2>2. 保存済み結果とスレッドを選択</h2>
+    <form id="load"><label>capture.jsonの絶対パス<input name="reportPath" id="report-path" required></label><button>保存結果を確認</button></form>
+    <p id="capture-status">未取得</p>
+    <form id="import"><label>解析するスレッド<select id="profiles" required disabled><option value="">取得結果を読み込んでください</option></select></label>
+      <button id="import-button" disabled>このスレッドを解析へ読み込む</button></form>
+    <p>先にダッシュボードで対応するプロジェクトを開いてください。読み込み後は「性能ホットスポット」の実測優先レポートを利用できます。</p>
+    <details><summary>取得条件・入力ファイルの識別情報</summary><pre id="metadata"></pre></details>
+  </section>
+  <section><h2>3. 現在のDLLとの比較</h2>
+    <form id="compare"><label>比較する実行DLLの絶対パス<input name="assemblyPath" required></label><button>保存時の入力と比較</button></form>
+    <p id="comparison">エントリーDLL・MVID・runtimeconfig・depsを比較します。全依存ライブラリやC#ソースとの一致確認ではありません。</p>
+  </section>
+  <section><h2>読み込んだスレッドの結果</h2><p id="import-status">未読込</p><div class="table-scroll"><table>
+    <thead><tr><th>フレーム</th><th>Self</th><th>Inclusive</th><th>ソース対応</th></tr></thead><tbody id="frames"></tbody>
+  </table></div></section>
+  <p id="message" role="status" aria-live="polite"></p>
+</main>
+</body>
+</html>
