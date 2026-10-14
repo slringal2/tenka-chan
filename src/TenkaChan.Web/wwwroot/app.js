@@ -958,6 +958,77 @@ async function runStaticHotspotScan(event) {
   });
 }
 
+async function measureLocalPerformance(event) {
+  event.preventDefault();
+  if (!state.session?.trustedLocalExecutionEnabled) {
+    toast("ローカル実行の有効化が必要です。TENKA_ENABLE_LOCAL_EXEC=1", true);
+    return;
+  }
+  if (!window.confirm(
+    "信頼できるビルド済みアプリだけを指定してください。\n" +
+    "この処理はDockerで隔離されず、同じPC上でアプリを複数回実行します。\n" +
+    "ファイル・ネットワーク権限は現在のユーザーと同じです。実行しますか？"
+  )) return;
+  await withButton($("local-performance-run"), async () => {
+    const form = Object.fromEntries(new FormData(event.currentTarget));
+    const baselineAssembly = String(form.baselineAssembly || "").trim();
+    const candidateAssembly = String(form.candidateAssembly || "").trim();
+    const repetitions = Number(form.repetitions);
+    const warmups = Number(form.warmups);
+    const timeoutSeconds = Number(form.timeoutSeconds);
+    if (!baselineAssembly ||
+        !Number.isInteger(repetitions) || repetitions < 5 || repetitions > 10 ||
+        !Number.isInteger(warmups) || warmups < 0 || warmups > 2 ||
+        !Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 30)
+      throw new Error("DLLパスと測定回数・時間の設定を確認してください。");
+    const payload = { baselineAssembly, trustedBinary: true,
+      repetitions, warmups, timeoutSeconds };
+    if (candidateAssembly) payload.candidateAssembly = candidateAssembly;
+    toast("信頼済みアプリの反復測定を開始しました。");
+    const report = await api("/local-performance/measure", { method: "POST", body: payload });
+    const root = $("local-performance-result");
+    clear(root);
+    add(root, el("div", "json-note",
+      "状態: " + report.status + " · " + report.targetFramework +
+      " · Run " + report.id));
+    const metrics = el("div", "stack-list");
+    const measured = report.samples.filter(x => !x.isWarmup);
+    for (const variant of ["baseline", "candidate"]) {
+      const samples = measured.filter(x => x.variant === variant);
+      if (!samples.length) continue;
+      const wall = samples.map(x => x.wallMilliseconds).sort((a,b) => a-b);
+      const cpu = samples.map(x => x.cpuMilliseconds).sort((a,b) => a-b);
+      const median = list => list[Math.floor(list.length/2)];
+      const row = el("div", "item-row");
+      const body = el("div");
+      add(body, el("strong", "", variant.toUpperCase()));
+      add(body, el("small", "",
+        "Elapsed median ~ " + median(wall).toFixed(2) + " ms/process" +
+        " · CPU median ~ " + median(cpu).toFixed(2) + " ms/process" +
+        " · " + samples.length + " samples"));
+      add(row, body);
+      add(metrics, row);
+    }
+    add(root, metrics);
+    if (report.comparison) {
+      const comp = report.comparison;
+      add(root, el("div", "json-note",
+        "Whole-process elapsed change: " +
+        (comp.changePercent > 0 ? "+" : "") + comp.changePercent.toFixed(2) + "%" +
+        " · heuristic 95% interval [" + comp.lower95Percent.toFixed(1) +
+        "%, " + comp.upper95Percent.toFixed(1) + "%] · " + comp.status));
+      add(root, el("p", "form-note", comp.comparisonBasis));
+    }
+    if (report.status === "non_equivalent_or_nondeterministic_output")
+      add(root, el("p", "form-note",
+        "標準出力が実行間で異なるため、Baseline/Candidateの性能比較は行いませんでした。"));
+    for (const caveat of report.limitations || [])
+      add(root, el("p", "inline-help", caveat));
+    toast("ホスト実行時間測定: " + report.status,
+      report.status !== "completed");
+  });
+}
+
 async function captureLocalNativeJit(event) {
   event.preventDefault();
   if (!state.session?.trustedLocalExecutionEnabled) {
@@ -1130,6 +1201,7 @@ async function initialize() {
     loadReviewHistory().catch(error => toast(error.message, true)));
   $("hotspot-static-form").addEventListener("submit", runStaticHotspotScan);
   $("local-jit-form").addEventListener("submit", captureLocalNativeJit);
+  $("local-performance-form").addEventListener("submit", measureLocalPerformance);
   $("hotspot-profile-form").addEventListener("submit", importSampledHotspot);
   $("det-form").addEventListener("submit", runDeterministic);
   $("det-export").addEventListener("click", exportDeterministic);
@@ -1147,6 +1219,7 @@ async function initialize() {
     state.session = await api("/session");
     state.csrf = state.session.csrfToken;
     $("local-jit-run").disabled = !state.session.trustedLocalExecutionEnabled;
+    $("local-performance-run").disabled = !state.session.trustedLocalExecutionEnabled;
     $("local-jit-enabled").textContent =
       state.session.trustedLocalExecutionEnabled ? "TRUSTED HOST ENABLED" : "LOCAL MODE OFF";
 
