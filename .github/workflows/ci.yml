@@ -160,7 +160,46 @@ jobs:
             -e HOME=/work -e DOTNET_CLI_HOME=/work \
             mcr.microsoft.com/dotnet/sdk:8.0 dotnet nuget locals global-packages --list \
             && echo "CASE_E_PASS" || echo "CASE_E_FAIL"
-          echo "Diagnostics complete. Unconfined profile is never applied to user code."
+          echo "Case F: tmpfs /tmp only, without read-only or capabilities"
+          docker run --rm --pull=never --network none --user 1654:1654 \
+            --tmpfs /tmp:rw,exec,size=128m,mode=1777 \
+            -e HOME=/tmp -e DOTNET_CLI_HOME=/tmp \
+            mcr.microsoft.com/dotnet/sdk:8.0 dotnet nuget locals global-packages --list \
+            && echo "CASE_F_PASS" || echo "CASE_F_FAIL"
+
+          echo "Case G: tmpfs /work only with normal container filesystem"
+          docker run --rm --pull=never --network none --user 1654:1654 \
+            --tmpfs /work:rw,exec,size=128m,mode=1777 \
+            -e HOME=/work -e DOTNET_CLI_HOME=/work \
+            mcr.microsoft.com/dotnet/sdk:8.0 dotnet nuget locals global-packages --list \
+            && echo "CASE_G_PASS" || echo "CASE_G_FAIL"
+
+          echo "Case H: readonly root + tmpfs /tmp, HOME=/tmp"
+          docker run --rm --pull=never --network none --read-only --user 1654:1654 \
+            --tmpfs /tmp:rw,exec,size=128m,mode=1777 \
+            -e HOME=/tmp -e DOTNET_CLI_HOME=/tmp \
+            mcr.microsoft.com/dotnet/sdk:8.0 dotnet nuget locals global-packages --list \
+            && echo "CASE_H_PASS" || echo "CASE_H_FAIL"
+
+          echo "Case I: readonly root + tmpfs /work, no /tmp mount"
+          docker run --rm --pull=never --network none --read-only --user 1654:1654 \
+            --tmpfs /work:rw,exec,size=128m,mode=1777 \
+            -e HOME=/work -e DOTNET_CLI_HOME=/work \
+            mcr.microsoft.com/dotnet/sdk:8.0 dotnet nuget locals global-packages --list \
+            && echo "CASE_I_PASS" || echo "CASE_I_FAIL"
+
+          echo "Case J: readonly root + bind-mounted ext4 /tmp, no untrusted code"
+          mutex_dir=$(mktemp -d)
+          chmod 1777 "$mutex_dir"
+          docker run --rm --pull=never --network none --read-only --user 1654:1654 \
+            --mount "type=bind,source=$mutex_dir,target=/tmp" \
+            -e HOME=/tmp -e DOTNET_CLI_HOME=/tmp \
+            mcr.microsoft.com/dotnet/sdk:8.0 dotnet nuget locals global-packages --list \
+            && echo "CASE_J_PASS" || echo "CASE_J_FAIL"
+          rm -rf -- "$mutex_dir"
+          echo "Diagnostics complete. No user-generated code was executed."
+
+
 
       - name: Test generated xUnit code in network-disabled Docker
         run: dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj --configuration Release --no-build --filter FullyQualifiedName~DockerExperimentSmokeTests
