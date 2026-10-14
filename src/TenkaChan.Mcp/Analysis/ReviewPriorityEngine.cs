@@ -153,6 +153,10 @@ public static class ReviewPriorityEngine
                 RuleIds = group.SelectMany(x => x.RuleIds).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray(),
                 SourceFingerprints = group.SelectMany(x => x.SourceFingerprints).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray(),
                 Reasons = group.SelectMany(x => x.Reasons).Distinct(StringComparer.Ordinal).ToArray(),
+                OriginalSeverity = group.Select(x => x.OriginalSeverity).Where(x => x is not null)
+                    .OrderBy(x => string.Equals(x, "error", StringComparison.OrdinalIgnoreCase) ? 0
+                        : string.Equals(x, "warning", StringComparison.OrdinalIgnoreCase) ? 1 : 2)
+                    .ThenBy(x => x, StringComparer.Ordinal).FirstOrDefault(),
                 StaticScore = group.Select(x => x.StaticScore).Max()
             };
         }).ToArray();
