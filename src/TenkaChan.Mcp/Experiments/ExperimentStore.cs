@@ -160,7 +160,7 @@ public sealed class ExperimentStore
         var (_, directory) = Read(experimentId);
         var artifacts = Path.Combine(directory, "artifacts");
         Directory.CreateDirectory(artifacts);
-        // The sandbox runs as UID 65532. This grants write access only inside a
+        // The sandbox runs as the image's non-root app UID 1654. This grants write access only inside a
         // dedicated artifacts directory; repository and generated source remain RO.
         if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
         {
