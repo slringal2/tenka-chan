@@ -4,6 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>実測プロファイル取得 | 甜花ちゃん</title>
   <link rel="stylesheet" href="/trace.css"><script src="/trace.js" defer></script>
+  <link rel="stylesheet" href="/path-picker.css"><script src="/path-picker.js" defer></script>
 </head>
 <body><main>
   <header><a href="/">← ダッシュボードへ</a> · <a href="/assembly.html">アセンブリ解析</a><h1>実測プロファイルの取得</h1>
@@ -12,8 +13,8 @@
   <section><h2>1. 信頼済みアプリを実行して取得</h2>
     <p>アプリは現在のOSユーザーの権限で実行されます。Dockerによる隔離はありません。未確認のコードやAI生成コードには使用しないでください。</p>
     <form id="capture">
-      <label>ビルド済み実行DLLの絶対パス<input name="assemblyPath" required placeholder="C:\Projects\App\bin\Release\net8.0\App.dll"></label>
-      <label>保存先ディレクトリ（既存・許可済み）<input name="outputDirectory" required placeholder="C:\Profiles"></label>
+      <label>ビルド済み実行DLLの絶対パス<input name="assemblyPath" data-path-kind="assembly" required placeholder="C:\Projects\App\bin\Release\net8.0\App.dll"></label>
+      <label>保存先ディレクトリ（既存・許可済み）<input name="outputDirectory" data-path-kind="folder" required placeholder="C:\Profiles"></label>
       <label>制限時間（取得・変換を含む、1～120秒）<input name="timeoutSeconds" type="number" min="1" max="120" value="60" required></label>
       <label>アプリ引数（JSON文字列配列）<input name="arguments" value="[]" required></label>
       <label class="check"><input name="runtimeCostEvents" type="checkbox">詳細なランタイムイベントも取得する（割り当ての観測に必要。計測負荷・保存量が増えます）</label>
@@ -22,7 +23,7 @@
     </form><p id="setup">サーバー設定を確認しています。</p>
   </section>
   <section><h2>2. 保存済み結果とスレッドを選択</h2>
-    <form id="load"><label>capture.jsonの絶対パス<input name="reportPath" id="report-path" required></label><button>保存結果を確認</button></form>
+    <form id="load"><label>capture.jsonの絶対パス<input name="reportPath" data-path-kind="profile" id="report-path" required></label><button>保存結果を確認</button></form>
     <p id="capture-status">未取得</p>
     <form id="import"><label>解析するスレッド<select id="profiles" required disabled><option value="">取得結果を読み込んでください</option></select></label><button id="import-button" disabled>このスレッドを解析へ読み込む</button></form>
     <p>先にダッシュボードで対応するプロジェクトを開いてください。読み込み後は実測優先レポートを利用できます。</p>
@@ -40,7 +41,7 @@
     <div id="runtime-results"></div>
   </section>
   <section><h2>4. 現在のDLLとの比較</h2>
-    <form id="compare"><label>比較する実行DLLの絶対パス<input name="assemblyPath" required></label><button>保存時の入力と比較</button></form>
+    <form id="compare"><label>比較する実行DLLの絶対パス<input name="assemblyPath" data-path-kind="assembly" required></label><button>保存時の入力と比較</button></form>
     <p id="comparison">エントリーDLL・MVID・runtimeconfig・depsを比較します。全依存ライブラリやC#ソースとの一致確認ではありません。</p>
   </section>
   <section><h2>読み込んだスレッドの結果</h2><p id="import-status">未読込</p><div class="table-scroll"><table>

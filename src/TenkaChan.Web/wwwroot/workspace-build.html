@@ -4,6 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>甜花ちゃん | ビルドと解析の準備</title>
 <link rel="stylesheet" href="assembly.css"><link rel="stylesheet" href="workspace-build.css"><script defer src="workspace-build.js"></script>
+<link rel="stylesheet" href="path-picker.css"><script defer src="path-picker.js"></script>
 </head>
 <body><main>
 <nav><a href="/">ダッシュボード</a> · <a href="/assembly.html">アセンブリ解析</a> · <a href="/trace.html">プロファイル取得</a></nav>
@@ -13,10 +14,11 @@
 <section>
 <h2>プロジェクトを読み込む</h2>
 <form id="open-workspace">
-<label>許可済みの .csproj / .sln / .slnx の絶対パス<input id="workspace-path" required></label>
+<label>許可済みの .csproj / .sln / .slnx の絶対パス<input id="workspace-path" data-path-kind="project" required></label>
 <button type="submit" id="open-button">読み込む</button>
 <button type="button" id="refresh-options">現在の設定を更新</button>
 </form>
+<p>「参照…」でWindowsの標準選択画面を開きます。選択だけでは解析を開始しません。許可するフォルダーの変更はsetup.batから行えます。</p>
 </section>
 <section>
 <h2>ビルドして解析する</h2>
