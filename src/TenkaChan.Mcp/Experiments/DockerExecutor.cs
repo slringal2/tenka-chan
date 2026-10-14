@@ -177,7 +177,7 @@ public sealed class DockerExecutor(WorkspaceGuard guard, ExperimentStore experim
         foreach (var arg in new[]
         {
             "run", "--rm", "--pull=never", "--name", name, "--network", "none", "--read-only", "--cap-drop", "ALL",
-            "--security-opt", "no-new-privileges", "--pids-limit", "128", "--memory", "2g", "--cpus", "2", "--user", "65532:65532",
+            "--security-opt", "no-new-privileges", "--pids-limit", "128", "--memory", "2g", "--cpus", "2", "--user", "1654:1654",
             "--tmpfs", "/work:rw,exec,size=1g,mode=1777", "--tmpfs", "/tmp:rw,exec,size=128m,mode=1777",
             "--tmpfs", "/dev/shm:rw,nosuid,nodev,size=64m,mode=1777",
             "--env", "HOME=/work", "--env", "DOTNET_CLI_HOME=/work", "--env", "DOTNET_NOLOGO=1",
