@@ -60,7 +60,7 @@ public sealed class TrustedLocalProcessProfilerTests
         Assert.Equal(result.BaselineSha256, stored.BaselineSha256);
         Assert.Equal(result.Samples.Count, stored.Samples.Count);
         Assert.Contains(stored.Limitations, x =>
-            x.Contains("startup", StringComparison.OrdinalIgnoreCase));
+            x.Contains("process start", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
