@@ -152,7 +152,48 @@ impact. The runner sets `DOTNET_ReadyToRun=0` and
 production Tiered PGO. The actual .NET runtime must be installed on the
 host for the app's target framework.
 
+## Trusted local whole-process performance comparison (no Docker)
+
+Use the **性能ホットスポット** → **信頼済みアプリの実行時間を計測**
+screen to run a previously compiled .NET 8+ executable DLL on the **actual
+Windows/Linux/macOS host**. Set `TENKA_ENABLE_LOCAL_EXEC=1` and restrict
+`TENKA_ALLOWED_ROOTS` to project directories you have reviewed. Each
+execution also requires an explicit trusted-binary acknowledgment.
+
+The measurements record **whole-process elapsed time**, **cumulative process
+CPU time**, **peak resident working set** (not GC allocations), the exact
+input arguments, output hashes and binary SHA-256 fingerprints.
+
+To compare revisions, provide baseline and candidate runnable DLLs with the
+same declared target framework, the same arguments and equivalent deterministic
+stdout. Tenka runs them in alternating order, takes 5–10 measured launches
+each, optionally performs 0–2 warmups, and reports an **exploratory** median
+difference and bootstrap interval. If the app outputs differ or vary between
+runs, **no performance comparison** is reported.
+
+Corresponding MCP tools:
+- `trusted_local_workload_measure(baselineAssembly,trustedBinary,candidateAssembly,repetitions,warmups,timeoutSeconds)`
+- `trusted_local_workload_result(runId)`
+
+Corresponding local-only HTTP endpoints:
+- `POST /api/local-performance/measure`
+- `GET /api/local-performance/{id}`
+
+**Measurement limitations:** process creation, process shutdown and JIT startup
+are included; this is **not** BenchmarkDotNet steady-state per-operation
+timing. Even when a whole-process difference is observed, use CPU sampling,
+GC allocation profiling and a matched microbenchmark before attributing that
+difference to a particular method. Comparison estimates are exploratory and
+can reflect scheduler, OS or external-system noise.
+
+**Safety:** this launches **trusted executable code with the current
+user's privileges**, no Docker sandbox. AI-generated test/benchmark harnesses
+still require the original Docker workflow. The runner limits arguments,
+run counts, timeouts and inherited environment, but cannot constrain a
+trusted child program's access to files or network.
+
 ## .NET 8+ optimization targets and RyuJIT machine code
+
 
 
 **Target projects:** portable `net8.0` and newer. The Tenka-chan MCP/Web
@@ -444,6 +485,7 @@ free of bugs or performance regressions.
 | --- | --- |
 | `autonomous_review_start` / `autonomous_review_status` | Bounded local-LLM method investigation and current run state |
 | `autonomous_review_stop` / `autonomous_review_history` | Cancel a run and retrieve persisted history |
+| `trusted_local_workload_measure` / `trusted_local_workload_result` | Trusted host whole-process elapsed/CPU measurements and optional A/B comparison |
 | `trusted_local_jit_capture` / `trusted_local_jit_result` | Docker-free JIT machine-code capture of explicitly trusted, already built applications |
 | `performance_hotspots` / `performance_profile_import` / `performance_profile_current` | Static candidate ranking plus separately imported measured workload profile |
 | `deterministic_analyze` / `deterministic_rules` | Reproducible Roslyn analysis and rule catalog, no LLM required |
