@@ -1,63 +1,8 @@
 namespace TenkaChan.Mcp.Analysis;
 
-public sealed record RuntimeCostOptions(int MaxEvents = 500000, int MaxRows = 100, double? PauseBudgetMs = null)
-{
-    public void Validate()
-    {
-        if (MaxEvents is < 100 or > 2000000 || MaxRows is < 1 or > 1000)
-            throw new ArgumentOutOfRangeException(nameof(MaxEvents), "MaxEvents must be 100..2000000 and MaxRows 1..1000.");
-        if (PauseBudgetMs is double budget && (!double.IsFinite(budget) || budget <= 0 || budget > 60000))
-            throw new ArgumentOutOfRangeException(nameof(PauseBudgetMs));
-    }
-}
-
-// A normalized event is an observation, never an inferred source defect.
-public sealed record RuntimeCostEvent(string Kind, double TimeMs, int ProcessId, int ClrInstanceId,
-    int ThreadId = 0, int? Count = null, int? Generation = null, int? Reason = null,
-    int? GcType = null, ulong? AllocationBytes = null, string? TypeName = null,
-    ulong? ObjectSize = null, int? Flags = null, double? DurationNs = null);
-public sealed record RuntimeGcCycle(int Count, int? Generation, int? Type, int? Reason,
-    double StartMs, double EndMs)
-{
-    public double DurationMs => EndMs - StartMs;
-}
-public sealed record RuntimeGcPause(double StartMs, double? SuspendedMs, double? RestartMs,
-    double EndMs, int Reason)
-{
-    public double SuspensionWindowMs => EndMs - StartMs;
-    public double? FullySuspendedMs => SuspendedMs is double s && RestartMs is double r ? r - s : null;
-}
-public sealed record RuntimeAllocationType(string TriggerType, int TickCount,
-    ulong ObservedTriggerObjectBytes, int ObjectSizesReported);
-public sealed record RuntimeContentionThread(int ThreadId, int StartCount, int StopCount,
-    int DurationsReported, double WaitMilliseconds, double MaximumWaitMilliseconds);
-public sealed record RuntimeCostHint(string Kind, string Priority, string Evidence, string NextCheck)
-{
-    public bool DefectConfirmed => false;
-}
-public sealed record RuntimeCostSummary(int ProcessId, int ClrInstanceId, int ObservedEvents,
-    double? FirstEventMs, double? LastEventMs,
-    int CollectionsStarted, int CollectionsCompleted, IReadOnlyDictionary<int, int> CollectionsByGeneration,
-    int GcSuspensionWindows, double GcSuspensionWindowTotalMs, double MaximumGcSuspensionWindowMs,
-    int FullySuspendedIntervals, double FullySuspendedTotalMs,
-    int AllocationTicks, ulong TickReportedAllocationBytes, int AllocationAmountsMissing,
-    int ContentionStarts, int ContentionStops, int ContentionDurationsReported,
-    double ContentionWaitMilliseconds, double MaximumContentionWaitMilliseconds,
-    IReadOnlyList<RuntimeGcCycle> Collections, IReadOnlyList<RuntimeGcPause> Pauses,
-    IReadOnlyList<RuntimeAllocationType> AllocationTriggerTypes,
-    IReadOnlyList<RuntimeContentionThread> ContentionThreads,
-    IReadOnlyDictionary<string, int> IncompleteEvidence,
-    IReadOnlyDictionary<string, string> Coverage,
-    bool DetailsTruncated, IReadOnlyList<RuntimeCostHint> InvestigationHints)
-{
-    public double? CpuMilliseconds => null;
-    public double? OtherWaitMilliseconds => null;
-}
-
 /// <summary>
-/// Bounded streaming reducer. GC lifetimes, process suspension windows and
-/// overlapping waiter durations are different quantities. No subtraction from
-/// thread time is used to invent CPU time. Pending pairs never cross PID/CLR.
+/// Bounded streaming reducer. Collection lifetimes, suspension windows and
+/// overlapping waiter durations remain separate. Pairing never crosses PID/CLR.
 /// </summary>
 public sealed class RuntimeCostAccumulator
 {
@@ -66,8 +11,7 @@ public sealed class RuntimeCostAccumulator
     private sealed class Pause(RuntimeCostEvent start)
     {
         public RuntimeCostEvent Start = start;
-        public double? Suspended;
-        public double? Restart;
+        public double? Suspended, Restart;
         public bool Invalid;
     }
     private sealed class Allocation(string type)
@@ -100,10 +44,8 @@ public sealed class RuntimeCostAccumulator
         public void Issue(string name) => Issues[name] = Issues.GetValueOrDefault(name) + 1;
     }
     public RuntimeCostAccumulator(RuntimeCostOptions? options = null)
-    {
-        _options = options ?? new();
-        _options.Validate();
-    }
+    { _options = options ?? new(); _options.Validate(); }
+
     public void Add(RuntimeCostEvent e)
     {
         if (!double.IsFinite(e.TimeMs) || e.TimeMs < 0)
@@ -117,7 +59,6 @@ public sealed class RuntimeCostAccumulator
         if (s.Last is double last && e.TimeMs < last)
         {
             s.Issue("out_of_order_timestamp");
-            // Existing open pairs are now untrustworthy; do not fabricate intervals.
             foreach (var key in s.PendingGc.Keys.ToArray()) s.PendingGc[key] = null;
             foreach (var key in s.PendingContention.Keys.ToArray()) s.PendingContention[key] = null;
             if (s.PendingPause is not null) s.PendingPause.Invalid = true;
@@ -162,9 +103,9 @@ public sealed class RuntimeCostAccumulator
                 if (pause is null || pause.Invalid) { s.Issue("unmatched_restart_stop"); break; }
                 if (pause.Start.Reason is not (1 or 6)) { s.Issue("non_gc_or_unknown_suspension"); break; }
                 var window = new RuntimeGcPause(pause.Start.TimeMs, pause.Suspended, pause.Restart, e.TimeMs, pause.Start.Reason.Value);
-                s.PauseCount++; s.PauseTotal += window.SuspensionWindowMs;
+                s.PauseCount++; s.PauseTotal = AddFinite(s.PauseTotal, window.SuspensionWindowMs);
                 s.PauseMax = Math.Max(s.PauseMax, window.SuspensionWindowMs);
-                if (window.FullySuspendedMs is double full && full >= 0) { s.FullyCount++; s.FullyTotal += full; }
+                if (window.FullySuspendedMs is double full && full >= 0) { s.FullyCount++; s.FullyTotal = AddFinite(s.FullyTotal, full); }
                 else s.Issue("incomplete_suspension_phases");
                 if (s.Pauses.Count < _options.MaxRows) s.Pauses.Add(window);
                 break;
@@ -172,8 +113,7 @@ public sealed class RuntimeCostAccumulator
                 s.Allocations++;
                 if (e.AllocationBytes is ulong bytes) s.AllocationBytes = AddBytes(s.AllocationBytes, bytes);
                 else s.MissingAmounts++;
-                // A tick's allocation amount spans many allocations/types. It is
-                // intentionally NOT charged in full to the triggering object's type.
+                // The amount spans many allocations/types, not just the trigger.
                 var name = string.IsNullOrEmpty(e.TypeName) ? "(type unavailable)" : e.TypeName;
                 if (name.Length > 512) { name = name[..512]; s.Issue("type_name_truncated"); }
                 if (!s.Types.TryGetValue(name, out var a))
@@ -190,12 +130,13 @@ public sealed class RuntimeCostAccumulator
                 if (s.PendingContention.ContainsKey(e.ThreadId)) { s.PendingContention[e.ThreadId] = null; s.Issue("duplicate_contention_start"); }
                 else if (s.PendingContention.Count < 4096) s.PendingContention.Add(e.ThreadId, e.TimeMs);
                 else s.Issue("pending_contention_limit");
-                Thread(s, e.ThreadId)?.Starts++;
+                var startedThread = GetThread(s, e.ThreadId);
+                if (startedThread is not null) startedThread.Starts++;
                 break;
             case "contention_stop":
                 if (e.Flags != 0) { s.Issue("non_managed_or_unknown_contention"); break; }
                 s.ContentionStops++;
-                var t = Thread(s, e.ThreadId); if (t is not null) t.Stops++;
+                var t = GetThread(s, e.ThreadId); if (t is not null) t.Stops++;
                 if (!s.PendingContention.Remove(e.ThreadId, out var begin) || begin is null)
                     s.Issue("unmatched_contention_stop");
                 if (e.DurationNs is not double duration || !double.IsFinite(duration) || duration < 0)
@@ -207,7 +148,7 @@ public sealed class RuntimeCostAccumulator
             default: throw new ArgumentException("Unsupported normalized runtime event kind.");
         }
     }
-    private static Contention? Thread(State s, int thread)
+    private static Contention? GetThread(State s, int thread)
     {
         if (s.Threads.TryGetValue(thread, out var result)) return result;
         if (s.Threads.Count >= 4096) { s.Issue("thread_group_limit"); return null; }
@@ -257,8 +198,7 @@ public sealed class RuntimeCostAccumulator
                     ["gc"] = s.GcStarts > 0 ? "events_observed" : "not_observed__not_proof_of_zero",
                     ["allocation"] = s.Allocations > 0 ? "sampled_ticks_observed" : "not_observed__may_require_verbose_capture",
                     ["monitorContention"] = s.ContentionStops > 0 ? "stop_events_observed" : "not_observed__not_proof_of_zero",
-                    ["onCpu"] = "not_collected_by_this_analysis",
-                    ["otherWaits"] = "not_collected_by_this_analysis"
+                    ["onCpu"] = "not_collected_by_this_analysis", ["otherWaits"] = "not_collected_by_this_analysis"
                 }, s.GcStops > s.Cycles.Count || s.PauseCount > s.Pauses.Count || s.Types.Count > _options.MaxRows ||
                     s.Threads.Count > _options.MaxRows || s.Issues.Keys.Any(k => k.EndsWith("_limit", StringComparison.Ordinal)), hints);
         }).ToArray();
