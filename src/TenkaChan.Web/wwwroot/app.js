@@ -958,6 +958,59 @@ async function runStaticHotspotScan(event) {
   });
 }
 
+async function captureLocalNativeJit(event) {
+  event.preventDefault();
+  if (!state.session?.trustedLocalExecutionEnabled) {
+    toast("TENKA_ENABLE_LOCAL_EXEC=1で明示的に有効化してください。", true);
+    return;
+  }
+  if (!window.confirm(
+    "このビルド済みアプリが完全に信頼できることを確認してください。\n" +
+    "Dockerでは隔離されず、PCの現在のユーザー権限で実行されます。\n\n実行しますか？"
+  )) return;
+  const button = $("local-jit-run");
+  await withButton(button, async () => {
+    const payload = Object.fromEntries(new FormData(event.currentTarget));
+    const seconds = Number(payload.timeoutSeconds);
+    if (!Number.isInteger(seconds) || seconds < 1 || seconds > 120)
+      throw new Error("タイムアウトは1〜120秒で指定してください。");
+    const body = {
+      assemblyPath: String(payload.assemblyPath || "").trim(),
+      jitFilter: String(payload.jitFilter || "").trim(),
+      trustedBinary: true,
+      timeoutSeconds: seconds
+    };
+    const result = await api("/local-jit/capture", { method: "POST", body });
+    $("local-jit-last-result").textContent =
+      "Run " + result.id + " · " + result.status +
+      " · Output: " + result.nativeListingPath;
+    const dialog = $("experiment-dialog");
+    $("experiment-detail-title").textContent =
+      "ローカル JIT · " + shortId(result.id);
+    const root = $("experiment-detail-body");
+    clear(root);
+    detailSection(root, "Host execution", tags([
+      "status " + result.status,
+      "target " + result.targetFramework,
+      "exit " + (result.exitCode ?? "unknown"),
+      "SHA256 " + result.assemblySha256.slice(0, 16) + "…"
+    ]));
+    add(root, el("div", "json-note",
+      "信頼済みアプリをホスト上で直接実行した結果です。Dockerの隔離はありません。"));
+    if (result.nativeDisassembly)
+      renderNativeDisassembly(root, result.nativeDisassembly);
+    if (result.stdout)
+      detailSection(root, "Application stdout", el("pre", "", clip(result.stdout, 12000)));
+    if (result.stderr)
+      detailSection(root, "Application stderr", el("pre", "", clip(result.stderr, 12000)));
+    for (const note of result.limitations)
+      detailSection(root, "Execution caveat", note);
+    dialog.showModal();
+    toast("ローカルJIT取得: " + result.status,
+      result.status !== "jit_completed");
+  });
+}
+
 async function importSampledHotspot(event) {
   event.preventDefault();
   await withButton($("hotspot-profile-run"), async () => {
@@ -1067,6 +1120,7 @@ async function initialize() {
   $("auto-history-refresh").addEventListener("click", () =>
     loadReviewHistory().catch(error => toast(error.message, true)));
   $("hotspot-static-form").addEventListener("submit", runStaticHotspotScan);
+  $("local-jit-form").addEventListener("submit", captureLocalNativeJit);
   $("hotspot-profile-form").addEventListener("submit", importSampledHotspot);
   $("det-form").addEventListener("submit", runDeterministic);
   $("det-export").addEventListener("click", exportDeterministic);
@@ -1083,6 +1137,10 @@ async function initialize() {
   try {
     state.session = await api("/session");
     state.csrf = state.session.csrfToken;
+    $("local-jit-run").disabled = !state.session.trustedLocalExecutionEnabled;
+    $("local-jit-enabled").textContent =
+      state.session.trustedLocalExecutionEnabled ? "TRUSTED HOST ENABLED" : "LOCAL MODE OFF";
+
     $("auto-model").textContent = state.session.model || "local";
     $("auto-endpoint").textContent = state.session.llmEndpoint || "127.0.0.1";
 
