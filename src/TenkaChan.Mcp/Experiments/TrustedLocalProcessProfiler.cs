@@ -129,6 +129,10 @@ public sealed class TrustedLocalProcessProfiler
         if (status == "completed" && outputs.Length > 1)
             status = "non_equivalent_or_nondeterministic_output";
 
+        if (status == "completed" && candidate is not null &&
+            candidate.Hash == baseline.Hash)
+            status = "identical_binaries_no_revision_comparison";
+
         TrustedProcessComparison? comparison = null;
         if (status == "completed" && candidate is not null)
         {
@@ -160,6 +164,7 @@ public sealed class TrustedLocalProcessProfiler
                 "PeakWorkingSetBytes is process resident working set, not .NET managed allocations or GC heap size.",
                 "Even alternating runs and bootstrap uncertainty cannot establish a causal optimization without controlled representative workloads.",
                 "Output equality is assessed using SHA-256 of raw stdout bytes, not arbitrary application state or file side effects.",
+                "Comparisons between identical DLL hashes are suppressed; the same binary cannot establish a revision speedup.",
                 "Use a sampled CPU profile to locate expensive methods, and BenchmarkDotNet for steady-state microbenchmarks."
             ]);
         Save(report);
@@ -250,6 +255,9 @@ public sealed class TrustedLocalProcessProfiler
             }
             elapsed.Stop();
         }
+        // A descendant can inherit stdout/stderr after the main process exits.
+        // Do not let that hold the profiling request open indefinitely.
+        await Task.WhenAll(output, error).WaitAsync(TimeSpan.FromSeconds(5));
         var outputHash = await output;
         var errorTail = await error;
         if (ct.IsCancellationRequested) ct.ThrowIfCancellationRequested();
