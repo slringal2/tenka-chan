@@ -136,6 +136,14 @@ jobs:
           local_id=$(python3 -c 'import json; print(json.load(open("/tmp/tenka-local-jit-http.json"))["id"])')
           curl --silent --show-error --fail "http://127.0.0.1:5077/api/local-jit/$local_id" >/tmp/tenka-local-jit-saved.json
           python3 -c 'import json; x=json.load(open("/tmp/tenka-local-jit-saved.json")); assert x["status"] == "jit_completed", x'
+          curl --silent --show-error --fail "http://127.0.0.1:5077/api/hotspots/triage?maxObserved=10&localJitCaptureId=$local_id" >/tmp/tenka-local-evidence-triage.json
+          export LOCAL_CAPTURE_ID="$local_id"
+          python3 -c 'import json,os; x=json.load(open("/tmp/tenka-local-evidence-triage.json")); assert x["localJitCaptureId"] == os.environ["LOCAL_CAPTURE_ID"], x; assert x["observed"], x; assert any("signature-only" in note for note in x["limitations"]), x'
+          local_dossier_payload=$(python3 -c 'import json,os; print(json.dumps({"methodId":os.environ["TRIAGE_METHOD_ID"],"localJitCaptureId":os.environ["LOCAL_CAPTURE_ID"]}))')
+          curl --silent --show-error --fail -X POST http://127.0.0.1:5077/api/hotspots/investigate \
+            -H 'Content-Type: application/json' -H "X-Tenka-CSRF: $token" \
+            --data-binary "$local_dossier_payload" >/tmp/tenka-local-evidence-dossier.json
+          python3 -c 'import json,os; x=json.load(open("/tmp/tenka-local-evidence-dossier.json")); assert x["methodId"] == os.environ["TRIAGE_METHOD_ID"], x; assert x["ilAndSource"] is None, x'
           denied_payload=$(python3 -c 'import json,os; print(json.dumps({"assemblyPath":os.environ["LOCAL_JIT_BINARY"],"jitFilter":"LocalJitFixture:Compute","trustedBinary":False}))')
           denied_status=$(curl --silent -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:5077/api/local-jit/capture \
             -H 'Content-Type: application/json' -H "X-Tenka-CSRF: $token" \

@@ -306,6 +306,12 @@ compare their code generation.
 
 ## Performance evidence: profiler → Roslyn → RyuJIT → IL/PDB
 
+Saved host-native JIT results can also be included **without Docker or a new
+process launch** using `localJitCaptureId` (separate from
+`jitExperimentId`). This is signature-level disassembly evidence only: a
+profile/workspace build identity is not inferred, and local captures do not
+automatically supply verified IL/PDB artifact bundles.
+
 For performance work, **start with an observed hotspot**, not the largest
 static warning score. Optionally pass a saved BenchmarkDotNet experiment ID
 using `benchmarkExperimentId`; time and allocation per operation remain

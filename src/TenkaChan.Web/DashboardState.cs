@@ -98,14 +98,14 @@ public sealed class DashboardState(RoslynReviewService roslyn) : IReviewContextS
     public async Task<PerformanceTriageReport> TriageEvidenceAsync(
         PerformanceEvidenceService service, string? jitExperimentId,
         int maxObserved, int maxStatic, string? benchmarkExperimentId,
-        CancellationToken ct)
+        string? localJitCaptureId, CancellationToken ct)
     {
         await _gate.WaitAsync(ct);
         try
         {
             EnsureOpen();
             return await service.TriageAsync(jitExperimentId,
-                maxObserved, maxStatic, benchmarkExperimentId, ct);
+                maxObserved, maxStatic, benchmarkExperimentId, localJitCaptureId, ct);
         }
         finally { _gate.Release(); }
     }
@@ -113,7 +113,8 @@ public sealed class DashboardState(RoslynReviewService roslyn) : IReviewContextS
     public async Task<PerformanceMethodDossier> InvestigateEvidenceAsync(
         PerformanceEvidenceService service, string methodId,
         string? jitExperimentId, string? assemblyFile, int? methodToken,
-        string? sourceFilePath, int maxInstructions, CancellationToken ct)
+        string? sourceFilePath, int maxInstructions,
+        string? localJitCaptureId, CancellationToken ct)
     {
         await _gate.WaitAsync(ct);
         try
@@ -121,7 +122,7 @@ public sealed class DashboardState(RoslynReviewService roslyn) : IReviewContextS
             EnsureOpen();
             return await service.InvestigateAsync(methodId,
                 jitExperimentId, assemblyFile, methodToken, sourceFilePath,
-                maxInstructions, ct);
+                maxInstructions, localJitCaptureId, ct);
         }
         finally { _gate.Release(); }
     }

@@ -41,6 +41,7 @@ public sealed record PerformanceTriageReport(
     IReadOnlyList<string> Limitations)
 {
     public StandaloneBenchmarkEvidence? Benchmarks { get; init; }
+    public string? LocalJitCaptureId { get; init; }
 }
 
 public sealed record PerformanceMethodDossier(

@@ -10,27 +10,38 @@ namespace TenkaChan.Mcp.Experiments;
 public sealed class PerformanceEvidenceService(
     RoslynReviewService roslyn,
     ExperimentStore experiments,
-    JitBinarySourceService binaries)
+    JitBinarySourceService binaries,
+    TrustedLocalJitRunner? localJit = null)
 {
     public async Task<PerformanceTriageReport> TriageAsync(
         string? jitExperimentId = null, int maxObserved = 50,
         int maxStatic = 30, string? benchmarkExperimentId = null,
+        string? localJitCaptureId = null,
         CancellationToken cancellationToken = default)
     {
+        jitExperimentId = NormalizeId(jitExperimentId);
+        localJitCaptureId = NormalizeId(localJitCaptureId);
+        ValidateNativeSelection(jitExperimentId, localJitCaptureId);
         var snapshot = roslyn.CurrentSnapshotId;
         var staticReport = await roslyn.AnalyzePerformanceHotspotsAsync(
             maxMethods: 500, maxSites: 2000, ct: cancellationToken);
         var profile = roslyn.CurrentHotspotProfile;
-        var native = LoadNative(jitExperimentId);
+        var native = LoadNative(jitExperimentId, localJitCaptureId);
         var correlated = native is null ? null : roslyn.CorrelateNativeCode(native);
         if (roslyn.CurrentSnapshotId != snapshot ||
             staticReport.SnapshotId != snapshot)
             throw new InvalidOperationException(
                 "Workspace changed during evidence collection; reopen or retry.");
-        return PerformanceEvidenceJoiner.Build(snapshot, staticReport, profile, correlated,
-            jitExperimentId, maxObserved, maxStatic) with
+        var triage = PerformanceEvidenceJoiner.Build(snapshot, staticReport, profile, correlated,
+            jitExperimentId, maxObserved, maxStatic);
+        return triage with
         {
-            Benchmarks = LoadBenchmarkEvidence(benchmarkExperimentId)
+            Benchmarks = LoadBenchmarkEvidence(benchmarkExperimentId),
+            LocalJitCaptureId = localJitCaptureId,
+            Limitations = localJitCaptureId is null ? triage.Limitations :
+                triage.Limitations.Concat([
+                    "Trusted local JIT is a saved host-native capture, not proof that the profiler, workspace and captured DLL share one build. Method matches remain signature-only; the captured assembly SHA-256 is not checked against the Roslyn source snapshot."
+                ]).ToArray()
         };
     }
 
@@ -38,8 +49,14 @@ public sealed class PerformanceEvidenceService(
         string methodId, string? jitExperimentId = null,
         string? assemblyFile = null, int? methodToken = null,
         string? sourceFilePath = null, int maxInstructions = 1500,
+        string? localJitCaptureId = null,
         CancellationToken cancellationToken = default)
     {
+        jitExperimentId = NormalizeId(jitExperimentId);
+        localJitCaptureId = NormalizeId(localJitCaptureId);
+        ValidateNativeSelection(jitExperimentId, localJitCaptureId);
+        if (localJitCaptureId is not null && assemblyFile is not null)
+            throw new ArgumentException("Local JIT captures have no captured MethodDef/PDB artifacts; select a Docker JIT experiment for IL source binding.");
         if ((assemblyFile is null) != (methodToken is null))
             throw new ArgumentException("Both captured assemblyFile and methodToken are required for IL evidence.");
         if (sourceFilePath is not null && assemblyFile is null)
@@ -48,7 +65,8 @@ public sealed class PerformanceEvidenceService(
             throw new ArgumentException("A JIT experiment ID is required for captured binary inspection.");
 
         var triage = await TriageAsync(jitExperimentId,
-            maxObserved: 200, maxStatic: 100, cancellationToken: cancellationToken);
+            maxObserved: 200, maxStatic: 100,
+            localJitCaptureId: localJitCaptureId, cancellationToken: cancellationToken);
         // Never choose a method by approximate name if the profiling match was
         // ambiguous. Only exact Roslyn method IDs from a ranked result qualify.
         var entry = triage.Observed.FirstOrDefault(x => x.MethodId == methodId)
@@ -56,7 +74,7 @@ public sealed class PerformanceEvidenceService(
         if (entry is null)
             throw new KeyNotFoundException("Method is not in the bounded triage report.");
 
-        var native = LoadNative(jitExperimentId);
+        var native = LoadNative(jitExperimentId, localJitCaptureId);
         var correlated = native is null ? null : roslyn.CorrelateNativeCode(native);
         var matches = correlated?.Methods.Where(x => x.RoslynMethodId == methodId).Take(2)
             .ToArray() ?? [];
@@ -157,8 +175,36 @@ public sealed class PerformanceEvidenceService(
             ]);
     }
 
-    private NativeCodeReport? LoadNative(string? experimentId)
+    private static string? NormalizeId(string? id) =>
+        string.IsNullOrWhiteSpace(id) ? null : id.Trim();
+
+    internal static void ValidateNativeSelection(string? experimentId, string? localCaptureId)
     {
+        if (!string.IsNullOrWhiteSpace(experimentId) &&
+            !string.IsNullOrWhiteSpace(localCaptureId))
+            throw new ArgumentException("Choose either a Docker JIT experiment or a trusted local JIT capture, not both.");
+    }
+
+    internal static NativeCodeReport RequireCompletedLocalCapture(LocalJitCaptureResult capture)
+    {
+        if (capture.Status != "jit_completed" || capture.ExitCode != 0 ||
+            capture.NativeDisassembly is null || capture.NativeDisassembly.MethodCount < 1 ||
+            capture.AssemblySha256.Length != 64 ||
+            !capture.AssemblySha256.All(Uri.IsHexDigit))
+            throw new InvalidOperationException(
+                "A completed, unchanged trusted local JIT capture with native instructions and a DLL SHA-256 is required.");
+        return capture.NativeDisassembly;
+    }
+
+    private NativeCodeReport? LoadNative(string? experimentId, string? localCaptureId)
+    {
+        ValidateNativeSelection(experimentId, localCaptureId);
+        if (localCaptureId is not null)
+        {
+            if (localJit is null)
+                throw new InvalidOperationException("Saved trusted-local JIT capture reader is not registered.");
+            return RequireCompletedLocalCapture(localJit.Get(localCaptureId));
+        }
         if (experimentId is null) return null;
         var (manifest, _) = experiments.Read(experimentId);
         var result = experiments.ReadExecutionResult(experimentId);
