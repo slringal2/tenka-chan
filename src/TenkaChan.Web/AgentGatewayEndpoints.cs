@@ -164,7 +164,8 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
                 {
                     "game-lab" => (object)new BundledSampleCatalog(guard).FindGameLab(Get<IWebHostEnvironment>().ContentRootPath),
                     "raid-lab" => new RaidLabSampleCatalog(guard).Find(Get<IWebHostEnvironment>().ContentRootPath),
-                    _ => throw new ArgumentException("Select game-lab or raid-lab. Arbitrary sample paths are not accepted.")
+                    "ilspy" => new LargeOssSampleCatalog(guard).Find(Get<IWebHostEnvironment>().ContentRootPath),
+                    _ => throw new ArgumentException("Select game-lab, raid-lab or ilspy. Arbitrary sample paths are not accepted.")
                 };
             case "open_project":
                 BuildPermission(a);

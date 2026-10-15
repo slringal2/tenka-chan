@@ -16,7 +16,7 @@ public sealed class DashboardAgentTools
         client.CallAsync("context", new { }, cancellationToken);
 
     [McpServerTool(Name = "tenka_sample")]
-    [Description("Locate a bundled sample: game-lab (introductory) or raid-lab (six-project async report pipeline). Returns paths only; no opening, building or execution.")]
+    [Description("Locate a local sample: game-lab, raid-lab, or the acquired ILSpy OSS (ilspy). Returns paths only; no download, opening, building or execution.")]
     public static Task<string> Sample(DashboardAgentClient client, string sample = "game-lab", CancellationToken cancellationToken = default) =>
         client.CallAsync("sample", new { sample }, cancellationToken);
 

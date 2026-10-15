@@ -11,5 +11,7 @@ public static class GameLabEndpoints
         // Same loopback-only middleware as the dashboard; this endpoint only reads paths.
         app.MapGet("/api/samples/game-lab", (WorkspaceGuard guard) =>
             Results.Ok(new BundledSampleCatalog(guard).FindGameLab(app.Environment.ContentRootPath)));
+        app.MapGet("/api/samples/ilspy", (WorkspaceGuard guard) =>
+            Results.Ok(new LargeOssSampleCatalog(guard).Find(app.Environment.ContentRootPath)));
     }
 }

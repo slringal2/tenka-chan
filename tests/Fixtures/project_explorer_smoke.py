@@ -44,7 +44,7 @@ def main():
     def action(name, **fields):
         return call('/api/explorer/action', {'snapshotId': snapshot, 'action': name, **fields})
     detail = action('type', typeId=selected['id'])
-    method = next(m for m in detail['detail']['methods'] if 'CountOwnedSlow' in m['signature'])
+    method = next(m for m in detail['detail']['methods'] if 'CountOwned' in m['signature'])
     inspection = action('method', methodId=method['id'])
     assert inspection['inspection']['source'], inspection
     references = action('method-references', methodId=method['id'])

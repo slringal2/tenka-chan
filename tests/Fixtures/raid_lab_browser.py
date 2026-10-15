@@ -33,12 +33,12 @@ def main():
             page.wait_for_function('!document.getElementById("selected-project").disabled')
             assert any(c[0]=='/api/workspace/open' and c[2]['path']==SOLUTION for c in f.calls);checks+=1
             page.locator('#workspace-tab-run').click();page.locator('#workspace-panel-run details summary').click()
-            for name,mode,scope in [('raid-baseline','baseline','pipeline'),('raid-optimized','optimized','pipeline'),('raid-batch','optimized','batch')]:
+            for name,concurrency,scope in [('raid-run','1','pipeline'),('raid-batch','4','batch')]:
                 page.locator('#argument-preset').select_option(name)
                 actual=page.locator('#runtime-arguments').input_value().splitlines()
-                assert actual==['--mode',mode,'--scope',scope,'--players','200','--events','6000','--seconds','4'];checks+=1
+                assert actual==['--scope',scope,'--players','200','--events','6000','--concurrency',concurrency,'--seconds','4'];checks+=1
             page.locator('#workspace-tab-code').click();page.locator('#workspace-tab-run').click()
-            assert page.locator('#runtime-arguments').input_value().splitlines()[3]=='batch';checks+=1
+            assert page.locator('#runtime-arguments').input_value().splitlines()[1]=='batch';checks+=1
             assert not errors,errors;checks+=1
             page.close()
         browser.close()

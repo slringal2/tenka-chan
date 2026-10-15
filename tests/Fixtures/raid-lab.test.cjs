@@ -9,17 +9,18 @@ test('sample routes are fixed and GameLab remains the default choice',()=>{
  assert.equal(sampleEndpoint('raid-lab'),'/api/samples/raid-lab');
  for(const s of ['../../other','https://example.invalid','',null])assert.throws(()=>sampleEndpoint(s));
 });
-for(const choice of ['raid-baseline','raid-optimized','raid-batch'])test(choice+' uses the bounded RaidLab CLI contract',()=>{
+for(const choice of ['raid-run','raid-batch'])test(choice+' uses the bounded RaidLab CLI contract',()=>{
  const a=samplePresetArguments(choice);const values=new Map(Array.from({length:a.length/2},(_,i)=>a.slice(i*2,i*2+2)));
- assert.equal(values.get('--mode'),choice==='raid-baseline'?'baseline':'optimized');
+ assert.equal(values.has('--mode'),false);
+ assert.equal(values.get('--concurrency'),choice==='raid-batch'?'4':'1');
  assert.equal(values.get('--scope'),choice==='raid-batch'?'batch':'pipeline');
  assert.equal(values.get('--seconds'),'4');assert.equal(values.get('--events'),'6000');
  assert.equal(values.get('--players'),'200');assert.ok(!a.includes('--scenario'));
 });
-test('legacy argument presets remain unchanged',()=>{
+test('single implementation argument presets are bounded',()=>{
  assert.deepEqual(samplePresetArguments(''),[]);
- assert.deepEqual(samplePresetArguments('inventory'),['--scenario','inventory','--mode','baseline','--seconds','4']);
- assert.deepEqual(samplePresetArguments('contention'),['--scenario','contention','--mode','baseline','--seconds','4','--size','300']);
+ assert.deepEqual(samplePresetArguments('inventory'),['--scenario','inventory','--seconds','4']);
+ assert.deepEqual(samplePresetArguments('contention'),['--scenario','contention','--seconds','4','--size','300']);
  assert.throws(()=>samplePresetArguments('arbitrary'));
 });
 test('sample selection reads metadata only; no build or open is added to the handler',()=>{
@@ -34,5 +35,5 @@ test('MCP sample selection does not grow the tool list or accept arbitrary paths
  const tools=fs.readFileSync(path.join(root,'src/TenkaChan.Mcp/Agent/DashboardAgentTools.cs'),'utf8');
  assert.match(tools,/string sample = "game-lab"/);
  const gateway=fs.readFileSync(path.join(root,'src/TenkaChan.Web/AgentGatewayEndpoints.cs'),'utf8');
- assert.match(gateway,/"raid-lab" => new RaidLabSampleCatalog/);assert.match(gateway,/Select game-lab or raid-lab/);
+ assert.match(gateway,/"raid-lab" => new RaidLabSampleCatalog/);assert.match(gateway,/Select game-lab, raid-lab or ilspy/);
 });

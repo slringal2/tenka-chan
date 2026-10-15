@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "name": "ILSpy",
+  "tag": "v10.0",
+  "repository": "https://github.com/icsharpcode/ILSpy.git",
+  "commit": "5deb6fb4258a09ba0ff5f63fa6180b1f8d6fb6ad",
+  "license": "MIT",
+  "destination": "samples/External/ILSpy-10.0",
+  "entryProject": "ICSharpCode.ILSpyCmd/ICSharpCode.ILSpyCmd.csproj",
+  "analysisProjects": [
+    "ICSharpCode.Decompiler/ICSharpCode.Decompiler.csproj",
+    "ICSharpCode.ILSpyX/ICSharpCode.ILSpyX.csproj",
+    "ICSharpCode.ILSpyCmd/ICSharpCode.ILSpyCmd.csproj"
+  ],
+  "fullSolution": "ILSpy.sln",
+  "minimumSdkMajor": 10,
+  "notes": "Fixed evaluation baseline, not a recommendation to deploy an old release. No upstream source patches or extra defect/solution hints."
+}

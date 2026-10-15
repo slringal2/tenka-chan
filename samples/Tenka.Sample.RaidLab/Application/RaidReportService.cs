@@ -2,7 +2,7 @@ using Tenka.Sample.RaidLab.Domain;
 
 namespace Tenka.Sample.RaidLab.Application;
 
-public sealed class RaidReportService(IRaidRepository repository, IRaidAnalyzer analyzer, bool optimizedFormat)
+public sealed class RaidReportService(IRaidRepository repository, IRaidAnalyzer analyzer)
 {
     public async Task<ReportEnvelope> GenerateAsync(ReportOptions options, CancellationToken ct = default)
     {
@@ -10,7 +10,7 @@ public sealed class RaidReportService(IRaidRepository repository, IRaidAnalyzer 
         var data = await repository.ReadAsync(ct).ConfigureAwait(false);
         var report = analyzer.Analyze(data, options, ct);
         ct.ThrowIfCancellationRequested();
-        return new(report, optimizedFormat ? ReportFormatter.BuildOptimized(report) : ReportFormatter.BuildBaseline(report));
+        return new(report, ReportFormatter.Build(report));
     }
 }
 
@@ -29,17 +29,5 @@ public sealed class RaidBatchService(RaidReportService service)
             finally { slots.Release(); }
         }).ToArray();
         return await Task.WhenAll(tasks).ConfigureAwait(false);
-    }
-}
-
-public static class LegacyEndpointExamples
-{
-    // STATIC-ONLY exercise: never invoked by the Host, verifier or benchmarks.
-    public static async Task<ReportEnvelope> BlockingAsync(RaidReportService service)
-    {
-        var result = service.GenerateAsync(new()).Result;
-        Thread.Sleep(5);
-        await Task.Yield();
-        return result;
     }
 }

@@ -9,3 +9,6 @@ BenchmarkDotNet.Artifacts/
 artifacts/
 tenka-data/
 .tenka/
+
+# External analysis targets stay outside this repository history.
+/samples/External/

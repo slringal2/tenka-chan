@@ -4,68 +4,46 @@ using Xunit;
 public sealed class GameLabTests
 {
     [Theory]
-    [InlineData(1)][InlineData(2)][InlineData(17)][InlineData(128)][InlineData(600)]
-    public void InventoryVersionsAgree(int size)
+    [InlineData(1, 1)][InlineData(2, 1)][InlineData(17, 9)][InlineData(128, 64)][InlineData(600, 300)]
+    public void InventoryMatchesKnownFixtureCounts(int size, int expected)
     {
         var (owned, requested) = GameData.Create(size);
-        Assert.Equal(InventorySearch.CountOwnedSlow(owned, requested), InventorySearch.CountOwnedFast(owned, requested));
+        Assert.Equal(expected, InventorySearch.CountOwned(owned, requested));
     }
-    [Fact] public void DuplicateRequestsCountSeparatelyAndNegativeItemsAreIgnored()
+    [Fact] public void DuplicateRequestsCountSeparatelyAndNegativeItemsAreIgnored() =>
+        Assert.Equal(2, InventorySearch.CountOwned([-1, 2, 2], [-1, 2, 2, 9]));
+    [Fact] public void EmptyInputsAreValid()
     {
-        Assert.Equal(2, InventorySearch.CountOwnedSlow([-1, 2, 2], [-1, 2, 2, 9]));
-        Assert.Equal(2, InventorySearch.CountOwnedFast([-1, 2, 2], [-1, 2, 2, 9]));
+        Assert.Equal(0, InventorySearch.CountOwned([], []));
+        Assert.Equal("", LootReport.Build([]));
+        Assert.Equal(0L, DamageBuckets.SumBuckets([], 8));
     }
-    [Fact] public void EmptyInventoryAndReportAreValid()
-    {
-        Assert.Equal(0, InventorySearch.CountOwnedSlow([], []));
-        Assert.Equal(0, InventorySearch.CountOwnedFast([], []));
-        Assert.Equal("", LootReport.BuildSlow([])); Assert.Equal("", LootReport.BuildFast([]));
-    }
-    [Fact] public void ReportsAgreeExactlyNotJustInLength()
-    {
-        int[] input = [-42, 0, 1, int.MaxValue, int.MinValue];
-        Assert.Equal("-42,0,1,2147483647,-2147483648,", LootReport.BuildSlow(input));
-        Assert.Equal(LootReport.BuildSlow(input), LootReport.BuildFast(input));
-    }
+    [Fact] public void ReportMatchesExactContract() => Assert.Equal(
+        "-42,0,1,2147483647,-2147483648,", LootReport.Build([-42, 0, 1, int.MaxValue, int.MinValue]));
     [Theory]
-    [InlineData(1)][InlineData(2)][InlineData(8)][InlineData(1024)][InlineData(1073741824)]
-    public void ModuloAndMaskHaveTheSameContract(int buckets)
-    {
-        int[] hits = [0, 1, 7, 8, 9, 31, int.MaxValue];
-        Assert.Equal(DamageBuckets.SumModulo(hits, buckets), DamageBuckets.SumMask(hits, buckets));
-    }
+    [InlineData(1, 0L)][InlineData(2, 5L)][InlineData(8, 23L)][InlineData(1024, 1079L)][InlineData(1073741824, 1073741879L)]
+    public void BucketSumsMatchKnownValues(int buckets, long expected) =>
+        Assert.Equal(expected, DamageBuckets.SumBuckets([0, 1, 7, 8, 9, 31, int.MaxValue], buckets));
     [Theory][InlineData(0)][InlineData(-8)][InlineData(3)]
-    public void NonPowerOfTwoBucketsAreRejectedByBoth(int buckets)
+    public void InvalidBucketsAreRejected(int buckets) => Assert.Throws<ArgumentOutOfRangeException>(() => DamageBuckets.SumBuckets([1], buckets));
+    [Fact] public void NegativeHitsAreRejected() => Assert.Throws<ArgumentOutOfRangeException>(() => DamageBuckets.SumBuckets([-1], 8));
+    [Fact] public void NullInputsAreRejected()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => DamageBuckets.SumModulo([1], buckets));
-        Assert.Throws<ArgumentOutOfRangeException>(() => DamageBuckets.SumMask([1], buckets));
+        Assert.Throws<ArgumentNullException>(() => InventorySearch.CountOwned(null!, []));
+        Assert.Throws<ArgumentNullException>(() => InventorySearch.CountOwned([], null!));
+        Assert.Throws<ArgumentNullException>(() => LootReport.Build(null!));
+        Assert.Throws<ArgumentNullException>(() => DamageBuckets.SumBuckets(null!, 8));
     }
-    [Fact] public void NegativeHitsAreRejectedByBoth()
+    [Fact] public void CounterHasNoLostUpdates() => Assert.Equal(80, CounterContention.Run(20));
+    [Fact] public void InvalidCliIsRejected()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => DamageBuckets.SumModulo([-1], 8));
-        Assert.Throws<ArgumentOutOfRangeException>(() => DamageBuckets.SumMask([-1], 8));
-    }
-    [Fact] public void NullContractsMatch()
-    {
-        Assert.Throws<ArgumentNullException>(() => InventorySearch.CountOwnedSlow(null!, []));
-        Assert.Throws<ArgumentNullException>(() => InventorySearch.CountOwnedFast(null!, []));
-        Assert.Throws<ArgumentNullException>(() => LootReport.BuildSlow(null!));
-        Assert.Throws<ArgumentNullException>(() => LootReport.BuildFast(null!));
-        Assert.Throws<ArgumentNullException>(() => DamageBuckets.SumModulo(null!, 8));
-        Assert.Throws<ArgumentNullException>(() => DamageBuckets.SumMask(null!, 8));
-    }
-    [Theory][InlineData(false)][InlineData(true)]
-    public void CounterHasNoLostUpdates(bool batched) => Assert.Equal(80, CounterContention.Run(batched, 20));
-    [Fact] public void InvalidCliCannotCreateUnboundedWork()
-    {
-        foreach (var args in new[] { new[] { "--size", "3001" }, new[] { "--iterations", "0" }, new[] { "--seconds", "30" }, new[] { "--mode", "wrong" }, new[] { "--size" }, new[] { "--size", "2", "--size", "3" } })
+        foreach (var args in new[] { new[] { "--size", "3001" }, new[] { "--iterations", "0" }, new[] { "--seconds", "30" }, new[] { "--mode", "retired" }, new[] { "--size" }, new[] { "--size", "2", "--size", "3" } })
             Assert.Throws<ArgumentException>(() => Options.Parse(args));
     }
-    [Fact] public void ProfileModeIsExplicit()
+    [Fact] public void DurationAndIterationsCannotBeMixed()
     {
-        Assert.Throws<ArgumentException>(() => Options.Parse(["--seconds", "4"]));
-        var options = Options.Parse(["--mode", "baseline", "--seconds", "4"]);
-        Assert.Equal(4, options.Seconds);
+        Assert.Throws<ArgumentException>(() => Options.Parse(["--seconds", "4", "--iterations", "3"]));
+        Assert.Equal(4, Options.Parse(["--seconds", "4"]).Seconds);
     }
-    [Fact] public void SelfVerificationUsesActualImplementations() => Assert.Equal(0, GameLabProgram.Run(["--verify"]));
+    [Fact] public void SelfVerificationUsesActualImplementation() => Assert.Equal(0, GameLabProgram.Run(["--verify"]));
 }

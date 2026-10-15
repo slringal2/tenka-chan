@@ -1,80 +1,16 @@
 <!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>甜花ちゃん | 使い方・比較サンプル</title>
-<link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/common-shell.css">
-<script src="/common-shell.js" defer></script><script src="/guide.js" defer></script>
-</head><body><main>
-<p class="eyebrow">GAME LAB / はじめての解析</p>
-<h1>「どこが重い？」から、<br>「直して同じ結果になる？」まで。</h1>
-<p>架空のゲームのインベントリ検索・戦利品ログ・ダメージ集計を比較する教材です。まず①だけで大丈夫です。AIモデルやDockerは要りません。</p>
-<p id="guide-status" role="status" aria-live="polite">付属サンプルの場所を確認しています…</p>
-<div class="guide-grid">
-<article class="panel"><span class="step">01 / 見つける</span><h2>問題のある実装を探す</h2><p>同じ持ち物一覧を検索のたびに作り直すコードを、規則とソースから見つけます。</p><a class="button button-primary" id="guide-start" href="/workspace-build.html">サンプルの準備へ</a></article>
-<article class="panel"><span class="step">02 / 観測する</span><h2>実際の負荷を見る</h2><p>ベースラインと改善版を別々に動かし、割り当て・GC・ロック競合を観察します。</p><a class="button button-outline" href="#lesson-trace">入力する設定を見る</a></article>
-<article class="panel"><span class="step">03 / 確かめる</span><h2>正しさと性能を比較する</h2><p>同じ出力になるかをテストし、BenchmarkDotNetで時間と割り当て量を比較します。</p><a class="button button-outline" href="#lesson-tests">比較の進め方を見る</a></article>
-</div>
-<section id="lesson-static"><h2>① まず、持ち物検索を解析する</h2>
-<p>上の「サンプルの準備へ」でパスを入力済みの準備画面を開きます。「読み込む」→ 初回は「NuGet依存関係の復元」を許可 →「Releaseビルドして準備する」の順に進みます。「成功後に解析」はオンのままにします。サンプル本体に外部パッケージはありませんが、SDKの参照パック等の準備は必要です。</p>
-<div class="guide-field"><span>対象プロジェクト</span><code id="guide-project">samples/Tenka.Sample.GameLab/Tenka.Sample.GameLab.csproj</code></div>
-<div class="table-scroll"><table><thead><tr><th>題材・メソッド</th><th>見るポイント</th><th>改善版</th></tr></thead><tbody>
-<tr><td>InventorySearch.CountOwnedSlow</td><td>ループ内のToListとList.Contains。PERF1001や性能候補を探す</td><td>CountOwnedFast：HashSetを1回だけ作る</td></tr>
-<tr><td>LootReport.BuildSlow</td><td>ループ内string +=。PERF1002、割り当て候補を確認</td><td>BuildFast：StringBuilder</td></tr>
-<tr><td>AsyncLoadingExamples.BlockingAsync</td><td>Task.ResultとThread.Sleep。ASYNC1001 / ASYNC1003の教材</td><td>AwaitedAsync：await。この組は静的解析専用で、自動実行しません</td></tr>
-</tbody></table></div>
-<p>改善版にも割り当てやループはあります。「警告がゼロ」ではなく「不要な繰り返しを減らせたか」が目標です。検知件数は設定や解析範囲で変わります。</p>
-<div class="guide-next"><a href="/#findings">検出候補を見る</a><a href="/#deterministic">規則の根拠を見る</a><a href="/#hotspots">重い処理の候補を見る</a><a href="/priorities.html">調べる順番を整理する</a></div>
-</section>
-<section id="lesson-trace"><h2>② 実際に動かして、GC・割り当てを観察する</h2>
-<p>ビルド後、「プロファイル取得」で次の設定を入力します。詳細ランタイムイベントをオンにし、信頼済みの実行を承認します。ベースラインと改善版の採取は別々に行ってください。各採取のcapture.jsonを残し、「保存イベントを解析」へ進みます。</p>
-<div class="guide-field"><span>実行DLL（ビルド後に作成）</span><code id="guide-dll">bin/Release/net8.0/Tenka.Sample.GameLab.dll</code></div>
-<div class="guide-field"><span>保存先（付属の既存フォルダー）</span><code id="guide-traces">samples/Tenka.Sample.GameLab/profiles</code></div>
-<div class="guide-field"><span>ベースラインのアプリ引数（JSON配列）</span><code>["--scenario","inventory","--mode","baseline","--seconds","4"]</code></div>
-<div class="guide-field"><span>改善版のアプリ引数</span><code>["--scenario","inventory","--mode","optimized","--seconds","4"]</code></div>
-<p>取得制限は60秒を目安にしてください。4秒間の処理回数は版ごとに異なるため、総割り当て量をそのまま「1回あたりの改善率」とは比較しません。GCが観測されない場合もあります。正確な1回あたり比較は③を使います。スレッドのサンプル時間をCPU使用率そのものと解釈しないでください。</p>
-<details><summary>ロック競合も試す</summary><p>シナリオをcontentionに変更します。4ワーカーで長いlockを繰り返す版と、独立した仕事をlockの外へ出してまとめて加算する版があります。どちらもカウンターの結果は一致する設計です。観測できる競合量はOS・スケジューリングで変わります。</p><code>["--scenario","contention","--mode","baseline","--size","300","--seconds","4"]</code></details>
-<p><a class="button button-outline" href="/trace.html">プロファイル取得へ</a></p>
-</section>
-<section id="lesson-jit"><h2>機械語は「なぜ差が出る？」を調べる道具</h2>
-<p>「性能ホットスポット」でサンプルDLLを選び、JIT対象に下のどちらかを指定します。サンプルは引数なしで両メソッドを呼ぶので、最初から特別な呼び出しコードを書く必要はありません。</p>
-<div class="guide-field"><span>剰余演算の版</span><code>DamageBuckets:SumModulo</code><span>ビット演算の版</span><code>DamageBuckets:SumMask</code></div>
-<p>入力を「非負の整数」「バケット数は2のべき乗」に限定して、同じ結果になる2つの実装です。一般の符号付き剰余を無条件に置き換える例ではありません。JITがどの命令に変換するかを比較します。命令数が少ないだけで高速と判定しません。</p>
-<p>教材では対象メソッドが一覧から消えないようNoInliningを指定しています。最適化自体は無効にしていません。実プロジェクトでは同じ属性が必要とは限りません。</p>
-<div class="guide-next"><a href="/#hotspots">JITを取得する</a><a href="/assembly.html">保存したIL・機械語を見る</a></div>
-</section>
-<section id="lesson-tests"><h2>③ 同じ結果になることと、速さを分けて確認する</h2>
-<p>サンプルフォルダーの<strong>run-lab.bat</strong>を開きます。1は参考計測、2は外部パッケージ不要の35比較、3はxUnit、4はBenchmarkDotNetです。どれも選んだときだけ実行します。最初は2、その後4がおすすめです。通常のベンチマークには数分かかります。</p>
-<div class="guide-field"><span>サンプルフォルダー</span><code id="guide-directory">samples/Tenka.Sample.GameLab</code></div>
-<p>xUnitでは重複・空配列・負数・境界値・無効な引数なども確認します。BenchmarkDotNetでは同じ入力を使い、HashSetや文字列の構築コストも測定に含めます。「数倍速くなる」といった固定値は教材に埋め込みません。</p>
-<details><summary>甜花ちゃんの「テストと性能」で、生成実験も試す</summary>
-<p>解析対象をGameLabのままにして、xUnitを選び、次のコードを「C#コード」に貼り付けます。「実験を準備する」後、内容を確認して「ホストで実行」を承認します。付属Testsプロジェクトの実行とは別の機能です。</p>
-<pre>using Xunit;
-using Tenka.Sample.GameLab;
-public class InventoryCheck {
-    [Fact] public void ResultsMatch() {
-        int[] owned = { 1, 2, 2, 4 };
-        int[] requested = { 2, 3, 2 };
-        Assert.Equal(2, InventorySearch.CountOwnedFast(owned, requested));
-        Assert.Equal(InventorySearch.CountOwnedSlow(owned, requested),
-                     InventorySearch.CountOwnedFast(owned, requested));
-    }
-}</pre>
-<p>BenchmarkDotNetを選んだ場合は次のコードを使えます。2メソッドの比較はこの1回のレポート内で確認します。別々の実験ID比較とは異なります。</p>
-<pre>using BenchmarkDotNet.Attributes;
-using Tenka.Sample.GameLab;
-[MemoryDiagnoser]
-public class InventoryCheck {
-    private int[] owned = null!, requested = null!;
-    [GlobalSetup] public void Setup() {
-        var data = GameData.Create(600);
-        owned = data.Owned; requested = data.Requested;
-    }
-    [Benchmark(Baseline = true)] public int Before()
-        =&gt; InventorySearch.CountOwnedSlow(owned, requested);
-    [Benchmark] public int After()
-        =&gt; InventorySearch.CountOwnedFast(owned, requested);
-}</pre>
-<a href="/#experiments">テストと性能へ</a></details>
-<p>生成テストは現在のユーザー権限で動きます。未確認のコードを実行しないでください。AI自律レビューは任意の次の段階で、ここまでの教材にはモデルの起動は不要です。</p>
-</section>
-<section><h2>何が終わればよい？</h2><p>「問題のあるソースを見つけた」「改善版と結果が一致した」「時間と割り当て量を実測した」の3点を説明できれば、最初の一巡は完了です。プロファイルやJITは原因を詳しく追うときに足してください。</p><p>サンプルや画面を開いただけでは、解析・テスト・計測は開始しません。サーバーを再起動した場合はプロジェクトを再度読み込みます。</p></section>
+<title>甜花ちゃん | 使い方・サンプル</title>
+<link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/common-shell.css"><script defer src="/common-shell.js"></script><script defer src="/guide.js"></script></head>
+<body><main><h1>使い方・サンプル</h1>
+<p>サンプルは現在の実装だけを収録します。別の改善実装や答え合わせ用の最適化コードは付けません。仕様とテストから正しさを確かめ、性能は計測して判断してください。</p>
+<section><h2>対象を選ぶ</h2><p><strong>GameLab</strong>は小規模、<strong>RaidLab</strong>は6プロジェクトの自作サンプルです。自作サンプルは過去に教材として作られたため、未加工の実コードの評価にはILSpyを使ってください。</p>
+<p><strong>ILSpy</strong>は公式リポジトリの固定コミットをそのまま取得します。本体の<code>run-large-oss.bat</code>で1（取得）→ 2（CLIのビルド）を選び、その後「プロジェクト調査」のサンプル一覧で選択します。</p>
+<a class="button button-primary" href="/project.html">プロジェクト調査を開く</a></section>
+<section><h2>調査の順番</h2><p>準備で対象を読み込み、コード調査で仕様・参照・処理内容を確認します。静的な指摘は調査候補です。必要な場合だけ実行・検証でテストや計測を行います。</p>
+<p>変更前にチェック済みの記録と計測結果を保存し、外部エージェントが修正した後は再読み込みします。確認状況・差分でソース変更を見て、同じ入力のテストと計測を再実行してください。</p>
+<p>JITは実行されたメソッドのコードを観察する機能です。出力がないことを負荷ゼロとは判断せず、計測条件と到達経路を確認してください。</p></section>
+<section><h2>GameLabの場所</h2><p id="guide-status" role="status">場所を確認しています…</p><a id="guide-start" href="/project.html">サンプルの準備へ</a>
+<details><summary>自動検出したパス</summary><p id="guide-project"></p><p id="guide-directory"></p><p id="guide-dll"></p><p id="guide-traces"></p></details></section>
+<section><h2>注意</h2><p>テストは元の仕様に基づく期待値と不変条件の確認です。全入力への正しさや、特定の高速化を保証しません。実行の権限と承認は既存の設定を使います。ブラウザーからLLMへの接続は不要です。</p></section>
 </main></body></html>

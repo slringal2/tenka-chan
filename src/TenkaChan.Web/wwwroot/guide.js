@@ -2,7 +2,7 @@
 (function (global) {
   function sampleLinks(data) {
     if (data?.available !== true || typeof data.projectPath !== "string" || !data.projectPath || data.projectPath.length > 4096)
-      throw new Error("比較サンプルを取得できません。本体を更新・再起動し、setup.batで付属サンプルを選択してください。");
+      throw new Error("サンプルを取得できません。本体を更新・再起動し、setup.batで付属サンプルを選択してください。");
     return { start: "/workspace-build.html?" + new URLSearchParams({ project: data.projectPath }),
       project: data.projectPath, directory: data.sampleDirectory, dll: data.assemblyPath, traces: data.traceOutputDirectory };
   }

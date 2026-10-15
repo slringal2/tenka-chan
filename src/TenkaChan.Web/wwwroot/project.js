@@ -13,15 +13,16 @@
   function sampleEndpoint(kind) {
     if (kind === "game-lab") return "/api/samples/game-lab";
     if (kind === "raid-lab") return "/api/samples/raid-lab";
+    if (kind === "ilspy") return "/api/samples/ilspy";
     throw new Error("サンプルを一覧から選んでください。");
   }
   function samplePresetArguments(kind) {
     if (!kind) return [];
-    if (["raid-baseline", "raid-optimized", "raid-batch"].includes(kind))
-      return ["--mode",kind === "raid-baseline" ? "baseline" : "optimized","--scope",kind === "raid-batch" ? "batch" : "pipeline","--players","200","--events","6000","--seconds","4"];
+    if (["raid-run", "raid-batch"].includes(kind))
+      return ["--scope",kind === "raid-batch" ? "batch" : "pipeline","--players","200","--events","6000","--concurrency",kind === "raid-batch" ? "4" : "1","--seconds","4"];
     if (["inventory", "contention"].includes(kind))
-      return ["--scenario",kind,"--mode","baseline","--seconds","4",...(kind === "contention" ? ["--size","300"] : [])];
-    throw new Error("教材用の起動条件を一覧から選んでください。");
+      return ["--scenario",kind,"--seconds","4",...(kind === "contention" ? ["--size","300"] : [])];
+    throw new Error("起動条件を一覧から選んでください。古い比較用プリセットは廃止しました。");
   }
   function start() {
     const $ = id => document.getElementById(id);
@@ -314,7 +315,7 @@
     }
     $("project-open").addEventListener("submit",e=>{e.preventDefault();busyTask("プロジェクトを読み込んでいます…",async()=>{await client.open($("project-path").value);resetDetail();renderContext();await loadTypes();showTab("code");});});
     $("refresh-project").addEventListener("click",()=>busyTask("状態を更新しています…",refreshAll));
-    $("use-sample").addEventListener("click",()=>busyTask("サンプルを探しています…",async()=>{const sample=await client.request(sampleEndpoint($("sample-kind").value));if(!sample.available||!sample.projectPath)throw new Error("付属サンプルがありません。本体を更新してください。");$("project-path").value=sample.projectPath;$("project-switch").open=true;showTab("prepare");}));
+    $("use-sample").addEventListener("click",()=>busyTask("サンプルを探しています…",async()=>{const sample=await client.request(sampleEndpoint($("sample-kind").value));if(!sample.available||!sample.projectPath)throw new Error(sample.message || "付属サンプルがありません。本体を更新してください。");$("project-path").value=sample.projectPath;$("project-switch").open=true;showTab("prepare");}));
     $("selected-project").addEventListener("change",()=>busyTask("クラス一覧を更新しています…",async()=>{client.setProject($("selected-project").value);resetDetail();renderContext();await loadTypes();}));
     $("class-scope").addEventListener("change",()=>busyTask("検索範囲を更新しています…",async()=>{client.setScope($("class-scope").value);await loadTypes();}));
     $("selected-assembly").addEventListener("change",()=>{client.assemblyId=$("selected-assembly").value;client.binary=null;$("binary-choice-panel").hidden=true;renderContext();controls(false);});

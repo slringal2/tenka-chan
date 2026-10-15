@@ -7,7 +7,7 @@ using Tenka.Sample.RaidLab.Infrastructure;
 namespace Tenka.Sample.RaidLab.Verification;
 
 // Shared test implementation, linked into the dependency-free Host and the xUnit project.
-// Expected golden values below are specified independently of either analyzer.
+// Expected values are specified by CONTRACT.md, not by another implementation.
 public static class ContractChecks
 {
     private static readonly IReadOnlyDictionary<string, Func<Task>> Checks = CreateChecks();
@@ -37,17 +37,15 @@ public static class ContractChecks
     {
         var result = new Dictionary<string, Func<Task>>(StringComparer.Ordinal);
         void Add(string name, Action action) => result.Add(name, () => { action(); return Task.CompletedTask; });
-        foreach (var fast in new[] { false, true })
         {
-            IRaidAnalyzer Analyzer() => fast ? new IndexedRaidAnalyzer() : new BaselineRaidAnalyzer();
-            var prefix = fast ? "optimized/" : "baseline/";
+            IRaidAnalyzer Analyzer() => new RaidAnalyzer();
+            const string prefix = "analyzer/";
             Add(prefix + "golden-and-format", () =>
             {
                 var report = Analyzer().Analyze(Golden(), new(5, 2));
-                Equal(ExpectedGolden, ReportFormatter.BuildBaseline(report));
-                Equal(ExpectedGolden, ReportFormatter.BuildOptimized(report));
+                Equal(ExpectedGolden, ReportFormatter.Build(report));
             });
-            Add(prefix + "empty", () => Equal("events|0|0|0|0\n", ReportFormatter.BuildOptimized(Analyzer().Analyze(new([], [], []), new()))));
+            Add(prefix + "empty", () => Equal("events|0|0|0|0\n", ReportFormatter.Build(Analyzer().Analyze(new([], [], []), new()))));
             Add(prefix + "duplicate-player-rejected", () => Throws<ArgumentException>(() =>
                 Analyzer().Analyze(Golden() with { Players = [new(1, 1, "a", []), new(1, 1, "b", [])] }, new())));
             Add(prefix + "duplicate-skill-rejected", () => Throws<ArgumentException>(() =>
@@ -79,22 +77,21 @@ public static class ContractChecks
         foreach (var seed in new uint[] { 0, 17, 12345 })
         foreach (var threshold in new[] { 0, 5, 400 })
         {
-            Add($"differential/{size}/{seed}/{threshold}", () =>
+            Add($"invariants/{size}/{seed}/{threshold}", () =>
             {
                 var data = DeterministicRaidData.Create(size, size * 13, seed);
                 var before = JsonSerializer.Serialize(data); var options = new ReportOptions(threshold, 7);
-                var a = new BaselineRaidAnalyzer().Analyze(data, options); var b = new IndexedRaidAnalyzer().Analyze(data, options);
-                Equal(ReportFormatter.BuildOptimized(a), ReportFormatter.BuildOptimized(b));
-                Equal(data.Events.Length, b.AcceptedEvents + b.RejectedEvents + b.DuplicateEvents);
-                Equal(before, JsonSerializer.Serialize(data)); // Neither analyzer may mutate input arrays.
+                var report = new RaidAnalyzer().Analyze(data, options);
+                Equal(data.Events.Length, report.AcceptedEvents + report.RejectedEvents + report.DuplicateEvents);
+                Require(report.Players.Length <= options.TopPlayers, "Player limit.");
+                Equal(report.AcceptedEvents, report.Guilds.Sum(g => g.Hits));
+                Equal(before, JsonSerializer.Serialize(data)); // Input arrays must not be mutated.
             });
         }
         result.Add("pipeline/json-roundtrip", async () =>
         {
-            foreach (var fast in new[] { false, true })
             {
-                IRaidAnalyzer analyzer = fast ? new IndexedRaidAnalyzer() : new BaselineRaidAnalyzer();
-                var service = new RaidReportService(new InMemoryJsonRepository(Golden()), analyzer, fast);
+                var service = new RaidReportService(new InMemoryJsonRepository(Golden()), new RaidAnalyzer());
                 Equal(ExpectedGolden, (await service.GenerateAsync(new(5, 2))).Text);
             }
         });
@@ -102,10 +99,10 @@ public static class ContractChecks
         result.Add("pipeline/null-json", () => ThrowsAsync<InvalidDataException>(() => new InMemoryJsonRepository(Encoding.UTF8.GetBytes("null")).ReadAsync()));
         result.Add("pipeline/cancellation", () => ThrowsAsync<OperationCanceledException>(() => new InMemoryJsonRepository(Golden()).ReadAsync(new(true))));
         result.Add("pipeline/repository-failure-propagates", () => ThrowsAsync<IOException>(() =>
-            new RaidReportService(new BrokenRepository(), new IndexedRaidAnalyzer(), true).GenerateAsync(new())));
+            new RaidReportService(new BrokenRepository(), new RaidAnalyzer()).GenerateAsync(new())));
         result.Add("batch/bounded-equivalence", async () =>
         {
-            var service = new RaidReportService(new InMemoryJsonRepository(Golden()), new IndexedRaidAnalyzer(), true);
+            var service = new RaidReportService(new InMemoryJsonRepository(Golden()), new RaidAnalyzer());
             foreach (var concurrency in new[] { 1, 2, 4 })
             {
                 var reports = await new RaidBatchService(service).GenerateAsync(8, concurrency, new(5, 2));
@@ -113,9 +110,9 @@ public static class ContractChecks
             }
         });
         result.Add("batch/cancellation", () => ThrowsAsync<OperationCanceledException>(() =>
-            new RaidBatchService(new RaidReportService(new InMemoryJsonRepository(Golden()), new IndexedRaidAnalyzer(), true)).GenerateAsync(2, 2, new(), new(true))));
+            new RaidBatchService(new RaidReportService(new InMemoryJsonRepository(Golden()), new RaidAnalyzer())).GenerateAsync(2, 2, new(), new(true))));
         result.Add("batch/invalid-limit", () => ThrowsAsync<ArgumentOutOfRangeException>(() =>
-            new RaidBatchService(new RaidReportService(new InMemoryJsonRepository(Golden()), new IndexedRaidAnalyzer(), true)).GenerateAsync(17, 4, new())));
+            new RaidBatchService(new RaidReportService(new InMemoryJsonRepository(Golden()), new RaidAnalyzer())).GenerateAsync(17, 4, new())));
         Add("fixture/deterministic", () => Equal(JsonSerializer.Serialize(DeterministicRaidData.Create(50, 500, 7)), JsonSerializer.Serialize(DeterministicRaidData.Create(50, 500, 7))));
         return result;
     }

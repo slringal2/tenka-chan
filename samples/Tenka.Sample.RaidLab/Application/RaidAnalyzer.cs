@@ -1,13 +1,10 @@
-using System.Runtime.CompilerServices;
 using Tenka.Sample.RaidLab.Domain;
 
 namespace Tenka.Sample.RaidLab.Application;
 
-// Intentionally inefficient teaching baseline. See CONTRACT.md for the exact semantics.
-public sealed class BaselineRaidAnalyzer : IRaidAnalyzer
+public sealed class RaidAnalyzer : IRaidAnalyzer
 {
     private sealed record Accepted(int PlayerId, int GuildId, long Damage);
-    [MethodImpl(MethodImplOptions.NoInlining)]
     public RaidReport Analyze(RaidDataset data, ReportOptions options, CancellationToken cancellationToken = default)
     {
         DatasetContract.Validate(data, options, cancellationToken);
@@ -19,7 +16,6 @@ public sealed class BaselineRaidAnalyzer : IRaidAnalyzer
             if (seen.Contains(e.EventId)) { duplicates++; continue; }
             seen.Add(e.EventId); // The FIRST positive ID wins, even if its event is invalid.
             if (e.Cancelled || e.Damage < options.MinimumDamage) { rejected++; continue; }
-            // Repeated materialization and repeated metadata lookup are deliberate hotspots.
             var player = data.Players.Where(p => p.Id == e.PlayerId).ToList().FirstOrDefault();
             var skill = data.Skills.Where(s => s.Id == e.SkillId).ToArray().FirstOrDefault();
             if (player is null || skill is null || !player.EquippedSkills.Contains(e.SkillId)) { rejected++; continue; }

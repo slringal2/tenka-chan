@@ -1,6 +1,6 @@
 ﻿#requires -version 5.1
 param(
-    [ValidateSet('Menu','Prepare','Verify','Compare','Baseline','Optimized','Test','Benchmark','PipelineBenchmark')]
+    [ValidateSet('Menu','Prepare','Verify','Measure','Run','Batch','Test','Benchmark','PipelineBenchmark')]
     [string]$Mode = 'Menu',
     [ValidateSet('Small','Normal','Large')][string]$Size = 'Normal'
 )
@@ -35,12 +35,12 @@ try {
     if ($Mode -eq 'Menu') {
         Write-Host '  1  初回準備：6プロジェクトの復元 → 本体ビルド → 仕様テスト（推奨）'
         Write-Host '  2  仕様テストだけ（xUnitのパッケージ不要）'
-        Write-Host '  3  ベースラインと改善候補の参考比較'
-        Write-Host '  4  ベースラインを4秒動かす（単独実行。トレース取得ではありません）'
-        Write-Host '  5  改善候補を4秒動かす（同上）'
+        Write-Host '  3  現在の実装を参考計測'
+        Write-Host '  4  現在の実装を4秒動かす（単独実行。トレース取得ではありません）'
+        Write-Host '  5  4並列バッチを4秒動かす（同上）'
         Write-Host '  6  xUnitを実行し、TRXレポートを保存'
-        Write-Host '  7  集計処理をBenchmarkDotNetで比較'
-        Write-Host '  8  JSON～レポート全体をBenchmarkDotNetで比較'
+        Write-Host '  7  集計処理をBenchmarkDotNetで計測'
+        Write-Host '  8  JSON～レポート全体をBenchmarkDotNetで計測'
         Write-Host '  9  甜花ちゃんで読み込むソリューションの場所を表示'
         Write-Host '  0  終了'
         $choice = (Read-Host '番号 [Enter = 1]').Trim()
@@ -51,7 +51,7 @@ try {
             Write-Host '甜花ちゃんの「プロジェクト調査」→「準備」でも、RaidLabを選択できます。'
             return
         }
-        $modes = @{'1'='Prepare';'2'='Verify';'3'='Compare';'4'='Baseline';'5'='Optimized';'6'='Test';'7'='Benchmark';'8'='PipelineBenchmark'}
+        $modes = @{'1'='Prepare';'2'='Verify';'3'='Measure';'4'='Run';'5'='Batch';'6'='Test';'7'='Benchmark';'8'='PipelineBenchmark'}
         if (-not $modes.ContainsKey($choice)) { throw '1～9または0を選んでください。' }
         $Mode = $modes[$choice]
     }
@@ -87,13 +87,14 @@ try {
             Invoke-Dotnet @($hostDll, '--verify')
         }
         'Verify' { Build-Host; Invoke-Dotnet @($hostDll, '--verify') }
-        'Compare' {
+        'Measure' {
             Build-Host
-            Invoke-Dotnet @($hostDll,'--mode','compare','--scope','pipeline','--players',"$players",'--events',"$events")
+            Invoke-Dotnet @($hostDll,'--scope','pipeline','--players',"$players",'--events',"$events")
         }
-        { $_ -in 'Baseline','Optimized' } {
+        { $_ -in 'Run','Batch' } {
             Build-Host
-            Invoke-Dotnet @($hostDll,'--mode',$Mode.ToLowerInvariant(),'--scope','pipeline','--players',"$players",'--events',"$events",'--seconds','4')
+            $scope = if ($Mode -eq 'Batch') { 'batch' } else { 'pipeline' }
+            Invoke-Dotnet @($hostDll,'--scope',$scope,'--concurrency','4','--players',"$players",'--events',"$events",'--seconds','4')
         }
         'Test' {
             Invoke-Dotnet @('test',(Join-Path $root 'Tests\Tenka.Sample.RaidLab.Tests.csproj'),'-c','Release','--logger','trx;LogFileName=raid-lab.trx','--results-directory',(Join-Path $artifacts 'tests'))

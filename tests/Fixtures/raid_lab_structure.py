@@ -40,12 +40,12 @@ for p in graph:visit(p,set())
 for f in [B/'run-lab.ps1',B/'run-lab.bat',ROOT/'run-raid-lab.bat']:
     data=f.read_bytes()
     check(all(x>=32 or x in (9,10,13) for x in data),'no escaped backspace/control chars '+f.name)
-    check(b'\n' not in data.replace(b'\r\n',b''),'CRLF '+f.name)
+    check(b'\n' not in data.replace(b'\r\n',b'') if f.suffix == '.bat' else b'\r' not in data,'native newline convention '+f.name)
 check((B/'run-lab.ps1').read_bytes().startswith(b'\xef\xbb\xbf'),'PS5 Japanese BOM')
 script=(B/'run-lab.ps1').read_text(encoding='utf-8-sig')
 check('Invoke-Expression' not in script and 'taskkill' not in script and 'git reset' not in script,'no dangerous shell/cleanup')
 check('restore\', $solution' in script and '@($hostDll, \'--verify\')' in script,'first run restores solution then verifies')
-# Interpret the literal 14-event contract fixture independently of both C# analyzers.
+# Interpret the literal 14-event contract fixture independently of the C# analyzer.
 source=(B/'Verification/ContractChecks.cs').read_text()
 fixture=source.split('public static RaidDataset Golden()')[1].split('public const string ExpectedGolden')[0]
 events=[tuple(map(int,m[:4]))+(m[4]=='true',) for m in re.findall(r'new\((\d+), (\d+), (\d+), (-?\d+)(?:, (true|false))?\)',fixture)]
@@ -68,7 +68,7 @@ expected=re.search(r'ExpectedGolden = "([^"]+)"',source)[1].replace('\\n','\n')
 check(text==expected,'golden results independent of C# implementation')
 check(counts==[4,2,8],'golden counts')
 check(totals[2][1]==5 and guilds[10][0]==45,'top-N does not truncate guild totals')
-check(source.count('Add(prefix + ')==10,'20 explicit per-analyzer cases')
+check(source.count('Add(prefix + ')==10,'10 explicit single-implementation cases')
 check(source.count('result.Add("')+source.count('Add("fixture/')==9,'9 pipeline and fixture cases')
-check(2*10+3*3*3+9==56,'56 authored C# cases')
+check(10+3*3*3+9==46,'46 authored C# cases')
 print(json.dumps({'checks':checks,'golden':'independently verified arithmetic','csharpExecuted':False}))
