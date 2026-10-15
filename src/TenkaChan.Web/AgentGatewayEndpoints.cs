@@ -81,7 +81,7 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
         "review_queue", "review_target", "review_history", "review_diff", "review_mark"], StringComparer.Ordinal);
     private static readonly HashSet<string> Fields = new(["snapshotId", "projectId", "typeId", "methodId", "assemblyId", "companionId", "artifactId",
         "baselineId", "nativeIndex", "baselineIndex", "profileIndex", "metadataToken", "assemblySha256", "approved", "allowRestore", "arguments",
-        "path", "expectedSnapshotId", "query", "offset", "limit", "callId", "pointer", "kind", "message", "evidenceCallIds",
+        "sample", "path", "expectedSnapshotId", "query", "offset", "limit", "callId", "pointer", "kind", "message", "evidenceCallIds",
         "generatedCode", "targetFramework", "experimentId", "baselineExperimentId", "candidateExperimentId",
         "state", "targetId", "sourceHash", "contextHash", "expectedRevision", "status", "summary", "fromRevision", "toRevision"], StringComparer.Ordinal);
 
@@ -159,7 +159,13 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
                     permissions = new { build = policy.AllowBuild, execution = policy.AllowExecution },
                     workflow = "Inspect context -> tenka_review_queue for pending/changed work -> enumerate types -> inspect method/references -> inspect IL -> request authorized execution -> read actual results -> report a qualified conclusion. Always refresh context after a build. Record checked/optimized checkpoints only after completing the work; these are agent reports, not verified speedups. No model endpoint is configured in Tenka." };
             }
-            case "sample": return new BundledSampleCatalog(guard).FindGameLab(Get<IWebHostEnvironment>().ContentRootPath);
+            case "sample":
+                return (Optional(a, "sample") ?? "game-lab") switch
+                {
+                    "game-lab" => (object)new BundledSampleCatalog(guard).FindGameLab(Get<IWebHostEnvironment>().ContentRootPath),
+                    "raid-lab" => new RaidLabSampleCatalog(guard).Find(Get<IWebHostEnvironment>().ContentRootPath),
+                    _ => throw new ArgumentException("Select game-lab or raid-lab. Arbitrary sample paths are not accepted.")
+                };
             case "open_project":
                 BuildPermission(a);
                 return await dashboard.AgentOpenAsync(Str(a, "path"), Optional(a, "expectedSnapshotId"), ct);

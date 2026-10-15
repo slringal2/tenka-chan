@@ -10,6 +10,19 @@
   };
   function statusText(s) { return statusNames[s] || s || "結果を取得しました"; }
   function argumentLines(text) { return text.replace(/\r/g, "").split("\n").filter(s => s.length > 0); }
+  function sampleEndpoint(kind) {
+    if (kind === "game-lab") return "/api/samples/game-lab";
+    if (kind === "raid-lab") return "/api/samples/raid-lab";
+    throw new Error("サンプルを一覧から選んでください。");
+  }
+  function samplePresetArguments(kind) {
+    if (!kind) return [];
+    if (["raid-baseline", "raid-optimized", "raid-batch"].includes(kind))
+      return ["--mode",kind === "raid-baseline" ? "baseline" : "optimized","--scope",kind === "raid-batch" ? "batch" : "pipeline","--players","200","--events","6000","--seconds","4"];
+    if (["inventory", "contention"].includes(kind))
+      return ["--scenario",kind,"--mode","baseline","--seconds","4",...(kind === "contention" ? ["--size","300"] : [])];
+    throw new Error("教材用の起動条件を一覧から選んでください。");
+  }
   function start() {
     const $ = id => document.getElementById(id);
     const Client = global.TenkaProjectClient.ProjectExplorerClient;
@@ -301,7 +314,7 @@
     }
     $("project-open").addEventListener("submit",e=>{e.preventDefault();busyTask("プロジェクトを読み込んでいます…",async()=>{await client.open($("project-path").value);resetDetail();renderContext();await loadTypes();showTab("code");});});
     $("refresh-project").addEventListener("click",()=>busyTask("状態を更新しています…",refreshAll));
-    $("use-sample").addEventListener("click",()=>busyTask("サンプルを探しています…",async()=>{const sample=await client.request("/api/samples/game-lab");if(!sample.available||!sample.projectPath)throw new Error("付属サンプルがありません。本体を更新してください。");$("project-path").value=sample.projectPath;$("project-switch").open=true;showTab("prepare");}));
+    $("use-sample").addEventListener("click",()=>busyTask("サンプルを探しています…",async()=>{const sample=await client.request(sampleEndpoint($("sample-kind").value));if(!sample.available||!sample.projectPath)throw new Error("付属サンプルがありません。本体を更新してください。");$("project-path").value=sample.projectPath;$("project-switch").open=true;showTab("prepare");}));
     $("selected-project").addEventListener("change",()=>busyTask("クラス一覧を更新しています…",async()=>{client.setProject($("selected-project").value);resetDetail();renderContext();await loadTypes();}));
     $("class-scope").addEventListener("change",()=>busyTask("検索範囲を更新しています…",async()=>{client.setScope($("class-scope").value);await loadTypes();}));
     $("selected-assembly").addEventListener("change",()=>{client.assemblyId=$("selected-assembly").value;client.binary=null;$("binary-choice-panel").hidden=true;renderContext();controls(false);});
@@ -335,11 +348,11 @@
     $("import-thread").addEventListener("click",()=>run("import-thread",{artifactId:artifact?.id,profileIndex:Number(threadIndex)}));
     $("runtime-costs").addEventListener("click",()=>run("runtime-costs",{artifactId:artifact?.id}));
     $("cancel-action").addEventListener("click",()=>{client.cancel();message("中止を要求しました。子プロセスの終了はベストエフォートです。");});
-    $("argument-preset").addEventListener("change",()=>{const scenario=$("argument-preset").value;$("runtime-arguments").value=scenario?["--scenario",scenario,"--mode","baseline","--seconds","4",...(scenario==="contention"?["--size","300"]:[])].join("\n"):"";});
+    $("argument-preset").addEventListener("change",()=>{$("runtime-arguments").value=samplePresetArguments($("argument-preset").value).join("\n");});
     $("export-result").addEventListener("click",()=>{if(!exportData)return;const url=URL.createObjectURL(new Blob([JSON.stringify(exportData,null,2)],{type:"application/json"}));const link=node("a");link.href=url;link.download="tenka-investigation.json";link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
     global.addEventListener("beforeunload",event=>{if(client.busy){event.preventDefault();event.returnValue="";}});
     busyTask("接続を確認しています…",refreshAll);
   }
-  if(typeof module!=="undefined"&&module.exports)module.exports={statusText,argumentLines};
+  if(typeof module!=="undefined"&&module.exports)module.exports={statusText,argumentLines,sampleEndpoint,samplePresetArguments};
   if(typeof document!=="undefined")document.addEventListener("DOMContentLoaded",start);
 })(typeof globalThis!=="undefined"?globalThis:this);

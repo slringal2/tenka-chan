@@ -16,9 +16,9 @@ public sealed class DashboardAgentTools
         client.CallAsync("context", new { }, cancellationToken);
 
     [McpServerTool(Name = "tenka_sample")]
-    [Description("Locate the bundled GameLab sample, without opening, building or executing it.")]
-    public static Task<string> Sample(DashboardAgentClient client, CancellationToken cancellationToken = default) =>
-        client.CallAsync("sample", new { }, cancellationToken);
+    [Description("Locate a bundled sample: game-lab (introductory) or raid-lab (six-project async report pipeline). Returns paths only; no opening, building or execution.")]
+    public static Task<string> Sample(DashboardAgentClient client, string sample = "game-lab", CancellationToken cancellationToken = default) =>
+        client.CallAsync("sample", new { sample }, cancellationToken);
 
     [McpServerTool(Name = "tenka_open_project")]
     [Description("Open a trusted .csproj/.sln/.slnx. MSBuild evaluation can execute code: requires host allow-build and approval in this external client. Use current expectedSnapshotId (null only when no project is loaded).")]

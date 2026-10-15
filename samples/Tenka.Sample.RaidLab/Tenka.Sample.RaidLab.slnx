@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="Domain/Tenka.Sample.RaidLab.Domain.csproj" />
+  <Project Path="Infrastructure/Tenka.Sample.RaidLab.Infrastructure.csproj" />
+  <Project Path="Application/Tenka.Sample.RaidLab.Application.csproj" />
+  <Project Path="Host/Tenka.Sample.RaidLab.Host.csproj" />
+  <Project Path="Tests/Tenka.Sample.RaidLab.Tests.csproj" />
+  <Project Path="Benchmarks/Tenka.Sample.RaidLab.Benchmarks.csproj" />
+</Solution>

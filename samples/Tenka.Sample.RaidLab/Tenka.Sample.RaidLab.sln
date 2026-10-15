@@ -1,0 +1,48 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tenka.Sample.RaidLab.Domain", "Domain\Tenka.Sample.RaidLab.Domain.csproj", "{9AA18AD4-2A2E-5AEC-8864-009C2F171E93}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tenka.Sample.RaidLab.Infrastructure", "Infrastructure\Tenka.Sample.RaidLab.Infrastructure.csproj", "{D91C9B3A-2519-5B45-9A84-3383796734F2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tenka.Sample.RaidLab.Application", "Application\Tenka.Sample.RaidLab.Application.csproj", "{2749A1F3-D901-54EA-95CC-91B074D30BF0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tenka.Sample.RaidLab.Host", "Host\Tenka.Sample.RaidLab.Host.csproj", "{0203404D-A357-5CC0-9055-0839A39C61E8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tenka.Sample.RaidLab.Tests", "Tests\Tenka.Sample.RaidLab.Tests.csproj", "{D4A7F23F-A742-584F-8D33-DC4CE4788634}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tenka.Sample.RaidLab.Benchmarks", "Benchmarks\Tenka.Sample.RaidLab.Benchmarks.csproj", "{318B31B8-95B2-5043-A84F-290B8833555F}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9AA18AD4-2A2E-5AEC-8864-009C2F171E93}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9AA18AD4-2A2E-5AEC-8864-009C2F171E93}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9AA18AD4-2A2E-5AEC-8864-009C2F171E93}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9AA18AD4-2A2E-5AEC-8864-009C2F171E93}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D91C9B3A-2519-5B45-9A84-3383796734F2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D91C9B3A-2519-5B45-9A84-3383796734F2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D91C9B3A-2519-5B45-9A84-3383796734F2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D91C9B3A-2519-5B45-9A84-3383796734F2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2749A1F3-D901-54EA-95CC-91B074D30BF0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2749A1F3-D901-54EA-95CC-91B074D30BF0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2749A1F3-D901-54EA-95CC-91B074D30BF0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2749A1F3-D901-54EA-95CC-91B074D30BF0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0203404D-A357-5CC0-9055-0839A39C61E8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0203404D-A357-5CC0-9055-0839A39C61E8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0203404D-A357-5CC0-9055-0839A39C61E8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0203404D-A357-5CC0-9055-0839A39C61E8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D4A7F23F-A742-584F-8D33-DC4CE4788634}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D4A7F23F-A742-584F-8D33-DC4CE4788634}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D4A7F23F-A742-584F-8D33-DC4CE4788634}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D4A7F23F-A742-584F-8D33-DC4CE4788634}.Release|Any CPU.Build.0 = Release|Any CPU
+		{318B31B8-95B2-5043-A84F-290B8833555F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{318B31B8-95B2-5043-A84F-290B8833555F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{318B31B8-95B2-5043-A84F-290B8833555F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{318B31B8-95B2-5043-A84F-290B8833555F}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
