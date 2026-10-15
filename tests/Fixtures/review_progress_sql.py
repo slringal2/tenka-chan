@@ -10,7 +10,8 @@ def main():
     assert len(blocks)==2
     schema,latest=blocks
     strings=re.findall(r'cmd.CommandText\s*=\s*"([^"\n]+)";',code)
-    current=next(s for s in strings if s.startswith('SELECT COALESCE(MAX'))
+    current=next(s for s in strings if s.startswith('SELECT COALESCE(MAX') and 'WHERE target_id' in s)
+    revision=next(s for s in strings if s.startswith('SELECT COALESCE(MAX') and 'WHERE' not in s)
     history=next(s for s in strings if 'ORDER BY revision DESC LIMIT' in s)
     read=next(s for s in strings if s.startswith('SELECT revision,payload,source'))
     insert=next(s for s in strings if s.startswith('INSERT')).split(';')[0]
@@ -34,6 +35,21 @@ def main():
         assert db.execute(current,dict(id='a')).fetchone()[0]==last;checks+=1
         assert len(db.execute(history,dict(id='a',limit=1,offset=1)).fetchall())==1;checks+=1
         assert db.execute('SELECT SUM(source_chars) FROM review_checkpoints').fetchone()[0]==11;checks+=1
-        db.close()
+        # High-water mark and payload are read in the same SQLite snapshot. Exercise
+        # the actual extracted queries using two connections, not a Python cache clone.
+        assert db.execute(revision).fetchone()[0]==3;checks+=1
+        db.execute('PRAGMA journal_mode=WAL')
+        other=sqlite3.connect(file)
+        db.execute('BEGIN')
+        before=db.execute(revision).fetchone()[0]
+        other.execute(insert,dict(id='a',payload=json.dumps(dict(targetId='a',status='checked')),source='newer',size=5))
+        other.commit()
+        assert db.execute(revision).fetchone()[0]==before;checks+=1
+        assert max(r[0] for r in db.execute(latest))==before;checks+=1
+        db.commit()
+        assert db.execute(revision).fetchone()[0]==before+1;checks+=1
+        assert max(r[0] for r in db.execute(latest))==before+1;checks+=1
+        assert db.execute(current,dict(id='b')).fetchone()[0]==3;checks+=1
+        other.close();db.close()
     print(json.dumps(dict(checks=checks,sqliteSchema='extracted actual SQL',csharpExecuted=False)))
 if __name__=='__main__':main()

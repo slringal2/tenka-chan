@@ -10,7 +10,17 @@ public static class ReviewSourceDiff
 {
     public static ReviewDiff Compare(string before, string after, int offset = 0, int limit = 150)
     {
+        ValidatePage(offset, limit);
+        return Build(before, after).Page(offset, limit);
+    }
+    internal static void ValidatePage(int offset, int limit)
+    {
         if (offset < 0 || limit is < 1 or > 500) throw new ArgumentException("Invalid diff page.");
+    }
+    internal static ReviewDiffDocument Build(string before, string after)
+    {
+        ArgumentNullException.ThrowIfNull(before);
+        ArgumentNullException.ThrowIfNull(after);
         if (before.Length > ReviewProgress.MaxSourceCharacters || after.Length > ReviewProgress.MaxSourceCharacters)
             throw new ArgumentException("Diff source exceeds the bounded checkpoint size.");
         var a = Lines(before); var b = Lines(after);
@@ -58,9 +68,15 @@ public static class ReviewSourceDiff
                 visible.Add(new("skip",null,null,$"変更のない{i-start+1}行を省略"));
             }
         }
-        return new(coarse?"bounded_replacement":"line_lcs",added,removed,visible.Count,offset,
-            visible.Skip(offset).Take(limit).ToArray(),(long)offset+limit<visible.Count,
+        return new(coarse?"bounded_replacement":"line_lcs",added,removed,visible.AsReadOnly(),
             coarse?"大きな変更は区間全体を置換表示しています。追加・削除数は最小差分ではありません。":"確認時点と読み込み済みソースの行差分です。Gitコミット差分や意味的な等価性の判定ではありません。");
     }
     private static string[] Lines(string value) => value.Length==0 ? [] : ReviewProgress.Normalize(value).Split('\n');
+}
+
+internal sealed record ReviewDiffDocument(string Mode, int Added, int Removed,
+    IReadOnlyList<ReviewDiffLine> Rows, string Note)
+{
+    public ReviewDiff Page(int offset, int limit) => new(Mode, Added, Removed, Rows.Count, offset,
+        Rows.Skip(offset).Take(limit).ToArray(), (long)offset + limit < Rows.Count, Note);
 }

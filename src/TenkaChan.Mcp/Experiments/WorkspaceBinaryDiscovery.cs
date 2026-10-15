@@ -59,7 +59,7 @@ public sealed class WorkspaceBinaryDiscovery(WorkspaceGuard guard)
         var root = Path.GetDirectoryName(file)!;
         var names = new HashSet<string>(Paths) { Path.GetFileNameWithoutExtension(file) };
         var frameworks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (SupportedFramework(project.TargetFramework)) frameworks.Add(project.TargetFramework!);
+        if (InspectableFramework(project.TargetFramework)) frameworks.Add(project.TargetFramework!);
         XDocument? xml = null;
         try
         {
@@ -72,7 +72,7 @@ public sealed class WorkspaceBinaryDiscovery(WorkspaceGuard guard)
                     !value.Contains('/') && !value.Contains('\\')) names.Add(value);
             foreach (var value in Values(xml, "TargetFramework").Concat(Values(xml, "TargetFrameworks"))
                 .SelectMany(x => x.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)).Take(32))
-                if (SupportedFramework(value)) frameworks.Add(value);
+                if (InspectableFramework(value)) frameworks.Add(value);
         }
         catch (XmlException) { /* Conventional paths remain available; DTDs are never expanded. */ }
 
@@ -80,7 +80,7 @@ public sealed class WorkspaceBinaryDiscovery(WorkspaceGuard guard)
         foreach (var config in new[] { "Release", "Debug" })
         {
             foreach (var frameworkDir in Children(Path.Combine(root, "bin", config), 80))
-                if (SupportedFramework(Path.GetFileName(frameworkDir)))
+                if (InspectableFramework(Path.GetFileName(frameworkDir)))
                 {
                     var tfm = Path.GetFileName(frameworkDir);
                     frameworks.Add(tfm);
@@ -126,14 +126,15 @@ public sealed class WorkspaceBinaryDiscovery(WorkspaceGuard guard)
                 var metadata = pe.GetMetadataReader();
                 if (!metadata.IsAssembly) continue;
                 var actual = ReadFramework(metadata);
-                if (!SupportedFramework(actual)) continue;
+                if (!InspectableFramework(actual)) continue;
                 if (folder.Framework is { } hint &&
                     !string.Equals(hint.Split('-')[0], actual, StringComparison.OrdinalIgnoreCase)) continue;
                 var tfm = folder.Framework ?? actual!;
-                var runnable = HostRank(folder.Rid) < 2 && pe.PEHeaders.CorHeader is { EntryPointTokenOrRelativeVirtualAddress: not 0 }
+                var runnable = SupportedFramework(actual) && HostRank(folder.Rid) < 2 && pe.PEHeaders.CorHeader is { EntryPointTokenOrRelativeVirtualAddress: not 0 }
                     && HasRuntimeConfig(dll, actual!);
                 results.Add(new WorkspaceAssemblyChoice(project.Name, file, dll, tfm, runnable,
                     folder.Configuration, (runnable ? "Existing runnable managed DLL" :
+                    IsNetStandard(actual) ? ".NET Standard library: metadata/IL inspection only; choose a compatible .NET application to execute it" :
                     "Managed library or incompatible/unconfigured app; cannot launch directly on this host") +
                     $"; {folder.Origin}. Base framework checked in PE metadata; configuration/platform are path hints, not verified build identity.")
                     { RuntimeIdentifier = folder.Rid });
@@ -236,15 +237,18 @@ public sealed class WorkspaceBinaryDiscovery(WorkspaceGuard guard)
             if (blob.ReadUInt16() != 1) return null;
             var value = blob.ReadSerializedString();
             if (value is null || value.Length > 256) return null;
-            var match = Regex.Match(value, @"^\.NETCoreApp,Version=v(?<version>\d+\.\d+)$",
+            var match = Regex.Match(value, @"^\.(?<family>NETCoreApp|NETStandard),Version=v(?<version>\d+\.\d+)$",
                 RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
-            return match.Success ? "net" + match.Groups["version"].Value : null;
+            return match.Success ? (match.Groups["family"].Value == "NETStandard" ? "netstandard" : "net") + match.Groups["version"].Value : null;
         }
         return null;
     }
 
     private static IEnumerable<string> Values(XDocument xml, string name) =>
         xml.Descendants().Where(x => x.Name.LocalName == name).Select(x => x.Value.Trim());
+    // Discovery is broader than execution. Do NOT reuse this predicate in a host runner.
+    private static bool IsNetStandard(string? value) => value is "netstandard2.0" or "netstandard2.1";
+    private static bool InspectableFramework(string? value) => SupportedFramework(value) || IsNetStandard(value);
     private static bool SupportedFramework(string? value) => value is { Length: > 0 and < 120 }
         && Regex.IsMatch(value, @"^net(?:[89]|[1-9]\d+)\.\d+(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?$",
             RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));

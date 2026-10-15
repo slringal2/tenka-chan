@@ -3,6 +3,21 @@
   const labels={unreviewed:"未確認",checked:"チェック済み",optimized:"最適化済み",needs_review:"要再確認"};
   const reasons={not_checked:"まだ確認の記録がありません。",current:"確認した版と一致しています。",source_changed:"確認後にこの対象のソースが変わっています。",context_changed:"対象本体は同じでも、同じプロジェクトまたは参照先のソース・明示的なプロジェクト設定が変わっています。",snapshot_outdated:"読み込み後にファイルが変わっています。プロジェクトを再読み込みしてください。"};
   function label(state){return labels[state]||"状態不明";}
+  function queueRequest(filters,current,append,loadedCount=0){
+    if(!append)return {...filters,offset:0};
+    if(!current?.snapshotId)throw new Error("先に確認一覧を読み込んでください。");
+    if(current.hasMore===false)return null;
+    if(typeof current.nextCursor==="string"&&current.nextCursor.length>0)
+      return {...filters,snapshotId:current.snapshotId,cursor:current.nextCursor,offset:0};
+    if(current.hasMore===true)throw new Error("一覧の続き情報がありません。表示を更新してください。");
+    // Older servers do not advertise cursor support. Keep their read-only UI compatible.
+    return {...filters,snapshotId:current.snapshotId,offset:loadedCount};
+  }
+  function mergeQueueRows(previous,incoming,append){
+    const rows=new Map((append?previous:[]).map(r=>[r.target.id,r]));
+    for(const row of incoming)rows.set(row.target.id,row);
+    return [...rows.values()];
+  }
   class ReviewProgressClient {
     constructor(fetcher){this.fetcher=fetcher;this.epoch=0;this.data=null;}
     async read(route,params={}){
@@ -17,6 +32,8 @@
       const epoch=++this.epoch;const data=await this.read("queue",filters);
       if(epoch!==this.epoch)return null;
       if(!data?.snapshotId||!Array.isArray(data.items)||!data.summary)throw new Error("確認一覧の形式が不正です。");
+      if(filters.cursor&&data.snapshotId!==filters.snapshotId)
+        throw new Error("ソースが更新されました。古い一覧の続きは追加せず、先頭から更新してください。");
       this.data=data;return data;
     }
   }
@@ -36,18 +53,21 @@
         b.addEventListener("click",()=>select(t.id));list.append(b);
       }
       if(!rows.length)list.append(el("p","この条件に一致する対象はありません。『すべて』で確認済みの対象も表示できます。"));
-      $("review-list-count").textContent=`表示 ${rows.length} / ${client.data?.total??0}件`;
-      $("review-more").hidden=rows.length>=(client.data?.total??0);
+      $("review-list-count").textContent=`表示済み ${rows.length}件 / 現在の条件一致 ${client.data?.total??0}件`;
+      $("review-more").hidden=client.data?.hasMore!==undefined ? !client.data.hasMore : rows.length>=(client.data?.total??0);
     }
     async function load(append=false){
       if(busy||document.hidden)return;busy=true;
       try{
         const old=client.data?.snapshotId;
-        const data=await client.queue({kind:$("review-kind").value,state:$("review-filter").value,q:$("review-query").value,offset:append?rows.length:0,limit:80});
+        const request=queueRequest({kind:$("review-kind").value,state:$("review-filter").value,q:$("review-query").value,limit:80},client.data,append,rows.length);
+        if(!request)return;
+        const data=await client.queue(request);
         if(!data)return;
         if(old&&old!==data.snapshotId){selection=null;detail=null;detailEpoch++;$("review-detail").hidden=true;}
-        rows=append?[...rows,...data.items]:data.items;renderRows();
+        rows=mergeQueueRows(rows,data.items,append);renderRows();
         $("review-status").textContent=data.limited?"索引が上限に達しています。表示範囲内の記録です。":"確認記録を表示しています。閲覧だけではチェックは付きません。";
+        if(data.summary.blockedPending>0)$("review-status").textContent+=` ${data.summary.blockedPending}件は再読み込みが必要、または個別記録の対象外です。完了扱いにはしていません。`;
         $("review-reload").hidden=!data.requiresReload;$("review-scope").textContent=data.scope;
         const counts=$("review-counts");counts.replaceChildren();for(const [key,text]of [["unreviewed","未確認"],["checkedCount","チェック済み"],["optimized","最適化済み"],["needsReview","要再確認"]]){const n=el("div");n.append(el("span",text),el("strong",data.summary[key]??0));counts.append(n);}
         if(selection&&detail){const updated=data.items.find(r=>r.target.id===selection);if(updated&&(updated.state.revision!==detail.state.revision||updated.state.reason!==detail.state.reason))await select(selection);}
@@ -100,6 +120,6 @@
     function schedule(){clearInterval(timer);if(!document.hidden){load();timer=setInterval(()=>{if(rows.length<=80)load();},5000);}}
     document.addEventListener("visibilitychange",schedule);global.addEventListener("pagehide",()=>clearInterval(timer));schedule();
   }
-  if(typeof module!=="undefined"&&module.exports)module.exports={ReviewProgressClient,label,reasons};
+  if(typeof module!=="undefined"&&module.exports)module.exports={ReviewProgressClient,label,reasons,queueRequest,mergeQueueRows};
   if(typeof document!=="undefined")document.addEventListener("DOMContentLoaded",start);
 })(typeof globalThis!=="undefined"?globalThis:this);

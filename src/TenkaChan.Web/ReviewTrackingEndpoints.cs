@@ -9,8 +9,8 @@ public static class ReviewTrackingEndpoints
     public static void MapReviewTrackingEndpoints(this WebApplication app)
     {
         app.MapGet("/api/review-progress/queue", (ReviewTrackingService service,string? snapshotId,
-            string? projectId,string? kind,string? state,string? q,int? offset,int? limit,CancellationToken ct) =>
-            Safe(()=>service.Queue(snapshotId,projectId,kind??"all",state??"pending",q,offset??0,limit??80,ct)));
+            string? projectId,string? kind,string? state,string? q,int? offset,int? limit,string? cursor,bool? trackableOnly,CancellationToken ct) =>
+            Safe(()=>service.Queue(snapshotId,projectId,kind??"all",state??"pending",q,offset??0,limit??80,ct,cursor,trackableOnly??false)));
         app.MapGet("/api/review-progress/target", (ReviewTrackingService service,string snapshotId,string targetId,CancellationToken ct) =>
             Safe(()=>service.Target(snapshotId,targetId,ct)));
         app.MapGet("/api/review-progress/diff", (ReviewTrackingService service,string snapshotId,string targetId,
@@ -34,6 +34,7 @@ public static class ReviewTrackingEndpoints
 
 public sealed class ReviewTrackingService(DashboardState dashboard,WorkspaceGuard guard,ReviewProgressStore store)
 {
+    private readonly ReviewDiffCache _diffCache = new();
     private Task<object> With(string? snapshot,Func<ReviewSourceCatalog,Task<object>> run,CancellationToken ct) =>
         dashboard.ExploreAsync(snapshot,async(index,_)=>await run(await index.ReviewCatalogAsync(guard,ct)),ct);
     private async Task<ReviewQueueItem[]> Items(ReviewSourceCatalog catalog,CancellationToken ct)
@@ -41,7 +42,7 @@ public sealed class ReviewTrackingService(DashboardState dashboard,WorkspaceGuar
         var marks=store.Latest();var stale=await catalog.StaleProjectsAsync(guard,false,ct);
         return catalog.Targets.Select(t=>new ReviewQueueItem(t,ReviewProgress.State(t,marks.GetValueOrDefault(t.Id),stale.Contains(t.ProjectId)))).ToArray();
     }
-    public async Task<object> Queue(string? snapshot,string? project,string kind,string state,string? query,int offset,int limit,CancellationToken ct)
+    public async Task<object> Queue(string? snapshot,string? project,string kind,string state,string? query,int offset,int limit,CancellationToken ct,string? cursor=null,bool trackableOnly=false)
     {
         if(kind is not ("all" or "type" or "method") || state is not ("all" or "pending" or "unreviewed" or "needs_review" or "checked" or "optimized"))
             throw new ArgumentException("Invalid review filter.");
@@ -51,14 +52,15 @@ public sealed class ReviewTrackingService(DashboardState dashboard,WorkspaceGuar
             var rows=(await Items(catalog,ct)).Where(r=>(kind=="all"||r.Target.Kind==kind)&&
                 (string.IsNullOrEmpty(project)||r.Target.ProjectId==project)&&
                 (string.IsNullOrEmpty(query)||r.Target.Name.Contains(query,StringComparison.OrdinalIgnoreCase))).ToArray();
-            var filtered=rows.Where(r=>state=="all"||(state=="pending"?r.State.Status is "unreviewed" or "needs_review":r.State.Status==state))
-                .OrderBy(r=>r.State.Status=="needs_review"?0:r.State.Status=="unreviewed"?1:2)
-                .ThenBy(r=>r.Target.Project,StringComparer.Ordinal).ThenBy(r=>r.Target.Name,StringComparer.Ordinal).ThenBy(r=>r.Target.Kind).ToArray();
-            return new {snapshotId=catalog.SnapshotId,total=filtered.Length,offset,items=filtered.Skip(offset).Take(limit).ToArray(),
+            var page=ReviewQueuePager.Page(catalog.SnapshotId,rows,state,project,kind,query,trackableOnly,offset,limit,cursor);
+            return new {snapshotId=catalog.SnapshotId,total=page.Total,offset=page.Offset,items=page.Items,
+                nextCursor=page.NextCursor,hasMore=page.HasMore,ordering="stable_project_name_target_id",
                 summary=new {total=rows.Length,unreviewed=rows.Count(r=>r.State.Status=="unreviewed"),needsReview=rows.Count(r=>r.State.Status=="needs_review"),
-                    checkedCount=rows.Count(r=>r.State.Status=="checked"),optimized=rows.Count(r=>r.State.Status=="optimized"),untrackable=rows.Count(r=>!r.Target.Trackable)},
+                    checkedCount=rows.Count(r=>r.State.Status=="checked"),optimized=rows.Count(r=>r.State.Status=="optimized"),untrackable=rows.Count(r=>!r.Target.Trackable),
+                    blockedPending=rows.Count(r=>(r.State.Status is "unreviewed" or "needs_review")&&(!r.Target.Trackable||r.State.RequiresReload))},
                 requiresReload=rows.Any(r=>r.State.RequiresReload),catalog.Limited,note=ReviewProgress.Note,
-                scope="同じ配置のプロジェクトと宣言シグネチャに紐づく記録です。改名・署名変更・移動先の別チェックアウトには自動移行しません。索引外の型・メソッドの完了状況は集計していません。"};
+                pagingNote="nextCursorをcursorに渡すと、途中でチェック済みが増えても、先に返した対象の次から取得します。最後まで来たらcursorなしのpendingを再確認してください。空のページは索引外を含む確認完了を意味しません。",
+                scope="読み込み済みの索引範囲のみです。記録不可の対象や索引上限は完了扱いにしません。状態・変更の検査は読み取り時点の情報で、複数エージェントへの排他割当てではありません。"};
         },ct);
     }
     public Task<object> Target(string snapshot,string targetId,CancellationToken ct) => With(snapshot,async catalog=>
@@ -91,7 +93,7 @@ public sealed class ReviewTrackingService(DashboardState dashboard,WorkspaceGuar
         return new {snapshotId=catalog.SnapshotId,targetId,hasBaseline=leftRevision is not null,
             fromRevision=leftRevision,toRevision=to,fromHash=left.Item1?.SourceHash,
             toHash=right.Item1?.SourceHash??target.SourceHash,
-            diff=ReviewSourceDiff.Compare(left.Item2,right.Item2,offset,limit),
+            diff=_diffCache.Compare(left.Item2,right.Item2,offset,limit),
             note=leftRevision is null?"未確認の対象です。比較元がないため、表示は現在のソース全体です。変更量とはみなしません。":ReviewProgress.Note};
     },ct);
     public Task<object> Mark(ReviewMarkRequest request,string agent,string session,IReadOnlyList<ReviewEvidenceLink> evidence,CancellationToken ct) =>

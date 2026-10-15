@@ -8,6 +8,9 @@ namespace TenkaChan.Mcp.Tracking;
 public sealed class ReviewProgressStore
 {
     private readonly string _connectionString;
+    private readonly object _latestLock = new();
+    private long _latestRevision = -1;
+    private IReadOnlyDictionary<string, ReviewCheckpoint>? _latestCache;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public ReviewProgressStore() : this(Path.Combine(Path.GetFullPath(
         Environment.GetEnvironmentVariable("TENKA_DATA_DIR") ?? Path.Combine(
@@ -30,15 +33,28 @@ public sealed class ReviewProgressStore
     private SqliteConnection Open() { var db = new SqliteConnection(_connectionString); db.Open(); return db; }
     public IReadOnlyDictionary<string, ReviewCheckpoint> Latest()
     {
-        using var db = Open(); using var cmd = db.CreateCommand();
-        cmd.CommandText = """
-            SELECT c.revision,c.payload FROM review_checkpoints c
-            JOIN (SELECT target_id,MAX(revision) AS rev FROM review_checkpoints GROUP BY target_id) x
-                ON c.target_id=x.target_id AND c.revision=x.rev;
-            """;
-        using var reader = cmd.ExecuteReader(); var rows = new Dictionary<string, ReviewCheckpoint>(StringComparer.Ordinal);
-        while (reader.Read()) { var row = Decode(reader); rows.Add(row.TargetId, row); }
-        return rows;
+        // Check the append-only revision inside the same read transaction as the payload.
+        // Another process's committed append is detected without decoding every row on every poll.
+        lock (_latestLock)
+        {
+            using var db = Open(); using var tx = db.BeginTransaction(deferred: true);
+            using var cmd = db.CreateCommand(); cmd.Transaction = tx;
+            cmd.CommandText = "SELECT COALESCE(MAX(revision),0) FROM review_checkpoints";
+            var revision = Convert.ToInt64(cmd.ExecuteScalar());
+            if (_latestCache is not null && _latestRevision == revision)
+            { tx.Commit(); return _latestCache; }
+            cmd.CommandText = """
+                SELECT c.revision,c.payload FROM review_checkpoints c
+                JOIN (SELECT target_id,MAX(revision) AS rev FROM review_checkpoints GROUP BY target_id) x
+                    ON c.target_id=x.target_id AND c.revision=x.rev;
+                """;
+            var rows = new Dictionary<string, ReviewCheckpoint>(StringComparer.Ordinal);
+            using (var reader = cmd.ExecuteReader())
+                while (reader.Read()) { var row = Decode(reader); rows.Add(row.TargetId, row); }
+            tx.Commit();
+            _latestRevision = revision;
+            return _latestCache = new System.Collections.ObjectModel.ReadOnlyDictionary<string, ReviewCheckpoint>(rows);
+        }
     }
     public IReadOnlyList<ReviewCheckpoint> History(string targetId, int offset = 0, int limit = 50)
     {
@@ -86,7 +102,9 @@ public sealed class ReviewProgressStore
         cmd.CommandText = "INSERT INTO review_checkpoints(target_id,payload,source,source_chars) VALUES($id,$payload,$source,$size); SELECT last_insert_rowid();";
         cmd.Parameters.AddWithValue("$id", target.Id); cmd.Parameters.AddWithValue("$payload", JsonSerializer.Serialize(record, Json));
         cmd.Parameters.AddWithValue("$source", target.Source); cmd.Parameters.AddWithValue("$size", target.Source.Length);
-        var revision = Convert.ToInt64(cmd.ExecuteScalar()); tx.Commit(); return record with { Revision = revision };
+        var revision = Convert.ToInt64(cmd.ExecuteScalar()); tx.Commit();
+        lock (_latestLock) { _latestCache = null; _latestRevision = -1; }
+        return record with { Revision = revision };
     }
     private static ReviewCheckpoint Decode(SqliteDataReader reader) =>
         (JsonSerializer.Deserialize<ReviewCheckpoint>(reader.GetString(1), Json)
