@@ -13,6 +13,8 @@
   function start() {
     const $ = id => document.getElementById(id);
     const Client = global.TenkaProjectClient.ProjectExplorerClient;
+    const showTab = key => global.TenkaProjectTabs?.show(key);
+    const labelProject = p => global.TenkaProjectClient.projectLabel(p, client.context?.projects || []);
     const client = new Client((...args) => fetch(...args));
     let pageBusy = false, currentType = null, types = [], typeTotal = 0, searchTimer, exportData = null;
     let artifact = null, nativeIndex = "", threadIndex = "";
@@ -28,6 +30,7 @@
     function controls(busy) {
       pageBusy = busy;
       document.querySelectorAll(".project-workbench input,.project-workbench select,.project-workbench button").forEach(n => n.disabled = busy);
+      document.querySelectorAll("[data-workspace-tab],[data-open-workspace-tab]").forEach(n => n.disabled = false);
       $("cancel-action").hidden = !busy; $("cancel-action").disabled = false;
       if (busy) return;
       const loaded = !!client.context && !client.stale;
@@ -35,6 +38,7 @@
       $("project-scan").disabled = !loaded;
       $("selected-project").disabled = !loaded;
       $("selected-assembly").disabled = !loaded || !client.assemblies().length;
+      $("class-scope").disabled = !loaded;
       $("class-search").disabled = !loaded; $("type-references").disabled = !loaded || !client.type;
       for (const id of ["method-references", "test-plan"]) $(id).disabled = !loaded || !client.method;
       $("inspect-il").disabled = !loaded || !client.method || !client.assemblyId;
@@ -54,30 +58,49 @@
     }
     function renderContext() {
       const c = client.context;
+      global.TenkaProjectTabs?.observeLoaded(!!c);
+      $("workspace-title").textContent = c ? `${c.projects.length}プロジェクトを読み込み済み` : "プロジェクト未読込";
+      $("workspace-selection").textContent = c ? "選択中：" + (client.method?.signature || client.type?.name || client.project()?.name || "ソリューション全体") : "「準備」でソリューションまたはプロジェクトを選んでください。";
       if (!c) {
         resetDetail(); types = []; renderTypes();
         $("project-switch").open = true; $("project-summary").textContent = "① プロジェクトを選ぶ";
         $("build-help").textContent = "プロジェクトを読み込んでください。";
-        for (const id of ["selected-project","selected-assembly","launch-assembly","companion-project","result-history"])
+        for (const id of ["selected-project","selected-assembly","launch-assembly","companion-project","result-history","class-scope"])
           options($(id), [], "", "プロジェクト未読込");
+        $("solution-projects").replaceChildren();
         return;
       }
       $("project-switch").open = false;
       $("project-summary").textContent = "読み込み済み：" + (client.project()?.name || "ソリューション全体") + "（別のプロジェクトを選ぶ）";
       // Do not erase a path the user is editing; setup query and an explicitly selected path remain intact.
       if (!$("project-path").value) $("project-path").value = c.path;
-      options($("selected-project"), c.projects.map(p => ({id:p.id,label:p.name})), client.projectId, "全プロジェクトからクラスを探す");
+      options($("selected-project"), c.projects.map(p => ({id:p.id,label:labelProject(p)})), client.projectId, "ビルド・DLLの対象を選択");
+      options($("class-scope"), [{id:"",label:"すべてのプロジェクト"}, ...c.projects.map(p => ({id:p.id,label:labelProject(p)}))], client.scopeProjectId, "");
+      // The explicit all-projects option must not be duplicated by the generic placeholder helper.
+      if ($("class-scope").options[0]?.value === "" && $("class-scope").options[1]?.value === "") $("class-scope").remove(0);
+      const structure = $("solution-projects"); structure.replaceChildren();
+      for (const p of c.projects) {
+        const row = node("article",undefined,"solution-project");
+        const refs = (p.projectReferenceIds || []).map(id => c.projects.find(q => q.id === id)?.name || "未解決の参照");
+        const text = node("div"); text.append(node("strong",labelProject(p)),node("p",`C#文書 ${p.documents}件 · 参照先：${refs.length ? refs.join(" / ") : "なし／取得情報なし"}`,"small"));
+        const choose = button("このプロジェクトを選択", () => busyTask("対象プロジェクトを切り替えています…", async () => { client.setProject(p.id); resetDetail(); renderContext(); await loadTypes(); }));
+        row.append(text,choose); structure.append(row);
+      }
       const assetRows = client.assemblies().map(a => ({id:a.id,label:`${a.project} / ${a.configuration} / ${a.targetFramework}${a.runnable ? " / 起動可" : " / ライブラリ等"}`}));
       options($("selected-assembly"), assetRows, client.assemblyId, assetRows.length ? "ビルド出力を選択" : "未検出：Releaseビルドしてください");
       client.assemblyId = $("selected-assembly").value;
-      options($("launch-assembly"), client.launchers().map(a => ({id:a.id,label:`${a.project} / ${a.configuration} / ${a.targetFramework}`})), client.launchId, "実行するアプリを選択");
+      options($("launch-assembly"), client.launchers().map(a => ({id:a.id,label:`${labelProject(c.projects.find(p => p.id === a.projectId))} / ${a.configuration} / ${a.targetFramework}`})), client.launchId, "実行するアプリを選択");
+      if (!client.launchId) {
+        if (!Array.from($("launch-assembly").options).some(o => o.value === "")) $("launch-assembly").insertBefore(new Option("実行するアプリを選択", ""), $("launch-assembly").firstChild);
+        $("launch-assembly").value = "";
+      }
       client.launchId = $("launch-assembly").value;
       options($("companion-project"), c.companions.map(p => ({id:p.id,label:`${p.kind === "test" ? "テスト" : "ベンチマーク"}：${p.name}`})), $("companion-project").value, c.companions.length ? "実行するプロジェクトを選択" : "検出なし（ソリューションに含めるかTests/Benchmarksへ）");
       options($("result-history"), c.history.map(h => ({id:h.id,label:`${h.kind.toUpperCase()} / ${new Date(h.createdUtc).toLocaleTimeString("ja-JP")} / ${h.label}`})), artifact?.id || "", c.history.length ? "取得済みの結果を選択" : "まだ取得していません");
       $("build-help").textContent = !c.capabilities.build ? "ローカルビルドが無効です。setup.batの起動設定を確認してください。"
         : !client.projectId ? "複数プロジェクトがあります。ビルドする対象だけ上で選択してください。"
         : c.scanned ? `静的解析済み：${c.summary?.totalFindings ?? 0}件の指摘。候補でありバグ確定ではありません。`
-        : "まだ静的解析していません。初回は『Releaseビルド＋解析』がおすすめです。";
+        : "まだ静的解析していません。「準備」でビルド対象を選び、ビルド＋全体解析を実行してください。";
       $("trace-help").textContent = !c.capabilities.trace ? "プロファイルツールが未準備、またはローカル実行が無効です。setup.batで準備してください。"
         : !client.launchId ? "実行アプリを選んでください。ライブラリには呼び出し元アプリが必要です。"
         : "保存先を自動で作成します。取得後にGC・割り当て・スレッドをボタンで調べられます。";
@@ -97,7 +120,7 @@
           renderContext();
           const result = await client.perform("type", {typeId:row.id}); renderType(result); await loadTypes();
         }), "choice");
-        b.append(node("strong", row.name), node("span", `${row.kind} · ${row.methodCount}メソッド · ${row.project}`));
+        b.append(node("strong", row.name), node("span", `${row.kind} · ${row.methodCount}メソッド · ${labelProject(client.context.projects.find(p => p.id === row.projectId))}`));
         b.setAttribute("aria-pressed", String(client.type?.id === row.id)); list.append(b);
       }
       $("class-count").textContent = client.context ? `${types.length} / ${typeTotal}件` : "プロジェクトを読み込むと表示されます。";
@@ -124,6 +147,7 @@
       if (rows.length > 1000) target.append(node("p","表示は先頭1,000行までです。JSONに含まれる結果を確認できます。","small"));
     }
     function renderType(result) {
+      showTab("code");
       currentType = result.detail; $("class-empty").hidden = true; $("class-content").hidden = false;
       $("type-kind").textContent = currentType.type.kind; $("type-name").textContent = currentType.type.name;
       $("type-structure").textContent = "基底型: " + (currentType.baseType || "なし") + " / インターフェース: " + (currentType.interfaces.join(", ") || "なし");
@@ -131,12 +155,13 @@
       $("type-sources").replaceChildren();
       for (const s of currentType.sources) { $("type-sources").append(node("p",`${s.file}:${s.line}${s.truncated ? "（一部省略）" : ""}`,"small"),node("pre",s.text)); }
       const findings = $("type-findings"); findings.replaceChildren();
-      if (!result.findings.scanned) findings.append(node("p","静的解析はまだです。上の『静的解析だけ実行』でこのクラスの指摘も確認できます。","small"));
+      if (!result.findings.scanned) findings.append(node("p","静的解析はまだです。「準備」の「ソリューション全体を静的解析」でこのクラスの指摘も確認できます。","small"));
       else if (!result.findings.findings.length) findings.append(node("p","この型の索引済みメソッドへの指摘はありません。正しさや軽さを保証するものではありません。","small"));
       else table(findings,["ルール","指摘"],result.findings.findings.map(f => [f.ruleId,f.message]));
       if (result.findings.limited) findings.append(node("p","全体の指摘件数が上限に達しているため、表示は網羅的ではありません。","small"));
       $("type-notes").textContent = currentType.notes.join(" "); $("method-search").value = ""; renderMethods();
       if (!client.method) $("method-section").hidden = true;
+      $("workspace-selection").textContent = "選択中：" + currentType.type.project + " / " + currentType.type.name;
     }
     function renderMethods() {
       const root=$("method-list"); root.replaceChildren();
@@ -152,15 +177,18 @@
         const result=await client.perform("method",{methodId:id});
         if (client.type?.id !== result.method.typeId) {
           // Reference navigation may lead to a different class/project; update the visible selection too.
-          client.projectId=result.method.projectId; client.assemblyId=global.TenkaProjectClient.pickOne(client.assemblies(),"");
-          const detail=await client.perform("type",{typeId:result.method.typeId}); renderType(detail); renderContext();
+          client.setProject(result.method.projectId);
+          const detail=await client.perform("type",{typeId:result.method.typeId}); renderType(detail);
+          client.method=result.method; renderContext();
         }
         renderMethod(result); renderMethods();
       });
       $("method-section").scrollIntoView({behavior:"smooth",block:"start"});
     }
     function renderMethod(result) {
-      const m=result.method,r=result.inspection; $("method-section").hidden=false; $("binary-choice-panel").hidden=true;
+      showTab("code");
+      const m=result.method,r=result.inspection;
+      $("workspace-selection").textContent = "選択中：" + labelProject(client.project()) + " / " + m.signature; $("method-section").hidden=false; $("binary-choice-panel").hidden=true;
       $("method-title").textContent=m.signature;$("method-location").textContent=m.file+":"+m.line;$("method-source").textContent=r.source;
       $("method-help").textContent=m.jitFilter ? "ILはDLLと隣のPDBを自動取得。JITは選択したアプリを実行します。同名オーバーロードは複数の出力が含まれる場合があります。" : m.jitUnavailableReason;
       textLines($("method-callees"),r.callees);textLines($("method-callers"),r.callers);
@@ -171,6 +199,7 @@
       const d=node("details",undefined,"json-details");d.append(node("summary","詳細データを確認"));const text=JSON.stringify(data,null,2);d.append(node("pre",text.length>160000?text.slice(0,160000)+"\n表示上限。JSONで保存して確認してください。":text));root.append(d);
     }
     function renderResult(action,data) {
+      showTab("results");
       exportData=data;$("native-actions").hidden=true;$("trace-actions").hidden=true;
       const root=$("result-body");root.replaceChildren();
       let result=data;
@@ -270,10 +299,11 @@
         if(refreshError) message("結果は下に表示しましたが、プロジェクト状態の更新に失敗しました："+refreshError.message,true);
       });
     }
-    $("project-open").addEventListener("submit",e=>{e.preventDefault();busyTask("プロジェクトを読み込んでいます…",async()=>{await client.open($("project-path").value);resetDetail();renderContext();await loadTypes();});});
+    $("project-open").addEventListener("submit",e=>{e.preventDefault();busyTask("プロジェクトを読み込んでいます…",async()=>{await client.open($("project-path").value);resetDetail();renderContext();await loadTypes();showTab("code");});});
     $("refresh-project").addEventListener("click",()=>busyTask("状態を更新しています…",refreshAll));
-    $("use-sample").addEventListener("click",()=>busyTask("サンプルを探しています…",async()=>{const sample=await client.request("/api/samples/game-lab");if(!sample.available||!sample.projectPath)throw new Error("付属サンプルがありません。本体を更新してください。");$("project-path").value=sample.projectPath;$("project-switch").open=true;}));
+    $("use-sample").addEventListener("click",()=>busyTask("サンプルを探しています…",async()=>{const sample=await client.request("/api/samples/game-lab");if(!sample.available||!sample.projectPath)throw new Error("付属サンプルがありません。本体を更新してください。");$("project-path").value=sample.projectPath;$("project-switch").open=true;showTab("prepare");}));
     $("selected-project").addEventListener("change",()=>busyTask("クラス一覧を更新しています…",async()=>{client.setProject($("selected-project").value);resetDetail();renderContext();await loadTypes();}));
+    $("class-scope").addEventListener("change",()=>busyTask("検索範囲を更新しています…",async()=>{client.setScope($("class-scope").value);await loadTypes();}));
     $("selected-assembly").addEventListener("change",()=>{client.assemblyId=$("selected-assembly").value;client.binary=null;$("binary-choice-panel").hidden=true;renderContext();controls(false);});
     $("launch-assembly").addEventListener("change",()=>{client.launchId=$("launch-assembly").value;renderContext();controls(false);});
     $("companion-project").addEventListener("change",()=>controls(false));

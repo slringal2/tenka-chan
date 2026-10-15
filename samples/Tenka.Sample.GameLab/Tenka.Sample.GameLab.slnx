@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="Tenka.Sample.GameLab.csproj" />
+  <Project Path="Tests/Tenka.Sample.GameLab.Tests.csproj" />
+  <Project Path="Benchmarks/Tenka.Sample.GameLab.Benchmarks.csproj" />
+</Solution>

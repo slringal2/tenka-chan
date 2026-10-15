@@ -6,7 +6,12 @@ using Microsoft.CodeAnalysis.FindSymbols;
 
 namespace TenkaChan.Mcp.Analysis;
 
-public sealed record ExplorerProject(string Id, string Name, string Path, int Documents);
+public sealed record ExplorerProject(string Id, string Name, string Path, int Documents)
+{
+    // Evaluated Roslyn project references, including unloaded IDs when resolution failed.
+    // This is a source-project graph, not proof that a particular binary loads another.
+    public IReadOnlyList<string> ProjectReferenceIds { get; init; } = [];
+}
 public sealed record ExplorerType(string Id, string ProjectId, string Project, string Name,
     string Kind, int MethodCount, int DeclarationCount);
 public sealed record ExplorerTypePage(string SnapshotId, int Total, int Offset,
@@ -45,7 +50,11 @@ public sealed partial class SourceExplorerIndex
         SnapshotId = snapshot;
         _solution = solution;
         Projects = solution.Projects.Where(p => p.Language == LanguageNames.CSharp && p.FilePath is not null)
-            .Select(p => new ExplorerProject(p.Id.Id.ToString("N"), p.Name, p.FilePath!, p.DocumentIds.Count))
+            .Select(p => new ExplorerProject(p.Id.Id.ToString("N"), p.Name, p.FilePath!, p.DocumentIds.Count)
+            {
+                ProjectReferenceIds = p.ProjectReferences.Select(reference => reference.ProjectId.Id.ToString("N"))
+                    .Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray()
+            })
             .OrderBy(p => p.Name, StringComparer.Ordinal).ThenBy(p => p.Path, StringComparer.Ordinal).ToArray();
     }
 

@@ -19,6 +19,9 @@
     ["priorities", "調査優先度", "◇", "/priorities.html", "次に調べる箇所を整理"],
     ["guide", "使い方・サンプル", "?", "/guide.html", "比較教材で使い方を覚える"]
   ];
+  // Keep every existing route, but expose only four everyday entry points.
+  const primaryKeys = ["overview", "project", "review-progress", "autoreview"];
+  const detailKeys = ["findings", "deterministic", "hotspots", "methods", "evidence", "experiments", "build", "assembly", "trace", "priorities"];
   const aliases = { "/project": "project", "/workspace-build": "build", "/assembly": "assembly", "/agent": "autoreview" };
   function route(path, hash) {
     if (path === "/" || path === "/index.html")
@@ -73,6 +76,16 @@
     const nav = shell.querySelector(".nav-list");
     const oldCount = doc.getElementById("nav-findings")?.textContent || "—";
     nav.replaceChildren();
+    const primary = el("div", "nav-primary");
+    const details = el("details", "nav-advanced");
+    const summary = el("summary", "nav-advanced-toggle", "詳細ツール");
+    const secondary = el("div", "nav-secondary");
+    primary.setAttribute("aria-label", "いつも使う画面");
+    secondary.setAttribute("aria-label", "個別の解析ツール");
+    details.open = detailKeys.includes(active);
+    details.append(summary, secondary);
+    nav.append(primary, details);
+    const entries = new Map();
     pages.forEach((p, i) => {
       // Preserve existing dashboard event bindings: its first eight entries remain buttons.
       const n = el(dashboard && i < 8 && p[0] !== "autoreview" ? "button" : "a", "nav-item");
@@ -83,8 +96,21 @@
       n.append(icon, el("span", "", p[1]));
       if (p[0] === "findings") { const count = el("span", "nav-count", oldCount); count.id = "nav-findings"; n.append(count); }
       if (p[0] === active) { n.classList.add("active"); n.setAttribute("aria-current", "page"); }
-      nav.append(n);
+      entries.set(p[0], n);
     });
+    primaryKeys.forEach(key => primary.append(entries.get(key)));
+    detailKeys.forEach(key => secondary.append(entries.get(key)));
+    const help = entries.get("guide"); help.classList.add("nav-help"); nav.append(help);
+    // Older dashboard actions select views without changing the URL. Reveal the
+    // selected detail route when they do so, rather than leave an invisible selection.
+    const Observer = doc.defaultView?.MutationObserver;
+    if (Observer) {
+      const observer = new Observer(() => {
+        if (secondary.querySelector('[aria-current="page"]')) details.open = true;
+      });
+      observer.observe(nav, { subtree: true, attributes: true, attributeFilter: ["aria-current"] });
+      doc.defaultView.addEventListener("pagehide", () => observer.disconnect(), { once: true });
+    }
     const guide = el("a", "shell-guide-link", "プロジェクト調査"); guide.href = "/project.html";
     shell.querySelector(".topbar-right")?.prepend(guide);
     if (dashboard) {
@@ -113,7 +139,7 @@
     }
     doc.body.dataset.tenkaShell = "ready";
   }
-  const api = { pages, route, install };
+  const api = { pages, primaryKeys, detailKeys, route, install };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   global.TenkaShell = api;
   if (typeof document !== "undefined") install(document, location);

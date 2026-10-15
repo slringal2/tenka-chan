@@ -3,11 +3,36 @@
   const executable = new Set(["build", "jit", "trace", "run-companion"]);
   const actions = new Set(["type", "type-references", "method", "method-references", "test-plan", "scan", "priorities", "binary-methods", "il", "jit", "trace", "result", "native", "compare-native", "runtime-costs", "import-thread", "run-companion", "build"]);
   const pickOne = (items, previous) => items.some(i => i.id === previous) ? previous : items.length === 1 ? items[0].id : "";
+  // Names are display labels only; selections always retain per-project IDs.
+  function projectLabel(project, projects) {
+    if (!project) return "未選択";
+    if (projects.filter(p => p.name === project.name).length < 2) return project.name;
+    const parts = String(project.path || "").replace(/\\/g, "/").split("/");
+    const others = projects.filter(p => p.name === project.name && p.id !== project.id);
+    for (let depth = 2; depth <= parts.length; depth++) {
+      const suffix = parts.slice(-depth).join("/");
+      if (!others.some(p => String(p.path || "").replace(/\\/g, "/").split("/").slice(-depth).join("/") === suffix))
+        return project.name + " — " + suffix;
+    }
+    return project.name + " — " + parts.slice(-2).join("/") + " (" + project.id.slice(0, 8) + ")";
+  }
+  function projectDependsOn(projects, fromId, targetId) {
+    const queue = [fromId], visited = new Set();
+    const byId = new Map(projects.map(p => [p.id, p]));
+    while (queue.length) {
+      const id = queue.pop();
+      if (id === targetId) return true;
+      if (visited.has(id)) continue;
+      visited.add(id);
+      for (const reference of byId.get(id)?.projectReferenceIds || []) queue.push(reference);
+    }
+    return false;
+  }
   class StaleExplorerResponse extends Error { constructor() { super("対象が変わったため、古い応答は表示しませんでした。"); this.name = "StaleExplorerResponse"; } }
   class ProjectExplorerClient {
     constructor(fetcher) {
       this.fetcher = fetcher; this.session = null; this.context = null;
-      this.projectId = ""; this.assemblyId = ""; this.launchId = "";
+      this.projectId = ""; this.scopeProjectId = ""; this.assemblyId = ""; this.launchId = "";
       this.type = null; this.method = null; this.binary = null;
       this.lastArtifact = null; this.baseline = null; this.lastResult = null;
       this.busy = false; this.stale = false; this.epoch = 0; this.active = null; this.searchAbort = null;
@@ -27,6 +52,15 @@
     project() { return this.context?.projects.find(p => p.id === this.projectId); }
     assemblies() { return (this.context?.assemblies || []).filter(a => a.projectId === this.projectId); }
     launchers() { return (this.context?.assemblies || []).filter(a => a.runnable); }
+    launcherCandidates(projectId = this.projectId) {
+      if (!projectId) return [];
+      return this.launchers().filter(a => projectDependsOn(this.context?.projects || [], a.projectId, projectId));
+    }
+    setScope(id) {
+      if (this.busy) throw new Error("処理の完了を待ってください。");
+      if (!this.context || (id && !this.context.projects.some(p => p.id === id))) throw new Error("検索範囲を選んでください。");
+      this.invalidateRead(); this.scopeProjectId = id;
+    }
     invalidateRead() { this.epoch++; this.searchAbort?.abort(); this.searchAbort = null; }
     clearSource() { this.type = null; this.method = null; this.binary = null; }
     setProject(id) {
@@ -35,21 +69,24 @@
       this.invalidateRead(); this.projectId = id; this.clearSource();
       this.assemblyId = pickOne(this.assemblies(), "");
       const local = this.launchers().filter(a => a.projectId === id);
-      this.launchId = local.length === 1 ? local[0].id : pickOne(this.launchers(), this.launchId);
+      this.launchId = local.length === 1 ? local[0].id : pickOne(this.launcherCandidates(id), "");
     }
     replaceContext(data) {
       if (!data?.snapshotId || !Array.isArray(data.projects) || !Array.isArray(data.assemblies) || !Array.isArray(data.companions))
         throw new Error("プロジェクト一覧の応答が不正です。");
       const oldProjectPath = this.project()?.path;
+      const oldScopePath = this.context?.projects.find(p => p.id === this.scopeProjectId)?.path;
       const oldAssembly = this.context?.assemblies.find(a => a.id === this.assemblyId)?.assemblyPath;
       const changed = this.context?.snapshotId !== data.snapshotId;
       this.invalidateRead(); this.context = data; this.stale = false;
       this.projectId = data.projects.find(p => p.path === oldProjectPath)?.id || pickOne(data.projects, this.projectId);
+      this.scopeProjectId = data.projects.find(p => p.path === oldScopePath)?.id || "";
       if (changed) { this.clearSource(); this.lastArtifact = null; this.baseline = null; }
       const outputs = this.assemblies();
       this.assemblyId = outputs.find(a => a.assemblyPath === oldAssembly)?.id || pickOne(outputs, this.assemblyId);
       const ownApps = this.launchers().filter(a => a.projectId === this.projectId);
-      this.launchId = pickOne(this.launchers(), this.launchId) || (ownApps.length === 1 ? ownApps[0].id : "");
+      const stillSelected = this.launchers().some(a => a.id === this.launchId) ? this.launchId : "";
+      this.launchId = stillSelected || (ownApps.length === 1 ? ownApps[0].id : pickOne(this.launcherCandidates(), ""));
     }
     async refresh() {
       if (this.busy) throw new Error("処理の完了を待ってください。");
@@ -59,7 +96,7 @@
       if (epoch !== this.epoch) throw new StaleExplorerResponse();
       this.session = session;
       if (!overview.loaded) {
-        this.context = null; this.clearSource(); this.projectId = ""; this.assemblyId = ""; this.launchId = "";
+        this.context = null; this.clearSource(); this.projectId = ""; this.scopeProjectId = ""; this.assemblyId = ""; this.launchId = "";
         this.lastArtifact = null; this.baseline = null; this.stale = false; return null;
       }
       const context = await this.request("/api/explorer/context");
@@ -80,7 +117,7 @@
       if (query.length > 200) throw new Error("検索は200文字までです。");
       this.searchAbort?.abort(); const controller = new AbortController(); this.searchAbort = controller;
       const epoch = this.epoch, snapshot = this.context.snapshotId;
-      const params = new URLSearchParams({ snapshotId: snapshot, projectId: this.projectId, q: query, offset: String(offset) });
+      const params = new URLSearchParams({ snapshotId: snapshot, projectId: this.scopeProjectId, q: query, offset: String(offset) });
       const result = await this.request("/api/explorer/types?" + params, undefined, controller.signal);
       if (epoch !== this.epoch || snapshot !== result.snapshotId) throw new StaleExplorerResponse();
       if (!Array.isArray(result.items)) throw new Error("クラス一覧の応答が不正です。");
@@ -138,7 +175,7 @@
     }
     cancel() { this.active?.abort(); this.searchAbort?.abort(); this.invalidateRead(); }
   }
-  const api = { ProjectExplorerClient, StaleExplorerResponse, pickOne, executable };
+  const api = { ProjectExplorerClient, StaleExplorerResponse, pickOne, projectLabel, projectDependsOn, executable };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   global.TenkaProjectClient = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

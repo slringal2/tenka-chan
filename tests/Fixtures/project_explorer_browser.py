@@ -105,7 +105,7 @@ def mount(page, fixture):
     };""")
     page.add_script_tag(content=ROOT.joinpath('common-shell.js').read_text())
     page.evaluate("TenkaShell.install(document, {pathname: '/project.html', hash: ''})")
-    for name in ['path-picker.js','project-client.js','project.js']:
+    for name in ['path-picker.js','project-client.js','project-tabs.js','project.js']:
         page.add_script_tag(content=ROOT.joinpath(name).read_text())
     page.evaluate("document.dispatchEvent(new Event('DOMContentLoaded'))")
 
@@ -137,6 +137,7 @@ def main():
             page.wait_for_function("document.querySelector('#result-body').textContent.includes('ldarg.0') && !document.querySelector('#inspect-il').disabled")
             assert [c[2]['action'] for c in fixture.calls if c[0]=='/api/explorer/action'][-2:]==['binary-methods','il'];assertions+=1
             if width==1440:
+                page.locator('#workspace-tab-code').click()
                 page.once('dialog',lambda d:d.dismiss());before=len(fixture.calls)
                 page.locator('#capture-jit').click();page.wait_for_timeout(80)
                 assert not any(c[2] and c[2].get('action')=='jit' for c in fixture.calls[before:]);assertions+=1
@@ -145,12 +146,14 @@ def main():
                 page.locator('#decode-native').click();page.wait_for_function("document.querySelector('#result-body').textContent.includes('decoded_fixture') && !document.querySelector('#decode-native').disabled")
                 assert page.locator('#native-actions').is_visible();assertions+=1
                 page.locator('#pin-native').click();assert page.locator('#compare-native').is_enabled();assertions+=1
+                page.locator('#workspace-tab-run').click()
                 page.locator('#capture-trace').click();page.wait_for_function("!document.querySelector('#trace-actions').hidden && !document.querySelector('#runtime-costs').disabled")
                 assert page.locator('#import-thread').is_disabled();assertions+=1
                 page.locator('#trace-thread').select_option('1');page.locator('#import-thread').click()
                 page.wait_for_function("document.querySelector('#result-body').textContent.includes('反映しました') && !document.querySelector('#runtime-costs').disabled")
                 assert any(c[2] and c[2].get('action')=='import-thread' and c[2].get('profileIndex')==1 for c in fixture.calls);assertions+=1
                 page.locator('#runtime-costs').click();page.wait_for_function("document.querySelector('#result-body').textContent.includes('イベント') && !document.querySelector('#runtime-costs').disabled")
+                page.locator('#workspace-tab-run').click()
                 page.locator('#run-companion').click();page.wait_for_function("document.querySelector('#result-title').textContent.includes('テスト成功') && !document.querySelector('#refresh-project').disabled")
                 assert page.locator('#method-section').is_hidden();assertions+=1
             assert not errors,errors

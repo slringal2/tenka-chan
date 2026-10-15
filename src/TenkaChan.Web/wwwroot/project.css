@@ -37,3 +37,24 @@
 @media(max-width:1100px) { .project-explorer { grid-template-columns:minmax(205px,.7fr) minmax(0,1.3fr); } .project-toolbar { grid-template-columns:1fr 1fr; } .project-toolbar>button { justify-self:start; } }
 @media(max-width:900px) { .project-explorer { grid-template-columns:1fr; } .project-workbench .class-panel { position:static; } #class-list { max-height:260px; } }
 @media(max-width:600px) { .project-steps,.project-toolbar,.runtime-grid,.project-workbench .method-facts { grid-template-columns:1fr; } .detail-heading,.project-status { flex-direction:column; } .project-workbench .panel { padding:16px; } .project-workbench .actions .button { flex:1 1 140px; } }
+
+.workspace-context { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:8px 20px; margin:18px 0; overflow-wrap:anywhere; }
+.workspace-context span { color:var(--muted-light); font-size:12px; }
+.workspace-tabs { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; padding:5px; margin:18px 0 24px; border:1px solid var(--border); border-radius:12px; background:var(--surface); }
+.project-workbench .workspace-tabs button { margin:0; padding:10px 8px; min-height:44px; border:0; background:transparent; border-radius:8px; color:var(--muted-light); }
+.project-workbench .workspace-tabs button[aria-selected="true"] { color:var(--mint); background:#193036; font-weight:700; }
+.project-workbench .project-status { margin:14px 0; padding:10px 14px; font-size:12px; }
+.project-workbench .project-steps.single-step { display:block; }
+.project-workbench .project-steps.single-step article { background:none; padding:4px 0; }
+.project-workbench [data-workspace-panel] { min-width:0; }
+.project-workbench [data-workspace-panel] > section { margin:18px 0; }
+.phase-heading { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; }
+.phase-heading h2 { margin:0; }
+.phase-heading p { flex:1 1 320px; font-size:12px; }
+.solution-project { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; border-top:1px solid var(--border); padding:12px 0; }
+.solution-project .small { margin:4px 0; }
+.solution-project strong { overflow-wrap:anywhere; }
+.project-workbench .class-panel { position:static; }
+.project-workbench .class-panel label { margin-top:6px; }
+.project-workbench .choice-list { max-height:430px; }
+@media(max-width:600px) { .workspace-tabs { grid-template-columns:repeat(2,minmax(0,1fr)); } .project-workbench .workspace-tabs button { font-size:12px; } }

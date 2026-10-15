@@ -103,3 +103,22 @@ body[data-tenka-shell="ready"] .nav-icon { flex:0 0 22px; }
 .brand-mark span { font-size:10px; position:absolute; top:4px; right:5px; }
 .workbench code { overflow-wrap:anywhere; }
 @media (max-width:760px) { .shell-guide-link { display:none; } }
+
+/* Everyday navigation: four destinations, not a flat list of implementation tools. */
+body[data-tenka-shell="ready"] .nav-list { display:flex; flex-direction:column; overflow:visible; gap:16px; }
+.nav-primary,.nav-secondary { display:flex; flex-direction:column; gap:6px; }
+.nav-advanced { border-top:1px solid var(--border); padding-top:12px; }
+.nav-advanced-toggle { color:var(--muted-light); padding:9px 13px; cursor:pointer; font-size:12px; }
+.nav-secondary { margin-top:8px; }
+body[data-tenka-shell="ready"] .nav-help { color:var(--muted); font-size:11px; }
+body[data-tenka-shell="ready"] .nav-primary .nav-item { min-height:46px; }
+body[data-tenka-shell="ready"] .sidebar { flex-basis:228px; width:228px; }
+@media (max-width:760px) {
+  body[data-tenka-shell="ready"] .sidebar { width:auto; }
+  .nav-primary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px; }
+  .nav-primary .nav-item { width:100%; white-space:normal; }
+  .nav-secondary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .nav-secondary .nav-item { white-space:normal; }
+  body[data-tenka-shell="ready"] .nav-list { gap:6px; }
+  .nav-advanced { padding-top:4px; }
+}
