@@ -1,5 +1,6 @@
 using System.Text;
-using ReviewTarget = TenkaChan.Mcp.Tracking.ReviewTarget;
+// A same-named alias outside this namespace is hidden by Analysis.ReviewTarget.
+using TrackedReviewTarget = global::TenkaChan.Mcp.Tracking.ReviewTarget;
 using Microsoft.CodeAnalysis;
 using TenkaChan.Mcp.Security;
 using TenkaChan.Mcp.Tracking;
@@ -58,7 +59,7 @@ public sealed partial class SourceExplorerIndex
                 .OrderBy(k=>ReviewProgress.CanonicalProject(projects[k].Path),StringComparer.Ordinal)
                 .Select(k=>ReviewProgress.CanonicalProject(projects[k].Path)+"="+projectHashes.GetValueOrDefault(k))));
         }
-        var rows=new List<ReviewTarget>(); var positions=new Dictionary<string,int>(StringComparer.Ordinal); long sourceBudget=0; var limited=Limited;
+        var rows=new List<TrackedReviewTarget>(); var positions=new Dictionary<string,int>(StringComparer.Ordinal); long sourceBudget=0; var limited=Limited;
         async Task Add(string selection,string kind,string projectId,string name,ISymbol symbol,
             IEnumerable<SyntaxReference> declarations,string? fallbackIdentity=null)
         {
@@ -81,7 +82,7 @@ public sealed partial class SourceExplorerIndex
                 && sourceBudget+source.Length<=64000000;
             sourceBudget+=supported?source.Length:0;
             var key=ReviewProgress.TargetId(p.Path,kind,identity??("unsupported:"+selection));
-            var target=new ReviewTarget(key,selection,kind,projectId,p.Name,p.Path,name,
+            var target=new TrackedReviewTarget(key,selection,kind,projectId,p.Name,p.Path,name,
                 parts.Count>0?parts[0].Path:p.Path,parts.Count>0?parts[0].Line:1,
                 ReviewProgress.Hash(source),contexts[projectId],supported,
                 supported?null:"安定した識別子または完全なソースを取得できません。局所関数・匿名関数や保存上限超過は個別記録できません。",

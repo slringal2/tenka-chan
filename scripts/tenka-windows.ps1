@@ -258,7 +258,7 @@ try {
     if (Test-Path -LiteralPath $trace) { $env:TENKA_DOTNET_TRACE_PATH = $trace }
     Say '[4/5] 本体のReleaseビルド'
     Assert-BuildOutputsAvailable
-    if (-not (Invoke-Tool $dotnet @('build',$web,'-c','Release','--no-restore','--nologo','--disable-build-servers') '変更を確認してビルドしています…')) { throw '本体のビルドに失敗しました。setup.batで復元し直してください。解消しない場合はログの最初のerror行を共有してください。起動中の旧バージョンも終了してください。' }
+    if (-not (Invoke-Tool $dotnet @('build',$web,'-c','Release','--no-restore','--nologo','--disable-build-servers') '変更を確認してビルドしています…')) { throw '本体のビルドに失敗しました。CSから始まるエラーはC#のコンパイルエラーです。ソースと参照の整合性を確認してください。setup.batの再実行だけでは解決しない場合があります。NETSDK1004など依存関係の不足が原因の場合はsetup.batで復元してください。MSB3027/MSB3021の場合はDLLを使用中の甜花ちゃん・MCPアダプターを終了してください。判断できない場合はログの最初のerror行を共有してください。' }
     if ($setup -and $settings.defaultProject -eq $sample) {
         if (-not (Invoke-Tool $dotnet @('build',$sample,'-c','Release','--nologo') '比較教材GameLabをビルド中（実行はしません）…')) { $warnings.Add('付属サンプルのビルドは未完了です。ブラウザー上の「ビルドと解析の準備」からやり直せます。') }
     }
