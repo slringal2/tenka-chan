@@ -36,9 +36,10 @@ public sealed class TrustedHostExperimentExecutor(
             // CreateNew also rejects concurrent executions by a second Tenka process.
             using var lockFile = new FileStream(Path.Combine(dir, "host-execution.lock"),
                 FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose);
-            var selected = discovery.RequireBuiltProject(
+            var subjectFramework = manifest.SubjectTargetFramework ?? manifest.TargetFramework;
+            var selected = discovery.RequireBuiltExperimentReference(
                 Path.Combine(manifest.RepositoryRoot, manifest.ProjectRelativePath),
-                manifest.TargetFramework);
+                subjectFramework, manifest.TargetFramework);
             var source = guard.RequireFile(selected.AssemblyPath, ".dll");
             var cache = Environment.GetEnvironmentVariable("TENKA_NUGET_PACKAGES")
                 ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget", "packages");
@@ -151,10 +152,12 @@ public sealed class TrustedHostExperimentExecutor(
                 start, DateTimeOffset.UtcNow.ToString("O"), tests,
                 benchmarks.Take(200).ToArray(), outputFiles.Take(100).ToArray(),
                 Tail(stdout.ToString(), 12000), Tail(stderr.ToString(), 12000),
-                "UNSANDBOXED HOST EXECUTION: generated test/benchmark code ran with current OS user permissions. " +
+                "UNSANDBOXED HOST WORKFLOW: build/test code may execute with current OS user permissions. See status for completed stages. " +
                 "No Docker isolation; even cached packages, test discovery or build targets can execute code. " +
                 "Offline restore does NOT block network operations inside generated programs. " +
-                "Input was an existing allowlisted built DLL; its source was not edited. " +
+                $"Subject framework: {subjectFramework}; experiment runtime: {manifest.TargetFramework}. " +
+                "Framework selection is not proof of a production-matched environment. " +
+                "The reference was prepared from an existing allowlisted DLL; Tenka did not retarget the source project. " +
                 "Time limits and child-tree termination are best effort, not security boundaries. " +
                 string.Join("; ", errors.Take(4)))
             { TargetFramework = manifest.TargetFramework };

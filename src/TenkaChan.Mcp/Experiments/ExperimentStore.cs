@@ -10,12 +10,18 @@ public sealed record ExperimentManifest(
     string Id, string Kind, string RepositoryRoot, string ProjectRelativePath,
     string CreatedUtc, string SourceSha256, string ProjectSha256 = "",
     string TargetFramework = "net10.0", string? JitFilter = null,
-    string RunnerSha256 = "");
+    string RunnerSha256 = "")
+{
+    // Null in older manifests: subject and runtime were the same framework.
+    public string? SubjectTargetFramework { get; init; }
+    public string? RuntimeResolution { get; init; }
+}
 
 public sealed record ExperimentReceipt(string Id, string Kind, string Directory,
     string SourceDiagnostics, string Message)
 {
     public string TargetFramework { get; init; } = "net10.0";
+    public string? SubjectTargetFramework { get; init; }
 }
 
 public sealed record ExperimentListItem(string Id, string Kind, string CreatedUtc,
@@ -40,7 +46,7 @@ public sealed class ExperimentStore
 
     public ExperimentReceipt Create(string repositoryRoot, string projectRelativePath,
         string kind, string generatedCode, string? targetFramework = null,
-        string? jitDisasmFilter = null)
+        string? jitDisasmFilter = null, string? runtimeFramework = null)
     {
         if (kind is not ("test" or "benchmark" or "jit"))
             throw new ArgumentException("kind must be test, benchmark or jit.");
@@ -54,7 +60,12 @@ public sealed class ExperimentStore
         var root = _guard.RequireDirectory(repositoryRoot);
         var project = _guard.RequireProjectWithin(root, projectRelativePath);
         var relative = Path.GetRelativePath(root, project).Replace('\\', '/');
-        var selection = TargetFrameworkPolicy.Resolve(project, targetFramework);
+        var frameworks = ExperimentFrameworkPolicy.Resolve(project, targetFramework, runtimeFramework);
+        var selection = frameworks.Runtime;
+        var standardLibrary = ExperimentFrameworkPolicy.IsStandardLibrary(frameworks.SubjectTargetFramework);
+        if (standardLibrary && kind == "jit")
+            throw new ArgumentException("Generated .NET Standard experiments support host tests/benchmarks only. " +
+                "For JIT, select a compatible executable that calls the library.");
 
         var syntax = CSharpSyntaxTree.ParseText(generatedCode);
         var syntaxErrors = syntax.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error)
@@ -108,13 +119,15 @@ public sealed class ExperimentStore
             ? Sha256File(Path.Combine(directory, "Program.cs")) : "";
         var manifest = new ExperimentManifest(id, kind, root, relative,
             DateTimeOffset.UtcNow.ToString("O"), digest, projectSha,
-            selection.TargetFramework, jitDisasmFilter, runnerHash);
+            selection.TargetFramework, jitDisasmFilter, runnerHash)
+        { SubjectTargetFramework = frameworks.SubjectTargetFramework, RuntimeResolution = frameworks.Resolution };
         File.WriteAllText(Path.Combine(directory, "manifest.json"), JsonSerializer.Serialize(manifest, _json));
         return new ExperimentReceipt(id, kind, directory, "syntax_valid",
-            $"Prepared {selection.TargetFramework} ({selection.Resolution}); not executed. " +
-            "Run with Docker, or explicitly approve UNSANDBOXED host execution with an offline package cache.")
+            $"Prepared subject={frameworks.SubjectTargetFramework}, runtime={selection.TargetFramework} ({frameworks.Resolution}); not executed. " +
+            (standardLibrary ? "Host tests/benchmarks only. Build the library first; its framework is not an executable runtime. " : "") +
+            "Explicitly approve UNSANDBOXED host execution with an offline package cache. The installed target runtime and dependency closure still need validation.")
         {
-            TargetFramework = selection.TargetFramework
+            TargetFramework = selection.TargetFramework, SubjectTargetFramework = frameworks.SubjectTargetFramework
         };
     }
 
@@ -132,7 +145,7 @@ public sealed class ExperimentStore
             throw new InvalidDataException("Manifest ID mismatch.");
         _guard.RequireProjectWithin(manifest.RepositoryRoot, manifest.ProjectRelativePath);
         var source = Path.Combine(directory, "Generated.cs");
-        _ = TargetFrameworkSelection.FromValidated(manifest.TargetFramework, "stored");
+        ExperimentFrameworkPolicy.ValidatePair(manifest.SubjectTargetFramework ?? manifest.TargetFramework, manifest.TargetFramework);
         if (manifest.Kind == "jit")
             _ = TargetFrameworkPolicy.ValidateJitFilter(manifest.JitFilter ?? "");
         var projectName = manifest.Kind switch
@@ -157,7 +170,10 @@ public sealed class ExperimentStore
 
     internal string CreateArtifactsDirectory(string experimentId)
     {
-        var (_, directory) = Read(experimentId);
+        var (manifest, directory) = Read(experimentId);
+        if (ExperimentFrameworkPolicy.IsStandardLibrary(manifest.SubjectTargetFramework))
+            throw new InvalidOperationException("This library experiment requires the host runner. " +
+                "The legacy container project-reference route does not guarantee the selected library TFM.");
         var artifacts = Path.Combine(directory, "artifacts");
         Directory.CreateDirectory(artifacts);
         // The sandbox runs as UID 65532. This grants write access only inside a

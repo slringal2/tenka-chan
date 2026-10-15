@@ -82,7 +82,7 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
     private static readonly HashSet<string> Fields = new(["snapshotId", "projectId", "typeId", "methodId", "assemblyId", "companionId", "artifactId",
         "baselineId", "nativeIndex", "baselineIndex", "profileIndex", "metadataToken", "assemblySha256", "approved", "allowRestore", "arguments",
         "sample", "path", "expectedSnapshotId", "query", "offset", "limit", "callId", "pointer", "kind", "message", "evidenceCallIds",
-        "generatedCode", "targetFramework", "experimentId", "baselineExperimentId", "candidateExperimentId",
+        "generatedCode", "targetFramework", "runtimeFramework", "experimentId", "baselineExperimentId", "candidateExperimentId",
         "cursor", "trackableOnly", "state", "targetId", "sourceHash", "contextHash", "expectedRevision", "status", "summary", "fromRevision", "toRevision"], StringComparer.Ordinal);
 
     public async Task<object> CallAsync(AgentCallRequest request, CancellationToken ct)
@@ -184,7 +184,7 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
                     var kind = Str(a, "kind"); if (kind is not ("test" or "benchmark")) throw new ArgumentException("Generated experiment kind must be test or benchmark.");
                     var code = Str(a, "generatedCode"); if (code.Length > 40000) throw new ArgumentException("Generated code exceeds 40,000 characters.");
                     var project = index.Project(Str(a, "projectId"));
-                    var result = Get<ExperimentStore>().Create(Path.GetDirectoryName(project.Path)!, Path.GetFileName(project.Path), kind, code, Optional(a, "targetFramework"), null);
+                    var result = Get<ExperimentStore>().Create(Path.GetDirectoryName(project.Path)!, Path.GetFileName(project.Path), kind, code, Optional(a, "targetFramework"), null, Optional(a, "runtimeFramework"));
                     var id = JsonSerializer.SerializeToElement(result, Json).GetProperty("id").GetString()!;
                     lock (_experiments)
                     {

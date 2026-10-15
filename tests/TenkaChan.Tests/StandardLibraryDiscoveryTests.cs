@@ -71,5 +71,18 @@ public sealed class StandardLibraryDiscoveryTests : IDisposable
         File.WriteAllText(Path.ChangeExtension(f.Dll, ".runtimeconfig.json"), "{\"runtimeOptions\":{\"tfm\":\"net8.0\"}}");
         Assert.True(Assert.Single(f.Discovery.Discover([f.Project])).Runnable);
     }
+    [Fact] public void StandardCanBeAnExperimentReferenceWithoutBeingAnExecutable()
+    {
+        var f = Fixture("netstandard2.0", ".NETStandard,Version=v2.0");
+        var choice = f.Discovery.RequireBuiltExperimentReference(f.Project.Path!, "netstandard2.0", "net10.0");
+        Assert.Equal(f.Dll, choice.AssemblyPath); Assert.False(choice.Runnable);
+        Assert.Throws<ArgumentException>(() => f.Discovery.RequireBuiltProject(f.Project.Path!, "netstandard2.0"));
+    }
+    [Fact] public void MissingLibraryBuildCannotFallBackToADifferentTarget()
+    {
+        var f = Fixture("netstandard2.0", ".NETStandard,Version=v2.0");
+        Assert.Throws<FileNotFoundException>(() => f.Discovery.RequireBuiltExperimentReference(f.Project.Path!, "netstandard2.1", "net8.0"));
+        Assert.Throws<ArgumentException>(() => f.Discovery.RequireBuiltExperimentReference(f.Project.Path!, "net8.0", "net10.0"));
+    }
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
 }

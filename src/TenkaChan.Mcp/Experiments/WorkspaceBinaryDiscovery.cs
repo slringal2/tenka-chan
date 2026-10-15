@@ -163,6 +163,24 @@ public sealed class WorkspaceBinaryDiscovery(WorkspaceGuard guard)
         return best;
     }
 
+    /// <summary>Resolve an existing reference DLL, NOT an executable. Runtime selection stays separate.</summary>
+    public WorkspaceAssemblyChoice RequireBuiltExperimentReference(string projectFile, string subjectFramework, string runtimeFramework)
+    {
+        ExperimentFrameworkPolicy.ValidatePair(subjectFramework, runtimeFramework);
+        if (!ExperimentFrameworkPolicy.IsStandardLibrary(subjectFramework))
+            return RequireBuiltProject(projectFile, subjectFramework);
+        var safe = guard.RequireFile(projectFile, ".csproj");
+        var choices = Discover([new ProjectSummary(Path.GetFileNameWithoutExtension(safe), safe, subjectFramework, 0)])
+            .Where(x => x.TargetFramework == subjectFramework && x.RuntimeIdentifier is null && !x.Runnable)
+            .OrderBy(x => ConfigurationRank(x.Configuration)).ToArray();
+        if (choices.Length == 0)
+            throw new FileNotFoundException("Build the selected " + subjectFramework + " library first. " +
+                "Do not change its TargetFramework to the experiment runtime just to find a DLL.");
+        if (choices.Skip(1).Any(x => ConfigurationRank(x.Configuration) == ConfigurationRank(choices[0].Configuration)))
+            throw new InvalidOperationException("Multiple equally preferred library outputs were found; no arbitrary reference was selected.");
+        return choices[0];
+    }
+
     private void AddOutput(List<Folder> folders, string path, string? tfm, string config, string origin)
     {
         if (folders.Count >= 512) return;
