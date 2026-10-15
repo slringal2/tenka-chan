@@ -141,6 +141,24 @@ public sealed class AgentJournal
             return new { callId, pointer, data = value };
         }
     }
+    public (string Agent, IReadOnlyList<TenkaChan.Mcp.Tracking.ReviewEvidenceLink> Evidence) ReviewAttribution(string sessionId, string[]? callIds)
+    {
+        lock (_sync)
+        {
+            var session = RequireSession(sessionId);
+            var ids = callIds ?? [];
+            if (ids.Length > 10) throw new ArgumentException("At most 10 evidence call IDs are supported.");
+            var evidence = new List<TenkaChan.Mcp.Tracking.ReviewEvidenceLink>();
+            foreach (var id in ids.Distinct(StringComparer.Ordinal))
+            {
+                if (!_calls.TryGetValue(id, out var call) || call.SessionId != sessionId || call.Reply is null)
+                    throw new ArgumentException("Evidence must be completed tool calls from this session.");
+                evidence.Add(new(InstanceId, call.Id, call.Tool, call.Reply.Outcome,
+                    call.Reply.ObservedStatus, call.Started.ToString("O")));
+            }
+            return (session.Client, evidence);
+        }
+    }
     public void Report(string sessionId, AgentNote note)
     {
         if (note.Kind is not ("plan" or "hypothesis" or "conclusion" or "progress")) throw new ArgumentException("Unknown note kind.");

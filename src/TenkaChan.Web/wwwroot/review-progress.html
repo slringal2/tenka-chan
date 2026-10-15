@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>甜花ちゃん | 確認状況・差分</title>
+<link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/common-shell.css"><link rel="stylesheet" href="/review-progress.css">
+<script defer src="/common-shell.js"></script><script defer src="/review-progress.js"></script></head>
+<body><main class="review-progress">
+<header><p class="eyebrow">REVIEW CHECKPOINTS / CHANGES</p><h1>どこまで確認したか、何が変わったか。</h1><p>外部エージェントが記録したチェック済み・最適化済みの範囲と、確認時点からの差分を表示します。</p></header>
+<section><div class="review-toolbar"><div><h2>確認状況</h2><p id="review-status" role="status" aria-live="polite">記録を取得しています…</p></div><button type="button" id="review-refresh">表示を更新</button></div>
+<div id="review-counts" class="review-counts"></div>
+<div class="review-filters"><label>対象<select id="review-kind"><option value="method">メソッド</option><option value="type">クラス・型</option><option value="all">すべて</option></select></label><label>状態<select id="review-filter"><option value="pending">未確認・要再確認</option><option value="all">すべて</option><option value="unreviewed">未確認</option><option value="needs_review">要再確認</option><option value="checked">チェック済み</option><option value="optimized">最適化済み</option></select></label><label>名前で絞り込み<input id="review-query" type="search" maxlength="200" placeholder="クラス名・メソッド名"></label></div>
+<p id="review-reload" class="review-warning" hidden>読み込み後にソースが変わっています。プロジェクトを再読み込みしてから確認してください。「表示を更新」ではMSBuildを実行しません。</p>
+<p class="review-muted">状態の変更は外部エージェントのMCPから行います。この画面は表示のみです。最適化済みのマークだけでは、速度改善が測定・証明されたことにはなりません。</p>
+</section>
+<div class="review-layout"><section class="panel"><h2>確認対象</h2><p id="review-list-count" class="review-muted"></p><div id="review-list"></div><button type="button" id="review-more" hidden>さらに表示</button></section>
+<section id="review-detail" class="panel" hidden><p id="review-target-kind" class="eyebrow"></p><h2 id="review-target-name"></h2><p id="review-target-status"></p><p id="review-reason" class="review-warning"></p>
+<p id="review-attribution" class="review-muted"></p><p id="review-summary"></p><div id="review-evidence"></div>
+<h3>確認時点のコードと比較</h3><div class="review-comparison"><label>比較元の記録<select id="review-before"></select></label><label>比較先<select id="review-after"><option value="">読み込み済みのソース</option></select></label><button type="button" id="review-compare">差分を見る</button></div>
+<p id="review-diff-status" role="status"></p><div class="review-diff-wrap"><table class="review-diff"><thead><tr><th>前</th><th>後</th><th>差分</th><th>コード</th></tr></thead><tbody id="review-diff-body"></tbody></table></div><button type="button" id="review-diff-more" hidden>差分の続きを表示</button>
+<details><summary>確認記録・ハッシュの詳細</summary><pre id="review-history"></pre></details>
+<p class="review-muted">履歴の「チェック済み」の版と「最適化済み」の版を選ぶと、最適化前後を比較できます。保存済みソース同士の比較であり、Gitのコミット差分ではありません。</p></section></div>
+<section><h2>マークの意味</h2><p><strong>チェック済み</strong>：エージェントがその版を確認した記録。<strong>最適化済み</strong>：最適化作業を終えたとの記録。<strong>要再確認</strong>：確認後に対象、または同じプロジェクト・参照先のソースが変わった状態です。</p><p>クラスの確認と各メソッドの確認は独立しています。閲覧しただけでチェックは付きません。サーバーを再起動しても記録は残ります。改名・署名変更は別の対象として扱い、以前のチェックを勝手に引き継ぎません。</p><p id="review-scope" class="review-muted"></p><a href="/agent.html">エージェントの活動を見る</a> · <a href="/project.html">プロジェクト調査へ</a></section>
+</main></body></html>

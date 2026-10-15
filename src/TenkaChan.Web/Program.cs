@@ -20,6 +20,8 @@ builder.WebHost.ConfigureKestrel(server => server.ListenLocalhost(port));
 builder.Services.AddSingleton<WorkspaceGuard>();
 builder.Services.AddSingleton<RoslynReviewService>();
 builder.Services.AddSingleton<DashboardState>();
+builder.Services.AddSingleton<TenkaChan.Mcp.Tracking.ReviewProgressStore>();
+builder.Services.AddSingleton<ReviewTrackingService>();
 builder.Services.AddSingleton<ExperimentStore>();
 builder.Services.AddSingleton<DockerExecutor>();
 builder.Services.AddSingleton<TrustedLocalJitRunner>();
@@ -316,6 +318,7 @@ app.MapTrustedTraceEndpoints();
 app.MapReviewPriorityEndpoints();
 app.MapAssemblyEndpoints();
 app.MapAgentGatewayEndpoints();
+app.MapReviewTrackingEndpoints();
 app.Logger.LogInformation("Tenka-chan dashboard: http://127.0.0.1:{Port}", port);
 await app.RunAsync();
 

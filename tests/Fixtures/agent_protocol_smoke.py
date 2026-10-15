@@ -79,7 +79,7 @@ def main():
         assert init.get('protocolVersion')
         send('notifications/initialized',notification=True)
         listed=send('tools/list');names={t['name'] for t in listed['tools']}
-        assert len(names)==31 and {'tenka_context','tenka_prepare_experiment','tenka_read_result'}<=names
+        assert len(names)==36 and {'tenka_context','tenka_prepare_experiment','tenka_read_result'}<=names
         session=tool('tenka_connect',{'goal':'Integration probe only; no target execution.'})['sessionId']
         context=tool('tenka_context');assert context['outcome']=='returned'
         request={'sessionId':session,'requestId':uuid.uuid4().hex,'tool':'context','arguments':{}}

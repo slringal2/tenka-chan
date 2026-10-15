@@ -19,10 +19,10 @@ test('unknown hashes cannot become an external route', () => {
   assert.equal(route('/assembly', ''), 'assembly');
 });
 test('route keys are unique and old screen names remain available', () => {
-  assert.equal(new Set(pages.map(p => p[0])).size, 14);
+  assert.equal(new Set(pages.map(p => p[0])).size, 15);
   for (const name of ['project', 'build', 'assembly', 'trace', 'priorities']) assert.ok(pages.find(p => p[0] === name));
 });
-for (const page of ['index', 'workspace-build', 'assembly', 'trace', 'priorities', 'guide', 'project']) {
+for (const page of ['index', 'workspace-build', 'assembly', 'trace', 'priorities', 'guide', 'project', 'review-progress']) {
   test(`${page} loads the same theme and initializes the shell first`, () => {
     const html = fs.readFileSync(path.join(root, page + '.html'), 'utf8');
     assert.match(html, /href="\/styles.css"/);

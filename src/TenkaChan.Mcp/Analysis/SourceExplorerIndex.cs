@@ -31,7 +31,7 @@ public sealed record ExplorerMethodSeed(MethodSummary Summary, Document Document
 /// execute the target, follow PDB source paths, or parse class names from display strings.
 /// Caller serializes workspace actions and validates SnapshotId before using this index.
 /// </summary>
-public sealed class SourceExplorerIndex
+public sealed partial class SourceExplorerIndex
 {
     public const int MaximumTypes = 20000;
     private readonly Solution _solution;

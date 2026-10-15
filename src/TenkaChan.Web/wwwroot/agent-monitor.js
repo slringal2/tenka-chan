@@ -3,7 +3,7 @@
   const labels = { tool_started:"ツールを実行中", tool_result:"ツールの結果", failed:"ツールの失敗", cancelled:"処理中止",
     agent_plan:"LLMの計画（自己申告）", agent_progress:"LLMの進捗報告（自己申告）", agent_hypothesis:"LLMの仮説（未検証）",
     agent_conclusion:"LLMのまとめ（未検証）",session_started:"セッション開始",session_finished:"終了通知" };
-  const toolNames = {context:"プロジェクト状態を確認",sample:"付属サンプルを探す",open_project:"プロジェクトを読み込む",list_types:"クラスを探す",
+  const toolNames = {review_queue:"未確認・変更箇所を探す",review_target:"確認状況を読む",review_history:"確認履歴を読む",review_diff:"確認時点のコードと比較",review_mark:"確認・最適化のマークを記録",context:"プロジェクト状態を確認",sample:"付属サンプルを探す",open_project:"プロジェクトを読み込む",list_types:"クラスを探す",
     inspect_type:"クラスの構成を調査",inspect_method:"メソッドを調査",type_references:"クラスの参照を調査",method_references:"メソッドの参照を調査",
     scan:"静的解析",rules:"検知ルールを確認",priorities:"調査順序を確認",binary_methods:"DLLのメソッドを探す",il:"IL・PDBを調査",jit:"JIT機械語を取得",trace:"実行を計測",
     build:"ビルドと解析",test_inputs:"テスト入力を検討",native:"命令を解析",compare_native:"機械語を比較",artifact:"取得結果を確認",runtime_costs:"GC・割り当て・ロックを調査",

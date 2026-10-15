@@ -11,6 +11,7 @@
     ["evidence", "仮説・証拠", "◎", "/#evidence", "推測と検証結果を分けて保存"],
     ["autoreview", "エージェントの活動", "✧", "/agent.html", "外部LLMの調査経過と結果を見る"],
     ["experiments", "テストと性能", "◈", "/#experiments", "正しさと性能の比較を行う"],
+    ["review-progress", "確認状況・差分", "✓", "/review-progress.html", "チェック済み・最適化済みと変更箇所を確認"],
     ["project", "プロジェクト調査", "⌕", "/project.html", "クラスを選び、追加パスなしで調べる"],
     ["build", "ビルドと解析の準備", "▧", "/workspace-build.html", "対象を選んでビルド・解析"],
     ["assembly", "アセンブリ解析", "⌘", "/assembly.html", "DLLのIL・JIT命令を確認"],

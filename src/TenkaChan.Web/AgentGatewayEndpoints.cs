@@ -77,11 +77,13 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
         ["run_companion"] = "run-companion"
     };
     private static readonly HashSet<string> OtherTools = new(["context", "sample", "open_project", "list_types", "rules", "note", "read_result",
-        "prepare_experiment", "run_experiment", "experiment_result", "compare_benchmarks"], StringComparer.Ordinal);
+        "prepare_experiment", "run_experiment", "experiment_result", "compare_benchmarks",
+        "review_queue", "review_target", "review_history", "review_diff", "review_mark"], StringComparer.Ordinal);
     private static readonly HashSet<string> Fields = new(["snapshotId", "projectId", "typeId", "methodId", "assemblyId", "companionId", "artifactId",
         "baselineId", "nativeIndex", "baselineIndex", "profileIndex", "metadataToken", "assemblySha256", "approved", "allowRestore", "arguments",
         "path", "expectedSnapshotId", "query", "offset", "limit", "callId", "pointer", "kind", "message", "evidenceCallIds",
-        "generatedCode", "targetFramework", "experimentId", "baselineExperimentId", "candidateExperimentId"], StringComparer.Ordinal);
+        "generatedCode", "targetFramework", "experimentId", "baselineExperimentId", "candidateExperimentId",
+        "state", "targetId", "sourceHash", "contextHash", "expectedRevision", "status", "summary", "fromRevision", "toRevision"], StringComparer.Ordinal);
 
     public async Task<object> CallAsync(AgentCallRequest request, CancellationToken ct)
     {
@@ -134,6 +136,19 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
         }
         switch (tool)
         {
+            case "review_queue": return await Get<ReviewTrackingService>().Queue(Str(a,"snapshotId"), Optional(a,"projectId"),
+                Optional(a,"kind")??"method", Optional(a,"state")??"pending", Optional(a,"query"),Number(a,"offset"),Number(a,"limit",50),ct);
+            case "review_target": return await Get<ReviewTrackingService>().Target(Str(a,"snapshotId"),Str(a,"targetId"),ct);
+            case "review_history": return await Get<ReviewTrackingService>().History(Str(a,"snapshotId"),Str(a,"targetId"),Number(a,"offset"),Number(a,"limit",50),ct);
+            case "review_diff": return await Get<ReviewTrackingService>().Diff(Str(a,"snapshotId"),Str(a,"targetId"),Long(a,"fromRevision"),Long(a,"toRevision"),Number(a,"offset"),Number(a,"limit",150),ct);
+            case "review_mark":
+            {
+                var attribution=journal.ReviewAttribution(session,Strings(a,"evidenceCallIds"));
+                var request=new TenkaChan.Mcp.Tracking.ReviewMarkRequest(Str(a,"snapshotId"),Str(a,"targetId"),
+                    Str(a,"sourceHash"),Str(a,"contextHash"),Long(a,"expectedRevision")??throw new ArgumentException("expectedRevision is required"),
+                    Str(a,"status"),Str(a,"summary"));
+                return await Get<ReviewTrackingService>().Mark(request,attribution.Agent,session,attribution.Evidence,ct);
+            }
             case "context":
             {
                 // An unloaded server is a usable context, not an instruction to send arbitrary paths repeatedly.
@@ -142,7 +157,7 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
                     ? await dashboard.ExplorerContextAsync(guard, discovery, ct) : null;
                 return new { instanceId = journal.InstanceId, workspace, overview,
                     permissions = new { build = policy.AllowBuild, execution = policy.AllowExecution },
-                    workflow = "Inspect context -> enumerate types -> inspect method/references -> inspect IL -> request authorized execution -> read actual results -> report a qualified conclusion. Always refresh context after a build. No model endpoint is configured in Tenka." };
+                    workflow = "Inspect context -> tenka_review_queue for pending/changed work -> enumerate types -> inspect method/references -> inspect IL -> request authorized execution -> read actual results -> report a qualified conclusion. Always refresh context after a build. Record checked/optimized checkpoints only after completing the work; these are agent reports, not verified speedups. No model endpoint is configured in Tenka." };
             }
             case "sample": return new BundledSampleCatalog(guard).FindGameLab(Get<IWebHostEnvironment>().ContentRootPath);
             case "open_project":
@@ -193,6 +208,7 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
     }
     private static string Str(JsonElement a, string key) => Optional(a, key) ?? throw new ArgumentException("Missing field: " + key);
     private static string? Optional(JsonElement a, string key) => a.TryGetProperty(key, out var p) && p.ValueKind != JsonValueKind.Null ? p.GetString() : null;
+    private static long? Long(JsonElement a, string key) => a.TryGetProperty(key,out var p) && p.ValueKind!=JsonValueKind.Null ? p.GetInt64() : null;
     private static int Number(JsonElement a, string key, int fallback = 0) => NullableNumber(a, key) ?? fallback;
     private static int? NullableNumber(JsonElement a, string key) => a.TryGetProperty(key, out var p) && p.ValueKind != JsonValueKind.Null ? p.GetInt32() : null;
     private static bool Bool(JsonElement a, string key) => a.TryGetProperty(key, out var p) && p.ValueKind != JsonValueKind.Null && p.GetBoolean();
