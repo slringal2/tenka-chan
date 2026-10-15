@@ -9,7 +9,7 @@
     ["hotspots", "性能ホットスポット", "◉", "/#hotspots", "重い処理の候補を絞る"],
     ["methods", "メソッド解析", "⌘", "/#methods", "ソースと呼び出しを調べる"],
     ["evidence", "仮説・証拠", "◎", "/#evidence", "推測と検証結果を分けて保存"],
-    ["autoreview", "AI自律レビュー", "✧", "/#autoreview", "ローカルLLMに調査させる"],
+    ["autoreview", "エージェントの活動", "✧", "/agent.html", "外部LLMの調査経過と結果を見る"],
     ["experiments", "テストと性能", "◈", "/#experiments", "正しさと性能の比較を行う"],
     ["project", "プロジェクト調査", "⌕", "/project.html", "クラスを選び、追加パスなしで調べる"],
     ["build", "ビルドと解析の準備", "▧", "/workspace-build.html", "対象を選んでビルド・解析"],
@@ -18,7 +18,7 @@
     ["priorities", "調査優先度", "◇", "/priorities.html", "次に調べる箇所を整理"],
     ["guide", "使い方・サンプル", "?", "/guide.html", "比較教材で使い方を覚える"]
   ];
-  const aliases = { "/project": "project", "/workspace-build": "build", "/assembly": "assembly" };
+  const aliases = { "/project": "project", "/workspace-build": "build", "/assembly": "assembly", "/agent": "autoreview" };
   function route(path, hash) {
     if (path === "/" || path === "/index.html")
       return pages.slice(0, 8).some(p => p[0] === hash.slice(1)) ? hash.slice(1) : "overview";
@@ -27,6 +27,9 @@
   function install(doc, location) {
     if (doc.body.dataset.tenkaShell === "ready") return;
     const dashboard = location.pathname === "/" || location.pathname === "/index.html";
+    if (dashboard && location.hash === "#autoreview" && typeof location.replace === "function") {
+      location.replace("/agent.html"); return;
+    }
     const active = route(location.pathname, location.hash);
     if (!active) return;
     const el = (tag, cls, text) => {
@@ -71,7 +74,7 @@
     nav.replaceChildren();
     pages.forEach((p, i) => {
       // Preserve existing dashboard event bindings: its first eight entries remain buttons.
-      const n = el(dashboard && i < 8 ? "button" : "a", "nav-item");
+      const n = el(dashboard && i < 8 && p[0] !== "autoreview" ? "button" : "a", "nav-item");
       if (n.tagName === "BUTTON") { n.type = "button"; n.dataset.view = p[0]; }
       else n.href = p[3];
       n.dataset.page = p[0]; n.title = p[4];
@@ -84,6 +87,19 @@
     const guide = el("a", "shell-guide-link", "プロジェクト調査"); guide.href = "/project.html";
     shell.querySelector(".topbar-right")?.prepend(guide);
     if (dashboard) {
+      const legacy = doc.getElementById("view-autoreview");
+      if (legacy && !doc.getElementById("retired-review-controls")) {
+        // Preserve IDs for the older dashboard bindings, but remove all old model
+        // settings/start controls from the accessible UI. The endpoint also returns 410.
+        const controls = el("div"); controls.id = "retired-review-controls";
+        controls.hidden = true; controls.inert = true; controls.setAttribute("aria-hidden", "true");
+        while (legacy.firstChild) controls.append(legacy.firstChild);
+        const heading = el("div", "page-heading");
+        const link = el("a", "button button-primary", "活動と結果を見る"); link.href = "/agent.html";
+        heading.append(el("h1", "", "エージェントの活動"),
+          el("p", "", "外部LLMからMCPで接続します。ブラウザーからモデルに接続・開始する必要はありません。"), link);
+        legacy.append(heading, controls);
+      }
       const overview = doc.getElementById("view-overview");
       if (overview && !doc.getElementById("project-explorer-entry")) {
         const entry = el("article", "panel guide-banner"); entry.id = "project-explorer-entry";

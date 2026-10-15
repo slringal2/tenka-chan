@@ -196,6 +196,16 @@ try {
     }
     # Migrate only the old built-in sample selection, not an operator's own project.
     if ($setup -and $settings.defaultProject -eq $legacySample) { $settings.defaultProject = $sample }
+    foreach ($option in @('agentBuild', 'agentExecution')) {
+        if (-not $settings.PSObject.Properties[$option]) { $settings | Add-Member -NotePropertyName $option -NotePropertyValue $false }
+    }
+    if ($setup) {
+        Say '外部LLMとの連携（ブラウザーからモデルに接続しません）'
+        Write-Host 'クラス・ソース・ILの調査は外部エージェントから利用できます。以下は追加で許可する操作です。'
+        Write-Host '許可範囲のコードはユーザー権限で動きます。実行の承認は外部エージェント側でも必要です。'
+        $settings.agentBuild = Ask '外部エージェントによるプロジェクト読み込み・ビルドを許可しますか？' ([bool]$settings.agentBuild)
+        $settings.agentExecution = Ask '外部エージェントによるJIT・計測・テスト等のローカル実行を許可しますか？' ([bool]$settings.agentExecution)
+    }
     $workspace = Require-Root ([string]$settings.workspaceRoot)
     Say '[2/5] .NETの確認'
     $dotnet = Find-Dotnet
@@ -224,8 +234,10 @@ try {
     $env:TENKA_ENABLE_LOCAL_EXEC = '1'
     $env:TENKA_ENABLE_NATIVE_DIALOGS = '1'
     $env:TENKA_ENABLE_UNSANDBOXED_EXPERIMENTS = if ($settings.generatedExperiments -eq $true) { '1' } else { '0' }
-    if (-not $env:TENKA_LLM_ENDPOINT) { $env:TENKA_LLM_ENDPOINT = 'http://127.0.0.1:8080/v1/chat/completions' }
-    if (-not $env:TENKA_LLM_MODEL) { $env:TENKA_LLM_MODEL = 'local' }
+    $env:TENKA_ENABLE_AGENT_GATEWAY = '1'
+    $env:TENKA_AGENT_CONNECTION_FILE = Join-Path $launcherHome 'agent-connection.json'
+    $env:TENKA_AGENT_ALLOW_BUILD = if ($settings.agentBuild -eq $true) { '1' } else { '0' }
+    $env:TENKA_AGENT_ALLOW_EXECUTION = if ($settings.agentExecution -eq $true) { '1' } else { '0' }
     $toolDir = Join-Path $env:LOCALAPPDATA 'TenkaChan\tools'
     $trace = Join-Path $toolDir 'dotnet-trace.exe'
     $warnings = New-Object 'Collections.Generic.List[string]'
@@ -264,6 +276,13 @@ try {
         $port = Find-Port ([int]$settings.port)
         if ($port -ne [int]$settings.port) { Write-Warning "ポート$($settings.port)は使用中のため、今回は$portを使用します。既存プロセスは終了しません。" }
         $env:TENKA_WEB_PORT = [string]$port
+        $mcpConfig = Join-Path $launcherHome 'mcp-config.json'
+        $adapter = Join-Path $repo 'src\TenkaChan.Mcp\bin\Release\net10.0\TenkaChan.Mcp.dll'
+        @{ mcpServers = @{ tenka = @{ command = $dotnet; args = @($adapter, '--connection-file', $env:TENKA_AGENT_CONNECTION_FILE) } } } |
+            ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $mcpConfig -Encoding UTF8
+        Write-Host "外部エージェント側に登録するMCP設定例: $mcpConfig"
+        Write-Host 'モデルURLやAPIキーを甜花ちゃんに登録する必要はありません。'
+
         $stdout = Join-Path $logs ('server-' + $PID + '.out.log')
         $stderr = Join-Path $logs ('server-' + $PID + '.err.log')
         $arguments = @('run','--project',$web,'-c','Release','--no-build','--no-restore','--no-launch-profile')
@@ -281,11 +300,10 @@ try {
             $server.Refresh()
         }
         if (-not $ready) { throw "サーバーの起動を確認できませんでした。詳細ログ: $stdout / $stderr" }
-        $url = if ($settings.defaultProject -eq $sample -or $settings.defaultProject -eq $legacySample) { $base + '/guide.html' } else { $base + '/workspace-build.html' }
-        if ($settings.defaultProject -and $url.EndsWith('/workspace-build.html')) { $url += '?project=' + [Uri]::EscapeDataString([string]$settings.defaultProject) }
+        $url = $base + '/agent.html'
         Start-Process $url
         Say "起動しました: $url"
-        Write-Host 'ブラウザーで「参照…」からプロジェクトを選び、「読み込む」を押してください。'
+        Write-Host '外部エージェント側で調査を依頼してください。ブラウザーは活動と結果を表示します。手動の調査画面もサイドバーに残しています。'
         Write-Host 'ブラウザーを閉じてもサーバーは動作します。終了するときはこの画面でEnterを押してください。'
         Write-Host "サーバーログ: $stdout"
         while (-not $server.HasExited) {

@@ -7,6 +7,7 @@ using TenkaChan.Mcp.Experiments;
 using TenkaChan.Mcp.Review;
 using TenkaChan.Mcp.Security;
 using TenkaChan.Web;
+using TenkaChan.Mcp.Agent;
 
 var builder = WebApplication.CreateBuilder(args);
 var port = int.TryParse(Environment.GetEnvironmentVariable("TENKA_WEB_PORT"), out var configuredPort)
@@ -33,7 +34,7 @@ builder.Services.AddSingleton<ReviewLedger>();
 builder.Services.AddSingleton<ReviewRunStore>();
 builder.Services.AddSingleton<IReviewContextSource>(
     services => services.GetRequiredService<DashboardState>());
-builder.Services.AddSingleton<IReviewReasoner, LocalLlmReviewReasoner>();
+builder.Services.AddSingleton<IReviewReasoner, ExternalAgentOnlyReasoner>();
 builder.Services.AddSingleton<AutonomousReviewRunner>();
 
 // MSBuild project evaluation can execute custom build targets: opt-in only.
@@ -102,8 +103,10 @@ app.MapGet("/api/session", (WorkspaceGuard guard) => Results.Ok(new
     trustedLocalExecutionEnabled = Environment.GetEnvironmentVariable("TENKA_ENABLE_LOCAL_EXEC") == "1",
     hostExperimentsEnabled = Environment.GetEnvironmentVariable("TENKA_ENABLE_LOCAL_EXEC") == "1"
         && Environment.GetEnvironmentVariable("TENKA_ENABLE_UNSANDBOXED_EXPERIMENTS") == "1",
-    model = Environment.GetEnvironmentVariable("TENKA_LLM_MODEL") ?? "local",
-    llmEndpoint = LocalLlmSettings.FromEnvironment().Endpoint.ToString(),
+    // Compatibility fields for older UI scripts; no outbound model configuration.
+    model = "external-agent",
+    llmEndpoint = (string?)null,
+    agentMode = "external-incoming",
     port
 }));
 
@@ -299,10 +302,12 @@ app.MapGet("/api/reviews", (AutonomousReviewRunner runner, int? limit) =>
 app.MapGet("/api/reviews/{id}", (AutonomousReviewRunner runner, string id) =>
     Safe(() => Task.FromResult((object)runner.Get(id))));
 
-app.MapPost("/api/reviews/start", (StartAutonomousReviewRequest request,
-    AutonomousReviewRunner runner, CancellationToken ct) =>
-    Safe(async () => (object)await runner.StartAsync(
-        new AutonomousReviewOptions(request.MaxMethods, request.MaxMinutes), ct)));
+// Deliberately retired: Tenka no longer calls a model or starts an internal reasoning loop.
+app.MapPost("/api/reviews/start", () => Results.Json(new
+{
+    error = "外部LLMエージェントからMCPで接続してください。この画面からLLMには接続しません。",
+    mode = "external-incoming"
+}, statusCode: 410));
 
 app.MapPost("/api/reviews/{id}/stop", (AutonomousReviewRunner runner, string id) =>
     Safe(() => Task.FromResult((object)runner.Stop(id))));
@@ -310,6 +315,7 @@ app.MapPost("/api/reviews/{id}/stop", (AutonomousReviewRunner runner, string id)
 app.MapTrustedTraceEndpoints();
 app.MapReviewPriorityEndpoints();
 app.MapAssemblyEndpoints();
+app.MapAgentGatewayEndpoints();
 app.Logger.LogInformation("Tenka-chan dashboard: http://127.0.0.1:{Port}", port);
 await app.RunAsync();
 

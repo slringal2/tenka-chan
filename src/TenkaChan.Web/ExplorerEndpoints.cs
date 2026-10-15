@@ -26,8 +26,14 @@ public static class ExplorerEndpoints
                     index.Types(projectId, q, offset ?? 0)), ct)));
         app.MapPost("/api/explorer/action", (ExplorerRequest request, DashboardState dashboard,
             WorkspaceGuard guard, WorkspaceBinaryDiscovery discovery, TrustedLocalJitRunner jit,
-            ExperimentStore experiments, AutonomousReviewRunner review, CancellationToken ct) => Safe(app, async () =>
-        {
+            ExperimentStore experiments, AutonomousReviewRunner review, CancellationToken ct) => Safe(app, () =>
+            ExecuteAsync(request, dashboard, guard, discovery, jit, experiments, review, ct)));
+    }
+
+    public static async Task<object> ExecuteAsync(ExplorerRequest request, DashboardState dashboard,
+        WorkspaceGuard guard, WorkspaceBinaryDiscovery discovery, TrustedLocalJitRunner jit,
+        ExperimentStore experiments, AutonomousReviewRunner review, CancellationToken ct)
+    {
             if (string.IsNullOrWhiteSpace(request.SnapshotId)) throw new ArgumentException("状態を更新してから操作してください。");
             if (review.IsActive) throw new WorkspaceBuildConflictException("AIレビューの完了または停止を待ってください。");
             if (request.Action == "build")
@@ -158,7 +164,6 @@ public static class ExplorerEndpoints
                     default: throw new ArgumentException("対応していない操作です。");
                 }
             }, ct);
-        }));
     }
     private static string Required(string? value) => !string.IsNullOrWhiteSpace(value) ? value
         : throw new ArgumentException("調査する対象を一覧から選んでください。");

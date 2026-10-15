@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>甜花ちゃん | エージェントの活動</title>
+<link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/common-shell.css"><link rel="stylesheet" href="/agent-monitor.css">
+<script defer src="/common-shell.js"></script><script defer src="/agent-monitor.js"></script></head>
+<body><main class="agent-monitor">
+<header><p class="eyebrow">EXTERNAL AGENT / OBSERVER</p><h1>エージェントの活動</h1><p>外部のLLMエージェントが調査を進め、甜花ちゃんが解析を実行します。この画面は、その経過と結果を表示します。</p></header>
+<div class="agent-direction"><span>外部LLM・エージェント</span><b aria-hidden="true">→</b><span>甜花ちゃんの解析ツール</span><b aria-hidden="true">→</b><span>結果・活動を表示</span></div>
+<section><div class="agent-toolbar"><div><h2>現在の状態</h2><p id="agent-status" role="status" aria-live="polite">表示データを確認しています…</p></div><button id="agent-refresh" type="button">表示を更新</button></div><p id="agent-permissions"></p><p class="agent-muted">ブラウザーにモデルのURL・APIキーを入力する必要はありません。「表示を更新」は活動データを読むだけで、LLMや解析を開始しません。</p></section>
+<div class="agent-layout"><section class="panel"><h2>調査セッション</h2><label>表示するセッション<select id="agent-session"><option value="">すべて</option></select></label><div id="agent-sessions"></div></section>
+<section class="panel"><div class="agent-toolbar"><h2>実行と報告のタイムライン</h2><label>表示内容<select id="agent-kind"><option value="all">すべて</option><option value="tools">ツールの実行</option><option value="notes">LLMの計画・報告</option></select></label></div><div id="agent-timeline"><p>外部エージェントからの操作を待っています。</p></div></section></div>
+<section id="agent-result-panel" hidden><h2>ツールが返した結果</h2><p id="agent-result-note"></p><pre id="agent-result"></pre></section>
+<section><h2>この画面での読み方</h2><p><strong>ツールの実行</strong>は甜花ちゃんが記録した開始・返却・失敗です。<strong>LLMの計画・報告</strong>はエージェントから届いた説明で、未検証として区別します。ツールの返却成功だけで、問題の確定や高速化を意味するわけではありません。</p><p id="agent-scope" class="agent-muted"></p><details><summary>外部エージェントへの接続設定</summary><p>初回だけ外部エージェント側のMCP設定に、本体フォルダーの <code>agent-mcp.bat</code> を登録してください。<code>setup.bat</code>は接続設定例をローカルに保存します。ここには接続・開始ボタンを置きません。</p><p>読み取り調査はそのまま利用できます。LLMにビルドやアプリの実行も任せる場合は、セットアップでそれぞれ許可し、外部エージェント側でも実行を承認してください。<code>docs/external-agent.md</code>に設定例とツール一覧があります。</p></details></section>
+</main></body></html>
