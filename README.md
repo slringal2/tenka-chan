@@ -76,11 +76,12 @@ ILSpyは固定コミットから取得し、ソースを甜花ちゃん向けに
 
 ## 外部エージェントのツール
 
-現在の公開ツールは36個です。旧`workspace_open`や内蔵レビュー起動ツールではなく、次の`tenka_*`を使います。
+現在の公開ツールは38個です。旧`workspace_open`や内蔵レビュー起動ツールではなく、次の`tenka_*`を使います。
 
 | 領域 | 公開ツール |
 |---|---|
 | 接続・対象 | `tenka_connect` / `tenka_context` / `tenka_sample` / `tenka_open_project` / `tenka_finish` |
+| セッション管理 | `tenka_sessions_list` / `tenka_session_end` |
 | コード | `tenka_list_types` / `tenka_inspect_type` / `tenka_type_references` / `tenka_inspect_method` / `tenka_method_references` |
 | 静的解析 | `tenka_scan` / `tenka_rules` / `tenka_priorities` / `tenka_test_inputs` |
 | IL・JIT | `tenka_binary_methods` / `tenka_il` / `tenka_jit` / `tenka_artifact` / `tenka_native` / `tenka_compare_native` |
@@ -97,6 +98,12 @@ ILSpyは固定コミットから取得し、ソースを甜花ちゃん向けに
 確認キューを処理しながら続ける場合は、返された`nextCursor`を次の`cursor`に渡します。
 チェック済みを除いて件数が減るため、単純にoffsetを加算しないでください。
 `hasMore=false`は索引内の現在の続きがないという意味で、全コードの確認完了ではありません。
+
+ソースツールの`snapshotId`は省略できます。省略時は現在のスナップショットを処理前に固定し、明示した古いIDは置き換えません。
+`tenka_build` / `tenka_prepare_experiment`の`projectId`は、直接開いたcsprojまたは唯一のプロジェクトなら省略できます。
+複数候補のソリューションでは指定が必要です。一覧ツールのプロジェクト未指定は従来どおり全体を対象にします。
+`tenka_sessions_list`は調査セッションを作らず使えます。不要なidleセッションは、IDを確認し個別承認したうえで`tenka_session_end`へ渡します。
+既定は16セッション・idle 15分です。設定、承認の意味、未対応事項は[ID省略とセッション復旧](docs/mcp-workflow-defaults.md)を参照してください。
 
 ## 生成実験のフレームワーク
 
@@ -168,7 +175,7 @@ JIT取得には起動したアプリが対象メソッドを実際に呼ぶ必�
 
 ## 詳細資料
 
-- [外部エージェントの接続と許可](docs/external-agent.md)
+- [外部エージェントの接続と許可](docs/external-agent.md) / [ID省略とセッション復旧](docs/mcp-workflow-defaults.md)
 - [プロジェクト調査](docs/project-investigation.md) / [複数プロジェクト](docs/solution-workspace.md)
 - [確認記録](docs/review-progress.md) / [大規模確認キュー](docs/large-review-workflow.md)
 - [大規模OSSの取得](docs/large-codebase.md)

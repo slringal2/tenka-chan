@@ -13,7 +13,7 @@ public static class AgentGatewayEndpoints
 {
     public static void MapAgentGatewayEndpoints(this WebApplication app)
     {
-        var journal = new AgentJournal();
+        var journal = new AgentJournal(options: AgentSessionOptions.FromEnvironment());
         var port = int.TryParse(Environment.GetEnvironmentVariable("TENKA_WEB_PORT"), out var p) && p is >= 1024 and <= 65535 ? p : 5077;
         var connection = new AgentConnection(journal.InstanceId, port);
         var gateway = new AgentGateway(app.Services, journal, connection);
@@ -43,11 +43,17 @@ public static class AgentGatewayEndpoints
             Protect(() => gateway.CallAsync(request, ct)));
         app.MapPost("/agent/v1/end", (AgentEndRequest request) => Protect(() =>
         { journal.Finish(request.SessionId); return Task.FromResult((object)new { status = "finished" }); }));
+        // These routes intentionally bypass journal.Begin/Start: they work even when all slots are full.
+        // They remain inside the same /agent/v1 authentication and browser-origin restrictions.
+        app.MapPost("/agent/v1/sessions/list", () => Protect(() => Task.FromResult((object)journal.ListSessions())));
+        app.MapPost("/agent/v1/sessions/end", (AgentSessionEndRequest request) => Protect(() =>
+            Task.FromResult((object)journal.EndIdleSession(request.SessionId, request.Approved))));
         // Monitor never supplies tokens, source text, model URLs or model keys.
         app.MapGet("/api/agent/result", (string callId) => Protect(() => Task.FromResult(journal.MonitorResult(callId))));
         app.MapGet("/api/agent/monitor", () => Results.Ok(journal.Monitor(connection.Enabled && connection.Published, connection.AllowBuild, connection.AllowExecution)));
     }
     public sealed record AgentEndRequest(string SessionId);
+    public sealed record AgentSessionEndRequest(string SessionId, bool Approved = false);
     private static async Task<IResult> Protect(Func<Task<object>> operation)
     {
         try { return Results.Ok(await operation()); }
@@ -79,6 +85,8 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
     private static readonly HashSet<string> OtherTools = new(["context", "sample", "open_project", "list_types", "rules", "note", "read_result",
         "prepare_experiment", "run_experiment", "experiment_result", "compare_benchmarks",
         "review_queue", "review_target", "review_history", "review_diff", "review_mark"], StringComparer.Ordinal);
+    private static readonly HashSet<string> SnapshotTools = new(ExplorerActions.Keys.Concat(new[]
+    { "list_types", "prepare_experiment", "review_queue", "review_target", "review_history", "review_diff", "review_mark" }), StringComparer.Ordinal);
     private static readonly HashSet<string> Fields = new(["snapshotId", "projectId", "typeId", "methodId", "assemblyId", "companionId", "artifactId",
         "baselineId", "nativeIndex", "baselineIndex", "profileIndex", "metadataToken", "assemblySha256", "approved", "allowRestore", "arguments",
         "sample", "path", "expectedSnapshotId", "query", "offset", "limit", "callId", "pointer", "kind", "message", "evidenceCallIds",
@@ -95,25 +103,28 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
         if (cached is not null) return cached;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(TimeSpan.FromMinutes(6));
+        var arguments = request.Arguments;
         try
         {
-            var result = await Execute(request.SessionId, request.Tool, request.Arguments, deadline.Token);
-            return journal.Complete(callId, result);
+            if (SnapshotTools.Contains(request.Tool) && AgentSelectionDefaults.NeedsResolution(arguments, request.Tool is "build" or "prepare_experiment"))
+                arguments = await Get<DashboardState>().ResolveAgentSelectionAsync(arguments, request.Tool is "build" or "prepare_experiment", deadline.Token);
+            var result = await Execute(request.SessionId, request.Tool, arguments, deadline.Token);
+            return journal.Complete(callId, result, resolvedSnapshot: AgentJournal.Snapshot(arguments));
         }
-        catch (OperationCanceledException) { return journal.Complete(callId, null, "Action cancelled or time budget reached.", true); }
+        catch (OperationCanceledException) { return journal.Complete(callId, null, "Action cancelled or time budget reached.", true, AgentJournal.Snapshot(arguments)); }
         catch (Exception ex)
         {
             // Nothing is automatically retried. The journal reports operational failure, not a target-code defect.
-            return journal.Complete(callId, null, ex.GetType().Name + ": " + (ex.Message.Length > 1000 ? ex.Message[..1000] : ex.Message));
+            return journal.Complete(callId, null, ex.GetType().Name + ": " + (ex.Message.Length > 1000 ? ex.Message[..1000] : ex.Message), resolvedSnapshot: AgentJournal.Snapshot(arguments));
         }
     }
     private void BuildPermission(JsonElement a)
     {
-        if (!policy.AllowBuild || !Bool(a, "approved")) throw new UnauthorizedAccessException("Agent build/open is disabled. Enable TENKA_AGENT_ALLOW_BUILD on the server, then approve the specific tool in the agent client.");
+        AgentOperationPermissions.RequireBuild(policy.AllowBuild, Bool(a, "approved"));
     }
     private void ExecutionPermission(JsonElement a)
     {
-        if (!policy.AllowExecution || !Bool(a, "approved")) throw new UnauthorizedAccessException("Agent execution is disabled. Enable TENKA_AGENT_ALLOW_EXECUTION on the server, then approve this invocation in the agent client.");
+        AgentOperationPermissions.RequireExecution(policy.AllowExecution, Bool(a, "approved"));
     }
     private async Task<object> Execute(string session, string tool, JsonElement a, CancellationToken ct)
     {
@@ -156,7 +167,12 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
                 object? workspace = overview.GetProperty("loaded").GetBoolean()
                     ? await dashboard.ExplorerContextAsync(guard, discovery, ct) : null;
                 return new { instanceId = journal.InstanceId, workspace, overview,
-                    permissions = new { build = policy.AllowBuild, execution = policy.AllowExecution },
+                    permissions = AgentOperationPermissions.Describe(policy.AllowBuild, policy.AllowExecution,
+                        guard.TrustMsBuild, Environment.GetEnvironmentVariable("TENKA_ENABLE_LOCAL_EXEC") == "1"),
+                    sessionManagement = new { maximumSessions = journal.SessionLimit, idleTimeoutMinutes = journal.IdleTimeoutMinutes,
+                        listTool = "tenka_sessions_list", endTool = "tenka_session_end", requiresInvestigationSession = false },
+                    defaults = new { snapshotId = "current workspace at call start; explicit IDs remain stale-checked",
+                        projectId = "build/prepare_experiment: directly opened .csproj or sole project; otherwise explicit selection required. Browse filters remain solution-wide when omitted." },
                     workflow = "Inspect context -> tenka_review_queue for pending/changed work -> enumerate types -> inspect method/references -> inspect IL -> request authorized execution -> read actual results -> report a qualified conclusion. Always refresh context after a build. Record checked/optimized checkpoints only after completing the work; these are agent reports, not verified speedups. No model endpoint is configured in Tenka." };
             }
             case "sample":

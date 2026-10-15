@@ -26,33 +26,33 @@ public sealed class DashboardAgentTools
         client.CallAsync("open_project", new { path, expectedSnapshotId, approved }, cancellationToken);
 
     [McpServerTool(Name = "tenka_list_types")]
-    [Description("Browse/search semantic classes, partial/nested types, structs and interfaces in the current source snapshot. Use returned IDs.")]
-    public static Task<string> ListTypes(DashboardAgentClient client, string snapshotId, string? projectId = null, string? query = null, int offset = 0, int limit = 80, CancellationToken cancellationToken = default) =>
+    [Description("Browse/search semantic classes, partial/nested types, structs and interfaces in the current source snapshot. Use returned IDs. Omit snapshotId to use the current workspace; explicit stale IDs are never replaced.")]
+    public static Task<string> ListTypes(DashboardAgentClient client, string? snapshotId = null, string? projectId = null, string? query = null, int offset = 0, int limit = 80, CancellationToken cancellationToken = default) =>
         client.CallAsync("list_types", new { snapshotId, projectId, query, offset, limit }, cancellationToken);
 
     [McpServerTool(Name = "tenka_inspect_type")]
-    [Description("Read class structure, members, methods, source and existing findings. No target execution.")]
-    public static Task<string> InspectType(DashboardAgentClient client, string snapshotId, string typeId, CancellationToken cancellationToken = default) =>
+    [Description("Read class structure, members, methods, source and existing findings. No target execution. Omit snapshotId to use the current workspace; explicit stale IDs are never replaced.")]
+    public static Task<string> InspectType(DashboardAgentClient client, string typeId, string? snapshotId = null, CancellationToken cancellationToken = default) =>
         client.CallAsync("inspect_type", new { snapshotId, typeId }, cancellationToken);
 
     [McpServerTool(Name = "tenka_type_references")]
-    [Description("Find static references to a type within the loaded solution. Runtime/reflection targets are not inferred.")]
-    public static Task<string> TypeReferences(DashboardAgentClient client, string snapshotId, string typeId, CancellationToken cancellationToken = default) =>
+    [Description("Find static references to a type within the loaded solution. Runtime/reflection targets are not inferred. Omit snapshotId to use the current workspace; explicit stale IDs are never replaced.")]
+    public static Task<string> TypeReferences(DashboardAgentClient client, string typeId, string? snapshotId = null, CancellationToken cancellationToken = default) =>
         client.CallAsync("type_references", new { snapshotId, typeId }, cancellationToken);
 
     [McpServerTool(Name = "tenka_inspect_method")]
-    [Description("Read method source, direct calls/callers, control flow, dataflow and compiler diagnostics.")]
-    public static Task<string> InspectMethod(DashboardAgentClient client, string snapshotId, string methodId, CancellationToken cancellationToken = default) =>
+    [Description("Read method source, direct calls/callers, control flow, dataflow and compiler diagnostics. Omit snapshotId to use the current workspace; explicit stale IDs are never replaced.")]
+    public static Task<string> InspectMethod(DashboardAgentClient client, string methodId, string? snapshotId = null, CancellationToken cancellationToken = default) =>
         client.CallAsync("inspect_method", new { snapshotId, methodId }, cancellationToken);
 
     [McpServerTool(Name = "tenka_method_references")]
-    [Description("Find static references to a selected method. Returns navigable enclosing method IDs.")]
-    public static Task<string> MethodReferences(DashboardAgentClient client, string snapshotId, string methodId, CancellationToken cancellationToken = default) =>
+    [Description("Find static references to a selected method. Returns navigable enclosing method IDs. Omit snapshotId to use the current workspace; explicit stale IDs are never replaced.")]
+    public static Task<string> MethodReferences(DashboardAgentClient client, string methodId, string? snapshotId = null, CancellationToken cancellationToken = default) =>
         client.CallAsync("method_references", new { snapshotId, methodId }, cancellationToken);
 
     [McpServerTool(Name = "tenka_scan")]
-    [Description("Run deterministic source analysis and static hotspot screening, publishing the same result to the dashboard. Findings are candidates, not confirmed defects.")]
-    public static Task<string> Scan(DashboardAgentClient client, string snapshotId, CancellationToken cancellationToken = default) =>
+    [Description("Run deterministic source analysis and static hotspot screening, publishing the same result to the dashboard. Findings are candidates, not confirmed defects. Omit snapshotId to use the current workspace; explicit stale IDs are never replaced.")]
+    public static Task<string> Scan(DashboardAgentClient client, string? snapshotId = null, CancellationToken cancellationToken = default) =>
         client.CallAsync("scan", new { snapshotId }, cancellationToken);
 
     [McpServerTool(Name = "tenka_rules")]
@@ -61,73 +61,73 @@ public sealed class DashboardAgentTools
         client.CallAsync("rules", new { }, cancellationToken);
 
     [McpServerTool(Name = "tenka_priorities")]
-    [Description("Rank investigation candidates from the current workspace. Priority is not a calibrated bug probability.")]
-    public static Task<string> Priorities(DashboardAgentClient client, string snapshotId, CancellationToken cancellationToken = default) =>
+    [Description("Rank investigation candidates from the current workspace. Priority is not a calibrated bug probability. Omit snapshotId to use the current workspace; explicit stale IDs are never replaced.")]
+    public static Task<string> Priorities(DashboardAgentClient client, string? snapshotId = null, CancellationToken cancellationToken = default) =>
         client.CallAsync("priorities", new { snapshotId }, cancellationToken);
 
     [McpServerTool(Name = "tenka_test_inputs")]
-    [Description("Suggest type-based boundary inputs for a method. No oracle, valid DI fixture or expected result is invented.")]
-    public static Task<string> TestInputs(DashboardAgentClient client, string snapshotId, string methodId, CancellationToken cancellationToken = default) =>
+    [Description("Suggest type-based boundary inputs for a method. No oracle, valid DI fixture or expected result is invented. Omit snapshotId to use the current workspace; explicit stale IDs are never replaced.")]
+    public static Task<string> TestInputs(DashboardAgentClient client, string methodId, string? snapshotId = null, CancellationToken cancellationToken = default) =>
         client.CallAsync("test_inputs", new { snapshotId, methodId }, cancellationToken);
 
     [McpServerTool(Name = "tenka_binary_methods")]
-    [Description("Find metadata signatures/tokens corresponding to a method in a discovered assembly. Names are candidate links, not proof of source-build identity.")]
-    public static Task<string> BinaryMethods(DashboardAgentClient client, string snapshotId, string methodId, string assemblyId, CancellationToken cancellationToken = default) =>
+    [Description("Find metadata signatures/tokens corresponding to a method in a discovered assembly. Names are candidate links, not proof of source-build identity. Omit snapshotId to use the current workspace; explicit stale IDs are never replaced.")]
+    public static Task<string> BinaryMethods(DashboardAgentClient client, string methodId, string assemblyId, string? snapshotId = null, CancellationToken cancellationToken = default) =>
         client.CallAsync("binary_methods", new { snapshotId, methodId, assemblyId }, cancellationToken);
 
     [McpServerTool(Name = "tenka_il")]
-    [Description("Inspect IL/PDB for a chosen metadata token. Use assemblySha256 and token returned by tenka_binary_methods; stale binaries are rejected.")]
-    public static Task<string> Il(DashboardAgentClient client, string snapshotId, string methodId, string assemblyId, int metadataToken, string assemblySha256, CancellationToken cancellationToken = default) =>
+    [Description("Inspect IL/PDB for a chosen metadata token. Use assemblySha256 and token returned by tenka_binary_methods; stale binaries are rejected. Omit snapshotId to use the current workspace; explicit stale IDs are never replaced.")]
+    public static Task<string> Il(DashboardAgentClient client, string methodId, string assemblyId, int metadataToken, string assemblySha256, string? snapshotId = null, CancellationToken cancellationToken = default) =>
         client.CallAsync("il", new { snapshotId, methodId, assemblyId, metadataToken, assemblySha256 }, cancellationToken);
 
     [McpServerTool(Name = "tenka_build")]
-    [Description("Release build and analyze a selected project. UNSANDBOXED MSBuild. Requires host allow-build and explicit client approval. Refresh context after completion; IDs change.")]
-    public static Task<string> Build(DashboardAgentClient client, string snapshotId, string projectId, bool approved = false, bool allowRestore = false, CancellationToken cancellationToken = default) =>
+    [Description("Release build and analyze a selected project. Omitted projectId uses a directly opened or sole project; ambiguous solutions require a selection. UNSANDBOXED MSBuild. Requires host allow-build and explicit client approval. Refresh context after completion; IDs change. Omit snapshotId to use the current workspace; explicit stale IDs are never replaced.")]
+    public static Task<string> Build(DashboardAgentClient client, string? snapshotId = null, string? projectId = null, bool approved = false, bool allowRestore = false, CancellationToken cancellationToken = default) =>
         client.CallAsync("build", new { snapshotId, projectId, approved, allowRestore }, cancellationToken);
 
     [McpServerTool(Name = "tenka_jit")]
-    [Description("Run the selected executable and capture JIT for a method. UNSANDBOXED; host allow-execution and client approval required. Method must actually be reached. Instruction count is not speed.")]
-    public static Task<string> Jit(DashboardAgentClient client, string snapshotId, string methodId, string assemblyId, bool approved = false, string[]? arguments = null, CancellationToken cancellationToken = default) =>
+    [Description("Run the selected executable and capture JIT for a method. UNSANDBOXED; host allow-execution and client approval required. Method must actually be reached. Instruction count is not speed. Omit snapshotId to use the current workspace; explicit stale IDs are never replaced.")]
+    public static Task<string> Jit(DashboardAgentClient client, string methodId, string assemblyId, string? snapshotId = null, bool approved = false, string[]? arguments = null, CancellationToken cancellationToken = default) =>
         client.CallAsync("jit", new { snapshotId, methodId, assemblyId, approved, arguments }, cancellationToken);
 
     [McpServerTool(Name = "tenka_trace")]
-    [Description("Run a trusted application with detailed trace capture to an automatic output directory. UNSANDBOXED; approval required. EventPipe thread samples are not pure CPU percentages.")]
-    public static Task<string> Trace(DashboardAgentClient client, string snapshotId, string assemblyId, bool approved = false, string[]? arguments = null, CancellationToken cancellationToken = default) =>
+    [Description("Run a trusted application with detailed trace capture to an automatic output directory. UNSANDBOXED; approval required. EventPipe thread samples are not pure CPU percentages. Omit snapshotId to use the current workspace; explicit stale IDs are never replaced.")]
+    public static Task<string> Trace(DashboardAgentClient client, string assemblyId, string? snapshotId = null, bool approved = false, string[]? arguments = null, CancellationToken cancellationToken = default) =>
         client.CallAsync("trace", new { snapshotId, assemblyId, approved, arguments }, cancellationToken);
 
     [McpServerTool(Name = "tenka_artifact")]
-    [Description("Read an artifact by the ID returned by this source snapshot. No path input.")]
-    public static Task<string> Artifact(DashboardAgentClient client, string snapshotId, string artifactId, CancellationToken cancellationToken = default) =>
+    [Description("Read an artifact by the ID returned by this source snapshot. No path input. Omit snapshotId to use the current workspace; explicit stale IDs are never replaced.")]
+    public static Task<string> Artifact(DashboardAgentClient client, string artifactId, string? snapshotId = null, CancellationToken cancellationToken = default) =>
         client.CallAsync("artifact", new { snapshotId, artifactId }, cancellationToken);
 
     [McpServerTool(Name = "tenka_native")]
-    [Description("Decode saved JIT instructions/branches. Select a method index from the captured listing. Read-only.")]
-    public static Task<string> Native(DashboardAgentClient client, string snapshotId, string artifactId, int nativeIndex = 0, CancellationToken cancellationToken = default) =>
+    [Description("Decode saved JIT instructions/branches. Select a method index from the captured listing. Read-only. Omit snapshotId to use the current workspace; explicit stale IDs are never replaced.")]
+    public static Task<string> Native(DashboardAgentClient client, string artifactId, string? snapshotId = null, int nativeIndex = 0, CancellationToken cancellationToken = default) =>
         client.CallAsync("native", new { snapshotId, artifactId, nativeIndex }, cancellationToken);
 
     [McpServerTool(Name = "tenka_compare_native")]
-    [Description("Compare saved JIT code generation. Different signatures may be incomparable. No measured speedup is asserted.")]
-    public static Task<string> CompareNative(DashboardAgentClient client, string snapshotId, string baselineId, string artifactId, int baselineIndex = 0, int nativeIndex = 0, CancellationToken cancellationToken = default) =>
+    [Description("Compare saved JIT code generation. Different signatures may be incomparable. No measured speedup is asserted. Omit snapshotId to use the current workspace; explicit stale IDs are never replaced.")]
+    public static Task<string> CompareNative(DashboardAgentClient client, string baselineId, string artifactId, string? snapshotId = null, int baselineIndex = 0, int nativeIndex = 0, CancellationToken cancellationToken = default) =>
         client.CallAsync("compare_native", new { snapshotId, baselineId, artifactId, baselineIndex, nativeIndex }, cancellationToken);
 
     [McpServerTool(Name = "tenka_import_thread")]
-    [Description("Import an explicitly selected observed thread into the shared hotspot view. Name association is not source/build identity.")]
-    public static Task<string> ImportThread(DashboardAgentClient client, string snapshotId, string artifactId, int profileIndex, CancellationToken cancellationToken = default) =>
+    [Description("Import an explicitly selected observed thread into the shared hotspot view. Name association is not source/build identity. Omit snapshotId to use the current workspace; explicit stale IDs are never replaced.")]
+    public static Task<string> ImportThread(DashboardAgentClient client, string artifactId, int profileIndex, string? snapshotId = null, CancellationToken cancellationToken = default) =>
         client.CallAsync("import_thread", new { snapshotId, artifactId, profileIndex }, cancellationToken);
 
     [McpServerTool(Name = "tenka_runtime_costs")]
-    [Description("Read saved GC/allocation/Monitor events from a trace. No program launch. Missing events mean not observed, not zero cost.")]
-    public static Task<string> RuntimeCosts(DashboardAgentClient client, string snapshotId, string artifactId, CancellationToken cancellationToken = default) =>
+    [Description("Read saved GC/allocation/Monitor events from a trace. No program launch. Missing events mean not observed, not zero cost. Omit snapshotId to use the current workspace; explicit stale IDs are never replaced.")]
+    public static Task<string> RuntimeCosts(DashboardAgentClient client, string artifactId, string? snapshotId = null, CancellationToken cancellationToken = default) =>
         client.CallAsync("runtime_costs", new { snapshotId, artifactId }, cancellationToken);
 
     [McpServerTool(Name = "tenka_run_companion")]
-    [Description("Build/run a discovered existing test or BenchmarkDotNet project. Requires BOTH host build/execution permission and external-client approval. Source reports are invalidated/reloaded.")]
-    public static Task<string> RunCompanion(DashboardAgentClient client, string snapshotId, string companionId, bool approved = false, bool allowRestore = false, CancellationToken cancellationToken = default) =>
+    [Description("Build/run a discovered existing test or BenchmarkDotNet project. Requires BOTH host build/execution permission and external-client approval. Source reports are invalidated/reloaded. Omit snapshotId to use the current workspace; explicit stale IDs are never replaced.")]
+    public static Task<string> RunCompanion(DashboardAgentClient client, string companionId, string? snapshotId = null, bool approved = false, bool allowRestore = false, CancellationToken cancellationToken = default) =>
         client.CallAsync("run_companion", new { snapshotId, companionId, approved, allowRestore }, cancellationToken);
 
     [McpServerTool(Name = "tenka_prepare_experiment")]
-    [Description("Stage agent-authored C# test/benchmark code using a current project ID. No source edits or execution. targetFramework selects the library target; optional runtimeFramework selects the experiment runtime for netstandard2.0/2.1 (default net8.0 baseline, not inferred production). Portable net8+ targets retain their own runtime. Use a justified independent oracle.")]
-    public static Task<string> PrepareExperiment(DashboardAgentClient client, string snapshotId, string projectId, string kind, string generatedCode, string? targetFramework = null, string? runtimeFramework = null, CancellationToken cancellationToken = default) =>
+    [Description("Stage agent-authored C# test/benchmark code using a current project ID. Omitted projectId uses a directly opened or sole project; ambiguous solutions require a selection. No source edits or execution. targetFramework selects the library target; optional runtimeFramework selects the experiment runtime for netstandard2.0/2.1 (default net8.0 baseline, not inferred production). Portable net8+ targets retain their own runtime. Use a justified independent oracle. Omit snapshotId to use the current workspace; explicit stale IDs are never replaced.")]
+    public static Task<string> PrepareExperiment(DashboardAgentClient client, string kind, string generatedCode, string? snapshotId = null, string? projectId = null, string? targetFramework = null, string? runtimeFramework = null, CancellationToken cancellationToken = default) =>
         client.CallAsync("prepare_experiment", new { snapshotId, projectId, kind, generatedCode, targetFramework, runtimeFramework }, cancellationToken);
 
     [McpServerTool(Name = "tenka_run_experiment")]
@@ -159,4 +159,13 @@ public sealed class DashboardAgentTools
     [Description("Mark this external investigation session finished. Publish a concise qualified conclusion with tenka_note first. This does not assert every issue was found or fixed.")]
     public static Task<string> Finish(DashboardAgentClient client, CancellationToken cancellationToken = default) =>
         client.FinishAsync(cancellationToken);
+    [McpServerTool(Name = "tenka_sessions_list")]
+    [Description("List this local server's investigation sessions and configured limits without creating a session. Works when all slots are occupied. Does not renew idle TTL. Client names are self-reported, not authenticated identities.")]
+    public static Task<string> SessionsList(AgentSessionClient client, CancellationToken cancellationToken = default) =>
+        client.ListAsync(cancellationToken);
+
+    [McpServerTool(Name = "tenka_session_end")]
+    [Description("End one explicitly selected idle session using this local server's machine credential. Requires client approval and approved:true. Works without tenka_connect. Refuses running actions; does not kill a process, cancel a tool, or delete persistent review checkpoints.")]
+    public static Task<string> SessionEnd(AgentSessionClient client, string? sessionId = null, bool approved = false, CancellationToken cancellationToken = default) =>
+        client.EndAsync(sessionId, approved, cancellationToken);
 }
