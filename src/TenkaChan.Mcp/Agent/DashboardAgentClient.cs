@@ -55,16 +55,32 @@ public sealed class DashboardAgentClient(DashboardAgentOptions options) : IDispo
     private HttpClient? _http;
     private AgentConnectionFile? _connection;
     private string? _session;
+    private readonly Func<HttpMessageHandler> _handlerFactory = () => new SocketsHttpHandler
+    { AllowAutoRedirect = false, UseProxy = false, ConnectTimeout = TimeSpan.FromSeconds(5) };
+    private readonly TimeSpan _requestTimeout = TimeSpan.FromMinutes(7);
+
+    // Test-only seam. Production always uses the loopback/no-proxy/no-redirect handler.
+    internal DashboardAgentClient(DashboardAgentOptions options, Func<HttpMessageHandler> handlerFactory, TimeSpan requestTimeout)
+        : this(options)
+    {
+        ArgumentNullException.ThrowIfNull(handlerFactory);
+        if (requestTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(requestTimeout));
+        _handlerFactory = handlerFactory;
+        _requestTimeout = requestTimeout;
+    }
+    private AgentClientFailure Failure(string code, string message, string nextAction,
+        string? requestId = null, string? callId = null, int? httpStatus = null) =>
+        new(code, message, nextAction, _connection?.Token, _session, requestId, callId, httpStatus);
     public async Task<string> ConnectAsync(string goal = "", CancellationToken ct = default)
     {
-        if (!await _gate.WaitAsync(0, ct)) throw new InvalidOperationException("An agent tool is running. No reconnect was queued.");
+        if (!await _gate.WaitAsync(0, ct)) throw Failure("busy", "An agent tool is running. No reconnect was queued.", "Wait for or cancel the active tool; check its activity before reconnecting.");
         try
         {
             if (_session is not null && _http is not null)
             {
                 // Explicit reconnect only. Failure to close is not permission to replay a tool.
                 try { await SendAsync("/agent/v1/end", new { sessionId = _session }, ct); }
-                catch (HttpRequestException) { }
+                catch (AgentClientFailure) { } // Only this explicit reconnect may abandon the old session.
             }
             _session = null; _http?.Dispose(); _http = null;
             await BeginAsync(goal, ct);
@@ -75,27 +91,31 @@ public sealed class DashboardAgentClient(DashboardAgentOptions options) : IDispo
     }
     public async Task<string> CallAsync(string tool, object arguments, CancellationToken ct = default)
     {
-        if (!await _gate.WaitAsync(0, ct)) throw new InvalidOperationException("An agent tool is already running. No duplicate was queued.");
+        if (!await _gate.WaitAsync(0, ct)) throw Failure("busy", "An agent tool is already running. No duplicate was queued.", "Wait for or cancel the active tool; do not queue duplicate execution.");
         try
         {
             if (_session is null) await BeginAsync("", ct);
             var request = new AgentCallRequest(_session!, Guid.NewGuid().ToString("N"), tool,
                 JsonSerializer.SerializeToElement(arguments, Json));
-            var data = await SendAsync("/agent/v1/call", request, ct);
-            var reply = data.Deserialize<AgentReply>(Json) ?? throw new InvalidDataException("Missing agent reply.");
+            var data = await SendAsync("/agent/v1/call", request, ct, request.RequestId);
+            AgentReply? reply;
+            try { reply = data.Deserialize<AgentReply>(Json); }
+            catch (JsonException)
+            { throw Failure("invalid_response", "The server returned an invalid agent reply.", AgentClientFailure.HttpNextAction(0), request.RequestId); }
+            if (reply is null || !Guid.TryParseExact(reply.CallId, "N", out _) ||
+                reply.Outcome is not ("returned" or "failed" or "cancelled"))
+                throw Failure("invalid_response", "The server returned an incomplete agent reply.", AgentClientFailure.HttpNextAction(0), request.RequestId);
             if (reply.Outcome is "failed" or "cancelled")
-                throw new InvalidOperationException($"{reply.Outcome}; callId={reply.CallId}: {reply.Error}. No automatic retry. Read context before changing selection.");
+                throw Failure("tool_" + reply.Outcome, reply.Error ?? "The server did not supply an error detail.",
+                    "Inspect the activity by callId, then read tenka_context before changing selection. No automatic retry; execution still requires approval.",
+                    request.RequestId, reply.CallId);
             return data.GetRawText();
-        }
-        catch (HttpRequestException ex)
-        {
-            throw new InvalidOperationException("Tenka communication failed. A tool may already have started; it was NOT retried. Check the activity monitor. If the server restarted, call tenka_connect explicitly. " + ex.Message, ex);
         }
         finally { _gate.Release(); }
     }
     public async Task<string> FinishAsync(CancellationToken ct = default)
     {
-        if (!await _gate.WaitAsync(0, ct)) throw new InvalidOperationException("Wait for or cancel the active tool before finishing.");
+        if (!await _gate.WaitAsync(0, ct)) throw Failure("busy", "An agent tool is running. The session was not finished.", "Wait for or cancel the active tool before finishing.");
         try
         {
             if (_session is null) return "{\"status\":\"not_connected\"}";
@@ -106,18 +126,32 @@ public sealed class DashboardAgentClient(DashboardAgentOptions options) : IDispo
     }
     private async Task BeginAsync(string goal, CancellationToken ct)
     {
-        if (!File.Exists(options.ConnectionFile)) throw new FileNotFoundException("Start Tenka with start.bat first. Its agent connection file was not found. Use --connection-file or --port for another instance.", options.ConnectionFile);
-        if (new FileInfo(options.ConnectionFile).Length > 16000) throw new InvalidDataException("Invalid connection descriptor size.");
-        var saved = JsonSerializer.Deserialize<AgentConnectionFile>(await File.ReadAllTextAsync(options.ConnectionFile, ct), Json)
-            ?? throw new InvalidDataException("Invalid connection descriptor.");
-        var endpoint = ValidateConnection(saved);
+        AgentConnectionFile saved;
+        Uri endpoint;
+        try
+        {
+            if (!File.Exists(options.ConnectionFile))
+                throw Failure("connection_file_missing", "The agent connection file was not found.",
+                    "Start Tenka with start.bat. Check --connection-file or --port for another instance; do not paste credentials into the client.");
+            if (new FileInfo(options.ConnectionFile).Length > 16000) throw new InvalidDataException();
+            saved = JsonSerializer.Deserialize<AgentConnectionFile>(await File.ReadAllTextAsync(options.ConnectionFile, ct), Json)
+                ?? throw new InvalidDataException();
+            endpoint = ValidateConnection(saved);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
+        {
+            throw Failure("connection_file_invalid", "The connection descriptor could not be read or validated.",
+                "Check the selected instance and regenerate its descriptor by starting Tenka. Do not share or manually paste the token.");
+        }
         _connection = saved;
         _http?.Dispose();
-        _http = new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = false, UseProxy = false,
-            ConnectTimeout = TimeSpan.FromSeconds(5) }) { BaseAddress = endpoint, Timeout = TimeSpan.FromMinutes(7) };
+        _http = new HttpClient(_handlerFactory()) { BaseAddress = endpoint, Timeout = Timeout.InfiniteTimeSpan };
         _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", saved.Token);
         var result = await SendAsync("/agent/v1/begin", new AgentSessionRequest(options.ClientName, goal), ct);
-        _session = result.GetProperty("id").GetString() ?? throw new InvalidDataException("Missing agent session ID.");
+        if (!result.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.String ||
+            !Guid.TryParseExact(id.GetString(), "N", out _))
+            throw Failure("invalid_response", "The server returned no valid agent session ID.", AgentClientFailure.HttpNextAction(0));
+        _session = id.GetString();
     }
     public static Uri ValidateConnection(AgentConnectionFile saved)
     {
@@ -129,22 +163,69 @@ public sealed class DashboardAgentClient(DashboardAgentOptions options) : IDispo
         // Avoid DNS even for localhost. Never follow redirects or send credentials via a proxy.
         return new UriBuilder(uri) { Host = uri.Host.Contains(':') ? "::1" : "127.0.0.1" }.Uri;
     }
-    private async Task<JsonElement> SendAsync(string route, object body, CancellationToken ct)
+    private async Task<JsonElement> SendAsync(string route, object body, CancellationToken ct, string? requestId = null)
     {
-        if (_http is null) throw new InvalidOperationException("Agent transport is not initialized.");
-        using var request = new HttpRequestMessage(HttpMethod.Post, route)
-        { Content = new StringContent(JsonSerializer.Serialize(body, Json), Encoding.UTF8, "application/json") };
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-        if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"Tenka returned HTTP {(int)response.StatusCode}. Check authorization, session state, or the server activity monitor.");
-        await using var stream = await response.Content.ReadAsStreamAsync(ct);
-        using var buffer = new MemoryStream(); var bytes = new byte[16384]; int read;
-        while ((read = await stream.ReadAsync(bytes.AsMemory(), ct)) != 0)
+        if (_http is null) throw Failure("not_connected", "Agent transport is not initialized.", "Call tenka_connect explicitly.");
+        // ResponseHeadersRead makes HttpClient.Timeout insufficient for body reads.
+        // Apply one deadline to headers AND body, without replaying any request.
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(_requestTimeout);
+        try
         {
-            if (buffer.Length + read > 12_000_000) throw new InvalidDataException("Agent response limit reached. The tool is not retried.");
+            using var request = new HttpRequestMessage(HttpMethod.Post, route)
+            { Content = new StringContent(JsonSerializer.Serialize(body, Json), Encoding.UTF8, "application/json") };
+            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
+            var bodyBytes = await ReadBoundedAsync(response.Content, response.IsSuccessStatusCode ? 12_000_000 : 16_000, deadline.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                var status = (int)response.StatusCode;
+                var detail = AgentClientFailure.ReadHttpDetail(bodyBytes, response.Content.Headers.ContentType?.MediaType, status);
+                throw Failure("http_" + status, $"Tenka returned HTTP {status}. " + (detail ?? "No client-safe error detail was supplied."),
+                    AgentClientFailure.HttpNextAction(status), requestId, httpStatus: status);
+            }
+            if (bodyBytes is null)
+                throw Failure("response_limit", "Agent response limit reached. The tool was not retried.", AgentClientFailure.HttpNextAction(0), requestId);
+            using var document = JsonDocument.Parse(bodyBytes);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+                throw Failure("invalid_response", "The server response was not a JSON object.", AgentClientFailure.HttpNextAction(0), requestId);
+            return document.RootElement.Clone();
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw Failure("request_timeout", "The Tenka request timed out. A tool may already have started; its final outcome is unknown.",
+                AgentClientFailure.HttpNextAction(0), requestId);
+        }
+        catch (HttpRequestException)
+        {
+            throw Failure("transport_error", "Tenka communication failed. A tool may already have started; it was NOT retried.",
+                AgentClientFailure.HttpNextAction(0), requestId);
+        }
+        catch (IOException)
+        {
+            throw Failure("transport_error", "The Tenka response could not be read completely. The outcome is unknown; it was NOT retried.",
+                AgentClientFailure.HttpNextAction(0), requestId);
+        }
+        catch (JsonException)
+        {
+            throw Failure("invalid_response", "The Tenka response was not valid JSON. Its body was not exposed and the tool was not retried.",
+                AgentClientFailure.HttpNextAction(0), requestId);
+        }
+    }
+    private static async Task<byte[]?> ReadBoundedAsync(HttpContent content, int limit, CancellationToken ct)
+    {
+        if (content.Headers.ContentLength > limit) return null;
+        await using var stream = await content.ReadAsStreamAsync(ct);
+        using var buffer = new MemoryStream();
+        var bytes = new byte[16384];
+        while (true)
+        {
+            // Read at most one byte beyond the limit, even without Content-Length.
+            var count = (int)Math.Min(bytes.Length, limit + 1L - buffer.Length);
+            var read = await stream.ReadAsync(bytes.AsMemory(0, count), ct);
+            if (read == 0) return buffer.ToArray();
+            if (buffer.Length + read > limit) return null;
             buffer.Write(bytes, 0, read);
         }
-        using var document = JsonDocument.Parse(buffer.ToArray()); return document.RootElement.Clone();
     }
     public void Dispose() { _http?.Dispose(); _gate.Dispose(); }
 }
