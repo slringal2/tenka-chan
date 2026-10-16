@@ -12,3 +12,8 @@ tenka-data/
 
 # External analysis targets stay outside this repository history.
 /samples/External/
+
+# Generated at run time, never part of the source tree.
+launchSettings.json
+%SystemDrive%/
+tenka-trace-*/
