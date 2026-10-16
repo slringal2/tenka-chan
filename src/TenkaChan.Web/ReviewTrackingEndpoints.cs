@@ -10,7 +10,7 @@ public static class ReviewTrackingEndpoints
     {
         app.MapGet("/api/review-progress/queue", (ReviewTrackingService service,string? snapshotId,
             string? projectId,string? kind,string? state,string? q,int? offset,int? limit,string? cursor,bool? trackableOnly,CancellationToken ct) =>
-            Safe(()=>service.Queue(snapshotId,projectId,kind??"all",state??"pending",q,offset??0,limit??80,ct,cursor,trackableOnly??false)));
+            Safe(()=>service.Queue(snapshotId,projectId,kind??ReviewQueueViews.DefaultKind,state??"pending",q,offset??0,limit??80,ct,cursor,trackableOnly??false)));
         app.MapGet("/api/review-progress/target", (ReviewTrackingService service,string snapshotId,string targetId,CancellationToken ct) =>
             Safe(()=>service.Target(snapshotId,targetId,ct)));
         app.MapGet("/api/review-progress/diff", (ReviewTrackingService service,string snapshotId,string targetId,
@@ -42,27 +42,9 @@ public sealed class ReviewTrackingService(DashboardState dashboard,WorkspaceGuar
         var marks=store.Latest();var stale=await catalog.StaleProjectsAsync(guard,false,ct);
         return catalog.Targets.Select(t=>new ReviewQueueItem(t,ReviewProgress.State(t,marks.GetValueOrDefault(t.Id),stale.Contains(t.ProjectId)))).ToArray();
     }
-    public async Task<object> Queue(string? snapshot,string? project,string kind,string state,string? query,int offset,int limit,CancellationToken ct,string? cursor=null,bool trackableOnly=false)
-    {
-        if(kind is not ("all" or "type" or "method") || state is not ("all" or "pending" or "unreviewed" or "needs_review" or "checked" or "optimized"))
-            throw new ArgumentException("Invalid review filter.");
-        if(offset<0||offset>20000||limit is <1 or >200||(query?.Length??0)>200)throw new ArgumentException("Invalid review page.");
-        return await With(snapshot,async catalog=>
-        {
-            var rows=(await Items(catalog,ct)).Where(r=>(kind=="all"||r.Target.Kind==kind)&&
-                (string.IsNullOrEmpty(project)||r.Target.ProjectId==project)&&
-                (string.IsNullOrEmpty(query)||r.Target.Name.Contains(query,StringComparison.OrdinalIgnoreCase))).ToArray();
-            var page=ReviewQueuePager.Page(catalog.SnapshotId,rows,state,project,kind,query,trackableOnly,offset,limit,cursor);
-            return new {snapshotId=catalog.SnapshotId,total=page.Total,offset=page.Offset,items=page.Items,
-                nextCursor=page.NextCursor,hasMore=page.HasMore,ordering="stable_project_name_target_id",
-                summary=new {total=rows.Length,unreviewed=rows.Count(r=>r.State.Status=="unreviewed"),needsReview=rows.Count(r=>r.State.Status=="needs_review"),
-                    checkedCount=rows.Count(r=>r.State.Status=="checked"),optimized=rows.Count(r=>r.State.Status=="optimized"),untrackable=rows.Count(r=>!r.Target.Trackable),
-                    blockedPending=rows.Count(r=>(r.State.Status is "unreviewed" or "needs_review")&&(!r.Target.Trackable||r.State.RequiresReload))},
-                requiresReload=rows.Any(r=>r.State.RequiresReload),catalog.Limited,note=ReviewProgress.Note,
-                pagingNote="nextCursorをcursorに渡すと、途中でチェック済みが増えても、先に返した対象の次から取得します。最後まで来たらcursorなしのpendingを再確認してください。空のページは索引外を含む確認完了を意味しません。",
-                scope="読み込み済みの索引範囲のみです。記録不可の対象や索引上限は完了扱いにしません。状態・変更の検査は読み取り時点の情報で、複数エージェントへの排他割当てではありません。"};
-        },ct);
-    }
+    public Task<object> Queue(string? snapshot,string? project,string kind,string state,string? query,int offset,int limit,CancellationToken ct,string? cursor=null,bool trackableOnly=false) =>
+        With(snapshot,async catalog => (object)ReviewQueueViews.Build(catalog.SnapshotId,
+            await Items(catalog,ct),project,kind,state,query,offset,limit,cursor,trackableOnly,catalog.Limited),ct);
     public Task<object> Target(string snapshot,string targetId,CancellationToken ct) => With(snapshot,async catalog=>
     {
         var target=catalog.Require(targetId);var stale=await catalog.StaleProjectsAsync(guard,false,ct);

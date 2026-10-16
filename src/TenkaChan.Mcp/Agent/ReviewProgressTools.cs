@@ -1,15 +1,22 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
+using TenkaChan.Mcp.Tracking;
 namespace TenkaChan.Mcp.Agent;
 
 [McpServerToolType]
 public sealed class ReviewProgressTools
 {
     [McpServerTool(Name = "tenka_review_queue")]
-    [Description("Find unreviewed or changed classes/methods before repeating work. Persistent checkpoints survive server restarts. state=pending|all|unreviewed|needs_review|checked|optimized; kind=method|type|all. Context changes conservatively require recheck; requiresReload means reopen the project first. Use returned nextCursor as cursor with offset=0 to continue while marking earlier targets; never increment offsets in a shrinking pending set. trackableOnly filters unsupported individual marks, not verified work. Check pending from the beginning after a pass; hasMore=false does not prove whole-codebase coverage.")]
-    public static Task<string> ReviewQueue(DashboardAgentClient client, string snapshotId, string state = "pending", string kind = "method",
+    [Description("Find unreviewed or changed classes/methods before repeating work. Persistent checkpoints survive server restarts. state=pending|all|unreviewed|needs_review|checked|optimized; kind=all (default)|method|type. coverage always includes the entire loaded index; check pendingHiddenByFilters and pending type counts even when items is empty. Use tenka_review_context with a targetId to obtain source IDs and ready-to-use IL candidate arguments. Context changes conservatively require recheck; requiresReload means reopen the project first. Use returned nextCursor as cursor with offset=0 to continue while marking earlier targets; never increment offsets in a shrinking pending set. trackableOnly filters unsupported individual marks, not verified work. Check pending from the beginning after a pass; hasMore=false does not prove whole-codebase coverage.")]
+    public static Task<string> ReviewQueue(DashboardAgentClient client, string snapshotId, string state = "pending", string kind = ReviewQueueViews.DefaultKind,
         string? projectId = null, string? query = null, int offset = 0, int limit = 50, string? cursor = null, bool trackableOnly = false, CancellationToken cancellationToken = default) =>
         client.CallAsync("review_queue", new {snapshotId,state,kind,projectId,query,offset,limit,cursor,trackableOnly},cancellationToken);
+
+    [McpServerTool(Name = "tenka_review_context")]
+    [Description("Resolve a persistent targetId to source details, snapshot/project/type/method IDs, review hashes/revision and bounded binary candidates in one snapshot-gated read. includeBinary=true inspects at most 8 discovered assemblies and returns at most 50 exact type/name candidates per assembly. Choose the intended signature/configuration and pass a candidate's arguments to tenka_il; no overload is chosen automatically and source/build identity is not proven. No build, reload or execution. Large results are available through tenka_read_result with the returned callId.")]
+    public static Task<string> ReviewContext(DashboardAgentClient client, string snapshotId, string targetId,
+        bool includeBinary = true, CancellationToken cancellationToken = default) =>
+        client.CallAsync("review_context", new {snapshotId,targetId,includeBinary},cancellationToken);
 
     [McpServerTool(Name = "tenka_review_target")]
     [Description("Read a target's persistent review state, source/context hashes, latest revision and history. Use these exact hashes and revision for tenka_mark_review; source selection IDs remain snapshot-specific.")]

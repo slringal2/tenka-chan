@@ -107,7 +107,7 @@ public sealed class DashboardAgentClient(DashboardAgentOptions options) : IDispo
                 throw Failure("invalid_response", "The server returned an incomplete agent reply.", AgentClientFailure.HttpNextAction(0), request.RequestId);
             if (reply.Outcome is "failed" or "cancelled")
                 throw Failure("tool_" + reply.Outcome, reply.Error ?? "The server did not supply an error detail.",
-                    "Inspect the activity by callId, then read tenka_context before changing selection. No automatic retry; execution still requires approval.",
+                    AgentRecoveryAdvice.NextAction(tool, reply),
                     request.RequestId, reply.CallId);
             return data.GetRawText();
         }
@@ -181,7 +181,7 @@ public sealed class DashboardAgentClient(DashboardAgentOptions options) : IDispo
                 var status = (int)response.StatusCode;
                 var detail = AgentClientFailure.ReadHttpDetail(bodyBytes, response.Content.Headers.ContentType?.MediaType, status);
                 throw Failure("http_" + status, $"Tenka returned HTTP {status}. " + (detail ?? "No client-safe error detail was supplied."),
-                    AgentClientFailure.HttpNextAction(status), requestId, httpStatus: status);
+                    AgentRecoveryAdvice.HttpNextAction(status, detail), requestId, httpStatus: status);
             }
             if (bodyBytes is null)
                 throw Failure("response_limit", "Agent response limit reached. The tool was not retried.", AgentClientFailure.HttpNextAction(0), requestId);
