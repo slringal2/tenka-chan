@@ -1,4 +1,5 @@
 using TenkaChan.Mcp.Analysis;
+using TenkaChan.Mcp.Security;
 
 namespace TenkaChan.Web;
 
@@ -11,8 +12,8 @@ public sealed partial class DashboardState
         if (!await _gate.WaitAsync(0, ct)) throw new WorkspaceBuildConflictException("Workspace is busy. No open was queued.");
         try
         {
-            if (_solution?.SnapshotId != expectedSnapshotId)
-                throw new WorkspaceBuildConflictException("Workspace changed. Read tenka_context and use its current snapshot before opening.");
+            if (!AgentWorkspaceGate.Matches(expectedSnapshotId, _solution?.SnapshotId))
+                throw new WorkspaceBuildConflictException(AgentWorkspaceGate.ConflictMessage(expectedSnapshotId, _solution?.SnapshotId));
             InvalidatePreparedWorkspace();
             _path = null;
             var result = await roslyn.OpenAsync(path, ct);

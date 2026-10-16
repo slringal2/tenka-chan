@@ -107,14 +107,10 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
             return journal.Complete(callId, null, ex.GetType().Name + ": " + (ex.Message.Length > 1000 ? ex.Message[..1000] : ex.Message));
         }
     }
-    private void BuildPermission(JsonElement a)
-    {
-        if (!policy.AllowBuild || !Bool(a, "approved")) throw new UnauthorizedAccessException("Agent build/open is disabled. Enable TENKA_AGENT_ALLOW_BUILD on the server, then approve the specific tool in the agent client.");
-    }
-    private void ExecutionPermission(JsonElement a)
-    {
-        if (!policy.AllowExecution || !Bool(a, "approved")) throw new UnauthorizedAccessException("Agent execution is disabled. Enable TENKA_AGENT_ALLOW_EXECUTION on the server, then approve this invocation in the agent client.");
-    }
+    private void BuildPermission(JsonElement a) =>
+        AgentPermissionGate.Require("build/open", "TENKA_AGENT_ALLOW_BUILD", policy.AllowBuild, Bool(a, "approved"));
+    private void ExecutionPermission(JsonElement a) =>
+        AgentPermissionGate.Require("execution", "TENKA_AGENT_ALLOW_EXECUTION", policy.AllowExecution, Bool(a, "approved"));
     private async Task<object> Execute(string session, string tool, JsonElement a, CancellationToken ct)
     {
         var dashboard = Get<DashboardState>(); var guard = Get<WorkspaceGuard>();
