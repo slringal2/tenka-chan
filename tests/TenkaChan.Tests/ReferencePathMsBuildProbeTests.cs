@@ -99,7 +99,7 @@ public sealed class ReferencePathMsBuildProbeTests(ITestOutputHelper output) : I
         var target = catalog.Targets.Single(t => t.Kind == "method" && t.Name.Contains("Consumer.Run()", StringComparison.Ordinal));
         var result = new Observation(summary.SnapshotId, target, diagnostics.ErrorCount,
             summary.WorkspaceWarnings, catalog.ReferencesFor(target.ProjectId));
-        output.WriteLine(JsonSerializer.Serialize(new { schema = "tenka.reference-path-probe/v1", stage, observation = result }, Json));
+        output.WriteLine(JsonSerializer.Serialize(new { schema = "tenka.reference-path-probe/v1", stage, observation = result, legacyContextHash = target.LegacyContextHash, compilerDiagnostics = diagnostics }, Json));
         return result;
     }
     private static ReviewCheckpoint Mark(TrackedReviewTarget target) =>
