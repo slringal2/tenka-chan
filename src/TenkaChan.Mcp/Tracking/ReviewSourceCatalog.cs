@@ -10,6 +10,17 @@ public sealed class ReviewSourceCatalog(string snapshot,IReadOnlyList<ReviewTarg
     public string SnapshotId => snapshot;
     public IReadOnlyList<ReviewTarget> Targets => targets;
     public bool Limited => limited;
+    public IReadOnlyDictionary<string, ReviewReferenceDiagnosticReport> ReferenceReports { get; init; } =
+        new Dictionary<string, ReviewReferenceDiagnosticReport>(StringComparer.Ordinal);
+    public ReviewReferenceDiagnosticReport ReferencesFor(string projectId)
+    {
+        if (!dependencies.TryGetValue(projectId, out var closure))
+            throw new KeyNotFoundException("Review project is not in this source snapshot.");
+        // Missing source projects are reported by their owner's project-reference observation.
+        // Never replace a missing identity with a display path or silently claim it resolved.
+        return ReviewReferenceDiagnostics.Combine(closure.Where(ReferenceReports.ContainsKey)
+            .Select(id => ReferenceReports[id]));
+    }
     private DateTimeOffset _lastRead;
     private HashSet<string>? _stale;
     public ReviewTarget Require(string id) => targets.FirstOrDefault(t=>t.Id==id)

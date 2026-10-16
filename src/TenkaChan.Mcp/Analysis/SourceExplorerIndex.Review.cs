@@ -19,6 +19,7 @@ public sealed partial class SourceExplorerIndex
         var projects = Projects.ToDictionary(p=>p.Id, StringComparer.Ordinal);
         var componentsByProject = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
         var referenceComplete = new Dictionary<string, bool>(StringComparer.Ordinal);
+        var referenceReports = new Dictionary<string, ReviewReferenceDiagnosticReport>(StringComparer.Ordinal);
         long budget=0;
         foreach (var p in _solution.Projects.Where(p=>projects.ContainsKey(p.Id.Id.ToString("N"))))
         {
@@ -53,24 +54,33 @@ public sealed partial class SourceExplorerIndex
             // Keep the original v1 display-path digest for safe, exact legacy compatibility only.
             fragments.Add("references="+string.Join("|",p.MetadataReferences.Select(r=>r.Display??"").Order(StringComparer.Ordinal)));
             var complete = true;
+            var referenceRows = new List<ReviewReferenceDiagnostic>();
             foreach (var reference in p.MetadataReferences)
             {
                 ct.ThrowIfCancellationRequested();
                 var identity = ReviewMetadataFingerprint.Read(reference);
                 componentInputs["metadataReferences"].Add(identity.Identity);
                 complete &= identity.Complete;
+                referenceRows.Add(ReviewReferenceDiagnostic.Create(id, projects[id].Path, "metadata",
+                    reference.Display, (reference as PortableExecutableReference)?.FilePath,
+                    identity.Identity, identity.Complete, identity.FailureCode));
             }
             foreach (var reference in p.ProjectReferences)
             {
                 var dep = reference.ProjectId.Id.ToString("N");
                 var resolved = projects.TryGetValue(dep, out var dependency);
                 complete &= resolved;
-                componentInputs["projectReferences"].Add((resolved ? ReviewProgress.CanonicalProject(dependency!.Path) : "unresolved") +
-                    "|embed=" + reference.EmbedInteropTypes + "|aliases=" + ReviewContextFingerprints.Digest(reference.Aliases));
+                var referenceIdentity = (resolved ? ReviewProgress.CanonicalProject(dependency!.Path) : "unresolved") +
+                    "|embed=" + reference.EmbedInteropTypes + "|aliases=" + ReviewContextFingerprints.Digest(reference.Aliases);
+                componentInputs["projectReferences"].Add(referenceIdentity);
+                referenceRows.Add(ReviewReferenceDiagnostic.Create(id, projects[id].Path, "project",
+                    resolved ? dependency!.Name : dep, resolved ? dependency!.Path : null,
+                    referenceIdentity, resolved, resolved ? null : "project_not_loaded"));
             }
             componentsByProject[id] = componentInputs.ToDictionary(c => c.Key,
                 c => ReviewContextFingerprints.Digest(c.Value), StringComparer.Ordinal);
             referenceComplete[id] = complete;
+            referenceReports[id] = ReviewReferenceDiagnostics.Capture(referenceRows);
             projectHashes[id]=ReviewProgress.Hash(string.Join("\n",fragments));
             dependencies[id]=p.ProjectReferences.Select(r=>r.ProjectId.Id.ToString("N")).ToArray();
         }
@@ -148,7 +158,8 @@ public sealed partial class SourceExplorerIndex
                 symbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat):null;
             await Add(entry.Row.Id,"method",entry.Row.ProjectId,entry.Row.Signature,symbol,declarations,fallback);
         }
-        return _reviewCatalog=new(SnapshotId,rows,inputs,closure,limited);
+        return _reviewCatalog=new(SnapshotId,rows,inputs,closure,limited)
+            { ReferenceReports = referenceReports };
     }
 
     // A diagnostic bucket only. Do NOT drop generated assembly versions, global usings,
