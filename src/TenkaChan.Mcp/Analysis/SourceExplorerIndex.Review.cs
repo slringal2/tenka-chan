@@ -17,10 +17,14 @@ public sealed partial class SourceExplorerIndex
         var projectHashes = new Dictionary<string,string>(StringComparer.Ordinal);
         var dependencies = new Dictionary<string,string[]>(StringComparer.Ordinal);
         var projects = Projects.ToDictionary(p=>p.Id, StringComparer.Ordinal);
+        var componentsByProject = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
+        var referenceComplete = new Dictionary<string, bool>(StringComparer.Ordinal);
         long budget=0;
         foreach (var p in _solution.Projects.Where(p=>projects.ContainsKey(p.Id.Id.ToString("N"))))
         {
             var id=p.Id.Id.ToString("N"); var fragments=new List<string>();
+            var componentInputs = ReviewContextFingerprints.ComponentNames.ToDictionary(
+                name => name, _ => new List<string>(), StringComparer.Ordinal);
             foreach (var d in p.Documents.OrderBy(d=>d.FilePath,StringComparer.Ordinal))
             {
                 ct.ThrowIfCancellationRequested();
@@ -29,22 +33,49 @@ public sealed partial class SourceExplorerIndex
                 if (budget>64000000 || text.Length>4000000) throw new InvalidOperationException("Review input budget exceeded. Open a smaller project.");
                 var hash=ReviewProgress.Hash(text.ToString());
                 inputs.Add(new(id,d.FilePath,hash,text.Encoding ?? Encoding.UTF8));
-                fragments.Add(ReviewProgress.CanonicalProject(d.FilePath)+"="+hash);
+                var sourceIdentity = ReviewProgress.CanonicalProject(d.FilePath)+"="+hash;
+                fragments.Add(sourceIdentity); // Preserve v1 ordering exactly for legacy comparison.
+                componentInputs[ReviewSourceCategory(d.FilePath)].Add(sourceIdentity);
             }
             // Explicit project files are included; arbitrary imported targets and runtime state are not.
             var path=guard.RequireFile(projects[id].Path,".csproj");
             var xml=await ReviewSourceCatalog.ReadTextAsync(path,Encoding.UTF8,ct);
             var projectHash=ReviewProgress.Hash(xml); inputs.Add(new(id,path,projectHash,Encoding.UTF8));
             fragments.Add("project="+projectHash);
+            componentInputs["projectFiles"].Add(projectHash);
             if(p.ParseOptions is Microsoft.CodeAnalysis.CSharp.CSharpParseOptions parse)
                 fragments.Add("parse="+parse.LanguageVersion+"|"+parse.Kind+"|"+parse.DocumentationMode+"|"+string.Join(",",parse.PreprocessorSymbolNames.Order(StringComparer.Ordinal)));
             if(p.CompilationOptions is Microsoft.CodeAnalysis.CSharp.CSharpCompilationOptions options)
                 fragments.Add("compile="+options.OutputKind+"|"+options.OptimizationLevel+"|"+options.Platform+"|"+options.AllowUnsafe+"|"+options.CheckOverflow+"|"+options.NullableContextOptions);
+            componentInputs["parseOptions"].AddRange(fragments.Where(f => f.StartsWith("parse=", StringComparison.Ordinal)));
+            componentInputs["compilationOptions"].AddRange(fragments.Where(f => f.StartsWith("compile=", StringComparison.Ordinal)));
+            componentInputs["compilationOptions"].Add("assemblyName=" + p.AssemblyName);
+            // Keep the original v1 display-path digest for safe, exact legacy compatibility only.
             fragments.Add("references="+string.Join("|",p.MetadataReferences.Select(r=>r.Display??"").Order(StringComparer.Ordinal)));
+            var complete = true;
+            foreach (var reference in p.MetadataReferences)
+            {
+                ct.ThrowIfCancellationRequested();
+                var identity = ReviewMetadataFingerprint.Read(reference);
+                componentInputs["metadataReferences"].Add(identity.Identity);
+                complete &= identity.Complete;
+            }
+            foreach (var reference in p.ProjectReferences)
+            {
+                var dep = reference.ProjectId.Id.ToString("N");
+                var resolved = projects.TryGetValue(dep, out var dependency);
+                complete &= resolved;
+                componentInputs["projectReferences"].Add((resolved ? ReviewProgress.CanonicalProject(dependency!.Path) : "unresolved") +
+                    "|embed=" + reference.EmbedInteropTypes + "|aliases=" + ReviewContextFingerprints.Digest(reference.Aliases));
+            }
+            componentsByProject[id] = componentInputs.ToDictionary(c => c.Key,
+                c => ReviewContextFingerprints.Digest(c.Value), StringComparer.Ordinal);
+            referenceComplete[id] = complete;
             projectHashes[id]=ReviewProgress.Hash(string.Join("\n",fragments));
             dependencies[id]=p.ProjectReferences.Select(r=>r.ProjectId.Id.ToString("N")).ToArray();
         }
         var contexts=new Dictionary<string,string>(StringComparer.Ordinal);
+        var fingerprints = new Dictionary<string, ReviewContextFingerprint>(StringComparer.Ordinal);
         var closure=new Dictionary<string,HashSet<string>>(StringComparer.Ordinal);
         foreach (var id in projects.Keys)
         {
@@ -58,6 +89,12 @@ public sealed partial class SourceExplorerIndex
             contexts[id]=ReviewProgress.Hash(string.Join("\n",seen.Where(projects.ContainsKey)
                 .OrderBy(k=>ReviewProgress.CanonicalProject(projects[k].Path),StringComparer.Ordinal)
                 .Select(k=>ReviewProgress.CanonicalProject(projects[k].Path)+"="+projectHashes.GetValueOrDefault(k))));
+            var known = seen.Where(projects.ContainsKey).ToArray();
+            var hashes = ReviewContextFingerprints.ComponentNames.ToDictionary(name => name, name =>
+                ReviewContextFingerprints.Digest(known.Select(k => ReviewProgress.CanonicalProject(projects[k].Path) +
+                    "=" + componentsByProject[k][name])), StringComparer.Ordinal);
+            fingerprints[id] = ReviewContextFingerprints.Create(hashes,
+                seen.All(k => referenceComplete.GetValueOrDefault(k)));
         }
         var rows=new List<TrackedReviewTarget>(); var positions=new Dictionary<string,int>(StringComparer.Ordinal); long sourceBudget=0; var limited=Limited;
         async Task Add(string selection,string kind,string projectId,string name,ISymbol symbol,
@@ -78,15 +115,17 @@ public sealed partial class SourceExplorerIndex
             // Accessors without a documentation ID use an exact metadata/signature identity.
             // Anonymous/local functions remain unsupported rather than inheriting an outer method's badge.
             var identity=symbol.GetDocumentationCommentId() ?? fallbackIdentity;
+            var fingerprint = fingerprints[projectId];
             var supported=identity is not null && parts.Count>0 && source.Length<=ReviewProgress.MaxSourceCharacters
-                && sourceBudget+source.Length<=64000000;
+                && sourceBudget+source.Length<=64000000 && fingerprint.Complete;
             sourceBudget+=supported?source.Length:0;
             var key=ReviewProgress.TargetId(p.Path,kind,identity??("unsupported:"+selection));
             var target=new TrackedReviewTarget(key,selection,kind,projectId,p.Name,p.Path,name,
                 parts.Count>0?parts[0].Path:p.Path,parts.Count>0?parts[0].Line:1,
-                ReviewProgress.Hash(source),contexts[projectId],supported,
+                ReviewProgress.Hash(source),fingerprint.Hash,supported,
+                !fingerprint.Complete ? "参照メタデータまたは依存プロジェクトの識別情報を取得できません。参照を解決して再読み込みしてから記録してください。" :
                 supported?null:"安定した識別子または完全なソースを取得できません。局所関数・匿名関数や保存上限超過は個別記録できません。",
-                supported?source:"");
+                supported?source:"") { ContextFingerprint = fingerprint, LegacyContextHash = contexts[projectId] };
             // Partial methods may be indexed twice. Do not attach one checkpoint to two different bodies.
             if(positions.TryGetValue(key,out var prior))
             {
@@ -110,5 +149,16 @@ public sealed partial class SourceExplorerIndex
             await Add(entry.Row.Id,"method",entry.Row.ProjectId,entry.Row.Signature,symbol,declarations,fallback);
         }
         return _reviewCatalog=new(SnapshotId,rows,inputs,closure,limited);
+    }
+
+    // A diagnostic bucket only. Do NOT drop generated assembly versions, global usings,
+    // or code from the fingerprint; these can change semantics (including reflection).
+    private static string ReviewSourceCategory(string path)
+    {
+        var name = Path.GetFileName(path);
+        return name.EndsWith(".AssemblyInfo.cs", StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith(".AssemblyAttributes.cs", StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith(".GlobalUsings.g.cs", StringComparison.OrdinalIgnoreCase)
+            ? "generatedSources" : "sourceFiles";
     }
 }

@@ -7,16 +7,30 @@ namespace TenkaChan.Mcp.Tracking;
 public sealed record ReviewTarget(string Id, string SelectionId, string Kind, string ProjectId,
     string Project, string ProjectPath, string Name, string File, int Line,
     string SourceHash, string ContextHash, bool Trackable, string? UnavailableReason,
-    [property: JsonIgnore] string Source);
+    [property: JsonIgnore] string Source)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ReviewContextFingerprint? ContextFingerprint { get; init; }
+    // Computed from the same loaded inputs by the unmodified v1 algorithm. Never persisted.
+    [JsonIgnore] public string? LegacyContextHash { get; init; }
+}
 public sealed record ReviewEvidenceLink(string InstanceId, string CallId, string Tool,
     string Outcome, string? ObservedStatus, string RecordedUtc);
 public sealed record ReviewCheckpoint(long Revision, string TargetId, string Kind, string Name,
     string ProjectPath, string Status, string SourceHash, string ContextHash,
     string Summary, string Agent, string SessionId, string RecordedUtc,
-    IReadOnlyList<ReviewEvidenceLink> Evidence);
+    IReadOnlyList<ReviewEvidenceLink> Evidence)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ReviewContextFingerprint? ContextFingerprint { get; init; }
+}
 public sealed record ReviewState(string Status, string? PreviousStatus, string Reason,
     long Revision, bool SourceChanged, bool ContextChanged, bool RequiresReload,
-    ReviewCheckpoint? Checkpoint);
+    ReviewCheckpoint? Checkpoint)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ReviewContextChange? ContextChange { get; init; }
+}
 public sealed record ReviewQueueItem(ReviewTarget Target, ReviewState State);
 public sealed record ReviewMarkRequest(string SnapshotId, string TargetId, string SourceHash,
     string ContextHash, long ExpectedRevision, string Status, string Summary,
@@ -38,16 +52,23 @@ public static class ReviewProgress
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("review-v1\0" + CanonicalProject(project) + "\0" + kind + "\0" + symbol)));
     public static ReviewState State(ReviewTarget target, ReviewCheckpoint? mark, bool stale)
     {
-        if (mark is null) return new("unreviewed", null, stale ? "snapshot_outdated" : "not_checked", 0, false, false, stale, null);
+        var explanation = ReviewContextFingerprints.Explain(target, mark);
+        if (mark is null) return new("unreviewed", null, stale ? "snapshot_outdated" : "not_checked", 0, false, false, stale, null)
+        { ContextChange = explanation };
         var changed = target.SourceHash != mark.SourceHash;
-        var context = target.ContextHash != mark.ContextHash;
-        var reason = stale ? "snapshot_outdated" : changed ? "source_changed" : context ? "context_changed" : "current";
+        var unavailable = target.ContextFingerprint is { Complete: false };
+        var context = unavailable || (target.ContextHash != mark.ContextHash && !ReviewContextFingerprints.MatchesLegacy(target, mark));
+        var reason = stale ? "snapshot_outdated" : changed ? "source_changed" : unavailable ? "context_unavailable" : context ? "context_changed" : "current";
         var state = mark.Status == "unreviewed" ? "unreviewed" : stale || changed || context ? "needs_review" : mark.Status;
-        return new(state, mark.Status, reason, mark.Revision, changed, context, stale, mark);
+        return new(state, mark.Status, reason, mark.Revision, changed, context, stale, mark)
+        { ContextChange = explanation };
     }
+
     public static void ValidateMark(ReviewTarget target, ReviewMarkRequest request, bool stale)
     {
         if (!target.Trackable) throw new InvalidOperationException(target.UnavailableReason);
+        if (target.ContextFingerprint is { Complete: false })
+            throw new InvalidOperationException("Review context is incomplete. Resolve references and reload before recording work.");
         if (stale) throw new ReviewConflictException("ソースが読み込み後に変更されました。プロジェクトを再読み込みしてから記録してください。");
         if (target.Id != request.TargetId || target.SourceHash != request.SourceHash || target.ContextHash != request.ContextHash)
             throw new ReviewConflictException("確認対象のコードまたは周辺コードが変わりました。tenka_review_targetで現在のハッシュを取得してください。");
