@@ -17,7 +17,7 @@ public static class AgentOperationPermissions
         if (!approved)
             throw new UnauthorizedAccessException("approval_required: The server already permits agent execution. This invocation has no approval. Obtain explicit client approval, then pass approved:true. Do not change the server settings for this error.");
     }
-    public static object Describe(bool hostAllowsBuild, bool hostAllowsExecution, bool trustMsBuild, bool localExecution) => new
+    public static object Describe(bool hostAllowsBuild, bool hostAllowsExecution, bool trustMsBuild, bool localExecution, bool generatedHostExperiments = false) => new
     {
         // Compatibility aliases: explicitly labelled as gateway switches below.
         build = hostAllowsBuild, execution = hostAllowsExecution,
@@ -25,9 +25,15 @@ public static class AgentOperationPermissions
         invocation = new
         {
             approvalRequired = true, approvalArgument = "approved", canExecuteWithoutApproval = false,
-            toolsRequiringApproval = new[] { "tenka_open_project", "tenka_build", "tenka_jit", "tenka_trace", "tenka_run_companion", "tenka_run_experiment", "tenka_session_end" }
+            toolsRequiringApproval = new[] { "tenka_open_project", "tenka_build", "tenka_jit", "tenka_trace", "tenka_run_companion", "tenka_run_experiment", "tenka_session_end", "tenka_apply_change", "tenka_revert_change" },
+            conditionalApproval = new[]
+            {
+                new { tool = "tenka_investigation", when = "action=resume" },
+                new { tool = "tenka_review_workflow", when = "mode=validate" }
+            }
         },
-        localPrerequisites = new { trustedMsBuild = trustMsBuild, localExecutionEnabled = localExecution },
+        localPrerequisites = new { trustedMsBuild = trustMsBuild, localExecutionEnabled = localExecution, generatedHostExperimentsEnabled = generatedHostExperiments },
+        sourceEdits = new { hostAllowed = hostAllowsBuild, singleFileOnly = true, separateApprovalRequired = true },
         executionIsSandboxed = false,
         note = "build/execution are host-policy switches, NOT approval of an invocation or a guarantee that all local prerequisites are ready. Obtain explicit approval and pass approved:true for each operation listed above. Generated host experiments run as the current OS user, not in a security sandbox."
     };

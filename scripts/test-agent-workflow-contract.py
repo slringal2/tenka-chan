@@ -32,7 +32,7 @@ def guards(sources):
     def check(condition, message):
         if not condition: errors.append(message)
     tools = catalogue(sources)
-    check(len(tools) == 38, '38 public tools')
+    check(len(tools) == 44, '44 public tools')
     check({'tenka_sessions_list', 'tenka_session_end'} <= tools.keys(), 'management tools')
     snapshots = {n for n, (p, _) in tools.items() if 'snapshotId' in p}
     check(bool(snapshots) and all('string? snapshotId = null' in tools[n][0] for n in snapshots), 'optional snapshots')
@@ -88,7 +88,7 @@ def guards(sources):
     check('journal.ListSessions()' in gateway and 'journal.EndIdleSession(request.SessionId, request.Approved)' in gateway, 'management endpoints direct')
     check('AddSingleton<AgentSessionClient>()' in sources['src/TenkaChan.Mcp/Program.cs'], 'management client injected')
     readme = sources['README.md']
-    check('公開ツールは38個' in readme and all(n in readme for n in ('tenka_sessions_list', 'tenka_session_end')), 'README inventory')
+    check('公開ツールは44個' in readme and all(n in readme for n in ('tenka_sessions_list', 'tenka_session_end')), 'README inventory')
     return errors
 
 
@@ -99,7 +99,7 @@ class SourceContract(unittest.TestCase):
     def test_registered_classes_match_catalogue(self):
         classes = re.findall(r'\.WithTools<([A-Za-z_][A-Za-z0-9_]*)>\(\)', SOURCES['src/TenkaChan.Mcp/Program.cs'])
         self.assertEqual(['DashboardAgentTools', 'ReviewProgressTools'], classes)
-        self.assertEqual(38, len(catalogue(SOURCES)))
+        self.assertEqual(44, len(catalogue(SOURCES)))
 
     def test_mutations_are_rejected(self):
         mutations = [

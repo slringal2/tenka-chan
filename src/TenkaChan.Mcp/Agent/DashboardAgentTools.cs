@@ -12,7 +12,7 @@ public sealed class DashboardAgentTools
         AgentToolResponse.RunAsync(() => client.ConnectAsync(goal, cancellationToken));
 
     [McpServerTool(Name = "tenka_context")]
-    [Description("Read the running Tenka workspace, source snapshot, project/output IDs and server permissions. This does not open a project or run a model.")]
+    [Description("Read the running Tenka workspace, source snapshot, project/output IDs, durable investigation ID and server permissions. For a single performance change, prefer tenka_review_workflow; use detailed IL/JIT tools only as needed. This does not open a project or run a model.")]
     public static Task<CallToolResult> Context(DashboardAgentClient client, CancellationToken cancellationToken = default) =>
         AgentToolResponse.RunAsync(() => client.CallAsync("context", new { }, cancellationToken));
 
@@ -132,17 +132,17 @@ public sealed class DashboardAgentTools
         AgentToolResponse.RunAsync(() => client.CallAsync("prepare_experiment", new { snapshotId, projectId, kind, generatedCode, targetFramework, runtimeFramework }, cancellationToken));
 
     [McpServerTool(Name = "tenka_run_experiment")]
-    [Description("Execute a generated experiment created by THIS agent session. UNSANDBOXED code. Requires host allow-build, allow-execution, generated-host-experiments enabled and external-client approval.")]
+    [Description("Execute a generated experiment owned by this durable investigation. Resume its investigation explicitly to use it after reconnect/restart; terminal executions are not rerun. UNSANDBOXED code. Requires host allow-build, allow-execution, generated-host-experiments enabled and external-client approval.")]
     public static Task<CallToolResult> RunExperiment(DashboardAgentClient client, string experimentId, bool approved = false, CancellationToken cancellationToken = default) =>
         AgentToolResponse.RunAsync(() => client.CallAsync("run_experiment", new { experimentId, approved }, cancellationToken));
 
     [McpServerTool(Name = "tenka_experiment_result")]
-    [Description("Read an experiment created by this session; tests and benchmarks are actual recorded outputs, not model claims.")]
+    [Description("Read an experiment owned by this durable investigation; tests and benchmarks are actual recorded outputs, not model claims.")]
     public static Task<CallToolResult> ExperimentResult(DashboardAgentClient client, string experimentId, CancellationToken cancellationToken = default) =>
         AgentToolResponse.RunAsync(() => client.CallAsync("experiment_result", new { experimentId }, cancellationToken));
 
     [McpServerTool(Name = "tenka_compare_benchmarks")]
-    [Description("Compare two completed experiments from this session with matching benchmark source and environment. Descriptive comparison, not proof of a regression.")]
+    [Description("Compare two completed experiments owned by this durable investigation with matching benchmark source and environment. Descriptive comparison, not proof of a regression.")]
     public static Task<CallToolResult> CompareBenchmarks(DashboardAgentClient client, string baselineExperimentId, string candidateExperimentId, CancellationToken cancellationToken = default) =>
         AgentToolResponse.RunAsync(() => client.CallAsync("compare_benchmarks", new { baselineExperimentId, candidateExperimentId }, cancellationToken));
 
@@ -152,12 +152,12 @@ public sealed class DashboardAgentTools
         AgentToolResponse.RunAsync(() => client.CallAsync("note", new { kind, message, evidenceCallIds }, cancellationToken));
 
     [McpServerTool(Name = "tenka_read_result")]
-    [Description("Read a large prior tool result from THIS session using its callId and JSON pointer (e.g. /findings); arrays are paged. Do not rerun expensive tools merely to retrieve output.")]
+    [Description("Read a prior result using callId and a JSON pointer (e.g. /findings). Live-session data is preferred; after explicitly resuming an investigation, retained small replies can be read from disk. Large live-only results cannot be reconstructed; arrays are paged. Do not rerun expensive tools merely to retrieve output.")]
     public static Task<CallToolResult> ReadResult(DashboardAgentClient client, string callId, string pointer = "", int offset = 0, int limit = 30, CancellationToken cancellationToken = default) =>
         AgentToolResponse.RunAsync(() => client.CallAsync("read_result", new { callId, pointer, offset, limit }, cancellationToken));
 
     [McpServerTool(Name = "tenka_finish")]
-    [Description("Mark this external investigation session finished. Publish a concise qualified conclusion with tenka_note first. This does not assert every issue was found or fixed.")]
+    [Description("Finish this transport session; durable investigation receipts and ownership are retained. Publish a concise qualified conclusion with tenka_note first. This does not assert every issue was found or fixed.")]
     public static Task<CallToolResult> Finish(DashboardAgentClient client, CancellationToken cancellationToken = default) =>
         AgentToolResponse.RunAsync(() => client.FinishAsync(cancellationToken));
     [McpServerTool(Name = "tenka_sessions_list")]

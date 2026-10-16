@@ -66,9 +66,9 @@ public static class AgentGatewayEndpoints
     }
 }
 
-public sealed class AgentGateway(IServiceProvider services, AgentJournal journal, AgentConnection policy)
+public sealed partial class AgentGateway(IServiceProvider services, AgentJournal journal, AgentConnection policy)
 {
-    private readonly Dictionary<string, HashSet<string>> _experiments = new(StringComparer.Ordinal);
+    private readonly AgentInvestigationStore _investigations = new();
     private T Get<T>() where T : notnull => services.GetRequiredService<T>();
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly Dictionary<string, string> ExplorerActions = new(StringComparer.Ordinal)
@@ -84,14 +84,14 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
     };
     private static readonly HashSet<string> OtherTools = new(["context", "sample", "open_project", "list_types", "rules", "note", "read_result",
         "prepare_experiment", "run_experiment", "experiment_result", "compare_benchmarks",
-        "review_queue", "review_target", "review_history", "review_diff", "review_mark"], StringComparer.Ordinal);
+        "review_queue", "review_target", "review_history", "review_diff", "review_mark", "investigation", "propose_change", "diff_proposal", "apply_change", "revert_change", "review_workflow"], StringComparer.Ordinal);
     private static readonly HashSet<string> SnapshotTools = new(ExplorerActions.Keys.Concat(new[]
-    { "list_types", "prepare_experiment", "review_queue", "review_target", "review_history", "review_diff", "review_mark" }), StringComparer.Ordinal);
+    { "list_types", "prepare_experiment", "review_queue", "review_target", "review_history", "review_diff", "review_mark", "propose_change" }), StringComparer.Ordinal);
     private static readonly HashSet<string> Fields = new(["snapshotId", "projectId", "typeId", "methodId", "assemblyId", "companionId", "artifactId",
         "baselineId", "nativeIndex", "baselineIndex", "profileIndex", "metadataToken", "assemblySha256", "approved", "allowRestore", "arguments",
         "sample", "path", "expectedSnapshotId", "query", "offset", "limit", "callId", "pointer", "kind", "message", "evidenceCallIds",
         "generatedCode", "targetFramework", "runtimeFramework", "experimentId", "baselineExperimentId", "candidateExperimentId",
-        "cursor", "trackableOnly", "state", "targetId", "sourceHash", "contextHash", "expectedRevision", "status", "summary", "fromRevision", "toRevision"], StringComparer.Ordinal);
+        "cursor", "trackableOnly", "state", "targetId", "sourceHash", "contextHash", "expectedRevision", "status", "summary", "fromRevision", "toRevision", "action", "investigationId", "proposalId", "replacementCode", "expectedFileSha256", "mode", "testCompanionId", "benchmarkCompanionId", "benchmarkFilter"], StringComparer.Ordinal);
 
     public async Task<object> CallAsync(AgentCallRequest request, CancellationToken ct)
     {
@@ -106,16 +106,19 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
         var arguments = request.Arguments;
         try
         {
+            if (request.Tool == "investigation" && (Optional(arguments, "action") ?? "status") == "resume")
+                _investigations.Resume(request.SessionId, Str(arguments, "investigationId"), Bool(arguments, "approved"));
+            using var investigationLease = _investigations.Enter(request.SessionId);
             if (SnapshotTools.Contains(request.Tool) && AgentSelectionDefaults.NeedsResolution(arguments, request.Tool is "build" or "prepare_experiment"))
                 arguments = await Get<DashboardState>().ResolveAgentSelectionAsync(arguments, request.Tool is "build" or "prepare_experiment", deadline.Token);
             var result = await Execute(request.SessionId, request.Tool, arguments, deadline.Token);
-            return journal.Complete(callId, result, resolvedSnapshot: AgentJournal.Snapshot(arguments));
+            return CompleteDurable(request, journal.Complete(callId, result, resolvedSnapshot: AgentJournal.Snapshot(arguments)));
         }
-        catch (OperationCanceledException) { return journal.Complete(callId, null, "Action cancelled or time budget reached.", true, AgentJournal.Snapshot(arguments)); }
+        catch (OperationCanceledException) { return CompleteDurable(request, journal.Complete(callId, null, "Action cancelled or time budget reached.", true, AgentJournal.Snapshot(arguments))); }
         catch (Exception ex)
         {
             // Nothing is automatically retried. The journal reports operational failure, not a target-code defect.
-            return journal.Complete(callId, null, ex.GetType().Name + ": " + (ex.Message.Length > 1000 ? ex.Message[..1000] : ex.Message), resolvedSnapshot: AgentJournal.Snapshot(arguments));
+            return CompleteDurable(request, journal.Complete(callId, null, ex.GetType().Name + ": " + (ex.Message.Length > 1000 ? ex.Message[..1000] : ex.Message), resolvedSnapshot: AgentJournal.Snapshot(arguments)));
         }
     }
     private void BuildPermission(JsonElement a)
@@ -128,6 +131,8 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
     }
     private async Task<object> Execute(string session, string tool, JsonElement a, CancellationToken ct)
     {
+        if (tool is "investigation" or "propose_change" or "diff_proposal" or "apply_change" or "revert_change" or "review_workflow")
+            return await ExecuteInvestigation(session, tool, a, ct);
         var dashboard = Get<DashboardState>(); var guard = Get<WorkspaceGuard>();
         var discovery = Get<WorkspaceBinaryDiscovery>();
         if (ExplorerActions.TryGetValue(tool, out var action))
@@ -154,11 +159,12 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
             case "review_diff": return await Get<ReviewTrackingService>().Diff(Str(a,"snapshotId"),Str(a,"targetId"),Long(a,"fromRevision"),Long(a,"toRevision"),Number(a,"offset"),Number(a,"limit",150),ct);
             case "review_mark":
             {
-                var attribution=journal.ReviewAttribution(session,Strings(a,"evidenceCallIds"));
+                var attribution=journal.ReviewAttribution(session,null);
+                var evidence=_investigations.Evidence(session,Strings(a,"evidenceCallIds"));
                 var request=new TenkaChan.Mcp.Tracking.ReviewMarkRequest(Str(a,"snapshotId"),Str(a,"targetId"),
                     Str(a,"sourceHash"),Str(a,"contextHash"),Long(a,"expectedRevision")??throw new ArgumentException("expectedRevision is required"),
                     Str(a,"status"),Str(a,"summary"));
-                return await Get<ReviewTrackingService>().Mark(request,attribution.Agent,session,attribution.Evidence,ct);
+                return await Get<ReviewTrackingService>().Mark(request,attribution.Agent,session,evidence,ct);
             }
             case "context":
             {
@@ -166,14 +172,15 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
                 var overview = JsonSerializer.SerializeToElement(dashboard.Overview(), Json);
                 object? workspace = overview.GetProperty("loaded").GetBoolean()
                     ? await dashboard.ExplorerContextAsync(guard, discovery, ct) : null;
-                return new { instanceId = journal.InstanceId, workspace, overview,
+                return new { instanceId = journal.InstanceId, workspace, overview, investigation = InvestigationSummary(session),
                     permissions = AgentOperationPermissions.Describe(policy.AllowBuild, policy.AllowExecution,
-                        guard.TrustMsBuild, Environment.GetEnvironmentVariable("TENKA_ENABLE_LOCAL_EXEC") == "1"),
+                        guard.TrustMsBuild, Environment.GetEnvironmentVariable("TENKA_ENABLE_LOCAL_EXEC") == "1",
+                        Environment.GetEnvironmentVariable("TENKA_ENABLE_UNSANDBOXED_EXPERIMENTS") == "1"),
                     sessionManagement = new { maximumSessions = journal.SessionLimit, idleTimeoutMinutes = journal.IdleTimeoutMinutes,
                         listTool = "tenka_sessions_list", endTool = "tenka_session_end", requiresInvestigationSession = false },
                     defaults = new { snapshotId = "current workspace at call start; explicit IDs remain stale-checked",
                         projectId = "build/prepare_experiment: directly opened .csproj or sole project; otherwise explicit selection required. Browse filters remain solution-wide when omitted." },
-                    workflow = "Inspect context -> tenka_review_queue for pending/changed work -> enumerate types -> inspect method/references -> inspect IL -> request authorized execution -> read actual results -> report a qualified conclusion. Always refresh context after a build. Record checked/optimized checkpoints only after completing the work; these are agent reports, not verified speedups. No model endpoint is configured in Tenka." };
+                    workflow = "Resume the chosen investigation if needed -> choose a target from priorities/review_queue -> tenka_review_workflow inspect for source and fixtures -> propose_change -> diff_proposal -> approved review_workflow validate/result -> separately approved apply_change or discard. Use IL/JIT only to answer a concrete uncertainty; do not run every tool. Completed workflow stages and saved evidence are reused, not rerun. Reload after source apply. Record checked/optimized only after actual inspection; marks are agent reports, not speedup proofs." };
             }
             case "sample":
                 return (Optional(a, "sample") ?? "game-lab") switch
@@ -191,9 +198,15 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
                     index.Types(Optional(a, "projectId"), Optional(a, "query"), Number(a, "offset"), Number(a, "limit", 80))), ct);
             case "rules": return new { version = DeterministicRuleCatalog.Version, rules = DeterministicRuleCatalog.Rules };
             case "note":
-                journal.Report(session, new AgentNote(Str(a, "kind"), Str(a, "message"), Strings(a, "evidenceCallIds")));
-                return new { status = "agent_reported_unverified", note = "Displayed as an agent statement, not promoted to verified evidence." };
-            case "read_result": return journal.ReadResult(session, Str(a, "callId"), Optional(a, "pointer") ?? "", Number(a, "offset"), Number(a, "limit", 30));
+            {
+                var evidence = _investigations.Evidence(session, Strings(a, "evidenceCallIds"));
+                journal.Report(session, new AgentNote(Str(a, "kind"), Str(a, "message")));
+                return new { status = "agent_reported_unverified", evidence,
+                    note = "Displayed as an agent statement, not promoted to verified evidence. Linked receipts retain their original server instance and outcome." };
+            }
+            case "read_result":
+                try { return journal.ReadResult(session, Str(a, "callId"), Optional(a, "pointer") ?? "", Number(a, "offset"), Number(a, "limit", 30)); }
+                catch (KeyNotFoundException) { return _investigations.ReadResult(session, Str(a, "callId"), Optional(a, "pointer") ?? "", Number(a, "offset"), Number(a, "limit", 30)); }
             case "prepare_experiment":
                 return await dashboard.ExploreAsync(Str(a, "snapshotId"), (index, _) =>
                 {
@@ -202,13 +215,7 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
                     var project = index.Project(Str(a, "projectId"));
                     var result = Get<ExperimentStore>().Create(Path.GetDirectoryName(project.Path)!, Path.GetFileName(project.Path), kind, code, Optional(a, "targetFramework"), null, Optional(a, "runtimeFramework"));
                     var id = JsonSerializer.SerializeToElement(result, Json).GetProperty("id").GetString()!;
-                    lock (_experiments)
-                    {
-                        var live = journal.Monitor(policy.Enabled, policy.AllowBuild, policy.AllowExecution).Sessions.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
-                        foreach (var old in _experiments.Keys.Where(k => !live.Contains(k)).ToArray()) _experiments.Remove(old);
-                        if (!_experiments.TryGetValue(session, out var ids)) _experiments[session] = ids = new(StringComparer.Ordinal);
-                        ids.Add(id);
-                    }
+                    _investigations.AddExperiment(session, id);
                     return Task.FromResult((object)result);
                 }, ct);
             case "run_experiment":
@@ -223,12 +230,7 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
             default: throw new ArgumentException("Unknown agent tool.");
         }
     }
-    private void OwnExperiment(string session, string id)
-    {
-        lock (_experiments)
-            if (!_experiments.TryGetValue(session, out var ids) || !ids.Contains(id))
-                throw new UnauthorizedAccessException("Only experiments created in this agent session can be used.");
-    }
+    private void OwnExperiment(string session, string id) => _investigations.RequireExperiment(session, id);
     private static string Str(JsonElement a, string key) => Optional(a, key) ?? throw new ArgumentException("Missing field: " + key);
     private static string? Optional(JsonElement a, string key) => a.TryGetProperty(key, out var p) && p.ValueKind != JsonValueKind.Null ? p.GetString() : null;
     private static long? Long(JsonElement a, string key) => a.TryGetProperty(key,out var p) && p.ValueKind!=JsonValueKind.Null ? p.GetInt64() : null;

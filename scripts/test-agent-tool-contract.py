@@ -15,9 +15,9 @@ def violations(sources):
         if not ok: errors.append(note)
     tools=sources['DashboardAgentTools.cs']+sources['ReviewProgressTools.cs']
     names=re.findall(r'\[McpServerTool\(Name = "([^"]+)"\)',tools)
-    check(len(names)==len(set(names))==38,'38 unique existing tools')
-    check(tools.count('public static Task<CallToolResult>')==38,'typed MCP results')
-    check(tools.count('AgentToolResponse.RunAsync(() => client.')==38,'all tool wrappers')
+    check(len(names)==len(set(names))==44,'44 unique tools')
+    check(tools.count('public static Task<CallToolResult>')==44,'typed MCP results')
+    check(tools.count('AgentToolResponse.RunAsync(() => client.')==44,'all tool wrappers')
     check('approved = true' not in tools,'no default approval')
     check('.WithRequestFilters(filters => filters.AddCallToolFilter(AgentToolCallFilter.Create))' in sources['Program.cs'],'pre-binding filter registration')
     validator=sources['AgentToolCallFilter.cs']
@@ -83,7 +83,7 @@ class SourceTests(unittest.TestCase):
     def test_guarded_tools_still_forward_named_json_arguments(self):
         for file in ('DashboardAgentTools.cs','ReviewProgressTools.cs'):
             tools=re.findall(r'public static Task<CallToolResult> (\w+)\((.*?)\)\s*=>\s*AgentToolResponse.RunAsync\(\(\) => (client\..*?)\);',SOURCES[file],re.S)
-            self.assertEqual(33 if file.startswith('Dashboard') else 5,len(tools))
+            self.assertEqual(33 if file.startswith('Dashboard') else 11,len(tools))
             for method,parameters,body in tools:
                 # No wrapper adds argument values, execution approval or a retry loop.
                 self.assertNotIn('true',body)
