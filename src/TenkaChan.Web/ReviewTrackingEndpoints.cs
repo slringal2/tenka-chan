@@ -65,9 +65,10 @@ public sealed class ReviewTrackingService(DashboardState dashboard,WorkspaceGuar
     }
     public Task<object> Target(string snapshot,string targetId,CancellationToken ct) => With(snapshot,async catalog=>
     {
-        var target=catalog.Require(targetId);var stale=await catalog.StaleProjectsAsync(guard,false,ct);
+        var target=catalog.ResolveForRead(targetId);var stale=await catalog.StaleProjectsAsync(guard,false,ct);
         var history=store.History(target.Id);var state=ReviewProgress.State(target,history.FirstOrDefault(),stale.Contains(target.ProjectId));
-        return new {snapshotId=catalog.SnapshotId,target,state,history,note=ReviewProgress.Note};
+        return new {snapshotId=catalog.SnapshotId,target,state,history,note=ReviewProgress.Note,
+            navigation=ReviewNavigation.ForTarget(catalog.SnapshotId,target,state)};
     },ct);
     public Task<object> Badges(string snapshot,string[] ids,CancellationToken ct) => With(snapshot,async catalog=>
     {
@@ -94,6 +95,7 @@ public sealed class ReviewTrackingService(DashboardState dashboard,WorkspaceGuar
             fromRevision=leftRevision,toRevision=to,fromHash=left.Item1?.SourceHash,
             toHash=right.Item1?.SourceHash??target.SourceHash,
             diff=_diffCache.Compare(left.Item2,right.Item2,offset,limit),
+            comparison=ReviewNavigation.CompareHashes(left.Item1,right.Item1,target),
             note=leftRevision is null?"未確認の対象です。比較元がないため、表示は現在のソース全体です。変更量とはみなしません。":ReviewProgress.Note};
     },ct);
     public Task<object> Mark(ReviewMarkRequest request,string agent,string session,IReadOnlyList<ReviewEvidenceLink> evidence,CancellationToken ct) =>

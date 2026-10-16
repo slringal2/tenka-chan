@@ -14,7 +14,7 @@ FILES = [AGENT + name for name in ('DashboardAgentTools.cs', 'ReviewProgressTool
     'AgentSelectionDefaults.cs', 'AgentOperationPermissions.cs')]
 FILES += [WEB + 'AgentGatewayEndpoints.cs', WEB + 'DashboardState.AgentDefaults.cs', 'src/TenkaChan.Mcp/Program.cs', 'README.md']
 SOURCES = {p: (ROOT / p).read_text(encoding='utf-8') for p in FILES}
-TOOL = re.compile(r'\[McpServerTool\(Name = "([^"]+)"\)\].*?public static Task<string> \w+\((.*?)\)\s*=>\s*(.*?);', re.S)
+TOOL = re.compile(r'\[McpServerTool\(Name = "([^"]+)"\)\].*?public static Task<(?:string|CallToolResult)> \w+\((.*?)\)\s*=>\s*(.*?);', re.S)
 
 
 def catalogue(sources):
