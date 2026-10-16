@@ -91,7 +91,7 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
         "baselineId", "nativeIndex", "baselineIndex", "profileIndex", "metadataToken", "assemblySha256", "approved", "allowRestore", "arguments",
         "sample", "path", "expectedSnapshotId", "query", "offset", "limit", "callId", "pointer", "kind", "message", "evidenceCallIds",
         "generatedCode", "targetFramework", "runtimeFramework", "experimentId", "baselineExperimentId", "candidateExperimentId",
-        "cursor", "trackableOnly", "state", "targetId", "sourceHash", "contextHash", "expectedRevision", "status", "summary", "fromRevision", "toRevision", "action", "investigationId", "proposalId", "replacementCode", "expectedFileSha256", "mode", "testCompanionId", "benchmarkCompanionId", "benchmarkFilter"], StringComparer.Ordinal);
+        "cursor", "trackableOnly", "state", "targetId", "sourceHash", "contextHash", "expectedRevision", "status", "summary", "fromRevision", "toRevision", "action", "investigationId", "proposalId", "replacementCode", "expectedFileSha256", "mode", "testCompanionId", "benchmarkCompanionId", "benchmarkFilter", "testExperimentId", "benchmarkExperimentId"], StringComparer.Ordinal);
 
     public async Task<object> CallAsync(AgentCallRequest request, CancellationToken ct)
     {

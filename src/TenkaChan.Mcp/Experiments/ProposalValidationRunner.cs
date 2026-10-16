@@ -11,18 +11,23 @@ public sealed record ProposalCaseComparison(string CaseId, double BaselineNanose
     double ChangePercent, double? BaselineAllocatedBytes, double? CandidateAllocatedBytes, string Status);
 public sealed record ProposalValidation(string ProposalId, string AfterHash, string TestProject, string BenchmarkProject,
     string BenchmarkFilter, string Status, IReadOnlyList<ProposalStage> Stages,
-    IReadOnlyList<ProposalCaseComparison> Cases, string Note);
+    IReadOnlyList<ProposalCaseComparison> Cases, string Note)
+{
+    // Null in legacy receipts and in existing-companion workflows.
+    public ProposalGeneratedFixture? GeneratedTest { get; init; }
+    public ProposalGeneratedFixture? GeneratedBenchmark { get; init; }
+}
 
 /// <summary>
-/// One tool coordinates frozen baseline/candidate copies using the SAME existing
-/// test and benchmark projects. Stage receipts survive reconnect/restart. A
-/// started stage without a receipt is unknown and is NEVER silently rerun.
+/// One foreground call coordinates frozen baseline/candidate copies using the
+/// SAME existing or generated workloads. Completed/unknown stages are not replayed.
 /// </summary>
-public sealed class ProposalValidationRunner(ChangeProposalStore proposals, WorkspaceGuard guard, IWorkspaceBuildProcess? process = null)
+public sealed class ProposalValidationRunner(ChangeProposalStore proposals, WorkspaceGuard guard,
+    IWorkspaceBuildProcess? process = null, ExperimentStore? experiments = null)
 {
     private readonly IWorkspaceBuildProcess _process = process ?? new DotnetWorkspaceBuildProcess();
     private static readonly string[] StageNames = ["baseline_test", "candidate_test", "baseline_benchmark", "candidate_benchmark"];
-    private const string Note = "Tests cover only the selected fixture; coverage of the changed method is not proven. Benchmarks are descriptive, not statistical proof. Copies are not a security sandbox: trusted MSBuild, tests and benchmarks run as the current OS user. No automatic source apply or review mark.";
+    private const string Note = "Tests cover only the selected fixture; coverage of the changed method is not proven. Generated expectations/workloads are agent-authored, not independently derived oracles. Benchmarks are descriptive, not statistical proof. Copies are not a security sandbox: trusted MSBuild, tests and benchmarks run as the current OS user. No automatic source apply or review mark.";
 
     public static ProposalCompanion Choose(ChangeProposal p, string kind, string? selectedId)
     {
@@ -30,17 +35,32 @@ public sealed class ProposalValidationRunner(ChangeProposalStore proposals, Work
         if (selectedId is not null) return candidates.SingleOrDefault(c => c.Id == selectedId)
             ?? throw new ArgumentException("companion_not_found: Select an ID advertised for this proposal and kind.");
         return candidates.Length == 1 ? candidates[0]
-            : throw new ArgumentException("companion_selection_required: No unique " + kind + " project. Inspect the proposal's companions and select one; no fixture or expected result was invented.");
+            : throw new ArgumentException("companion_selection_required: No unique " + kind + " project. Select a companion, or prepare a generated " + kind + " with tenka_prepare_experiment and pass " + (kind == "test" ? "testExperimentId" : "benchmarkExperimentId") + ". No fixture or expected result was invented.");
     }
     public async Task<ProposalValidation> RunAsync(string proposalId, string? testId, string? benchmarkId,
-        string? benchmarkFilter, bool approved, CancellationToken ct)
+        string? benchmarkFilter, bool approved, CancellationToken ct,
+        string? testExperimentId = null, string? benchmarkExperimentId = null,
+        Action<string>? authorizeExperiment = null)
     {
         if (!approved || !guard.TrustMsBuild || Environment.GetEnvironmentVariable("TENKA_ENABLE_LOCAL_EXEC") != "1"
             || Environment.GetEnvironmentVariable("TENKA_ENABLE_UNSANDBOXED_EXPERIMENTS") != "1")
             throw new UnauthorizedAccessException("approval_required: Proposal validation runs authored source UNSANDBOXED. Enable trusted MSBuild, local execution and generated host experiments; separately approve this invocation.");
+        if (testId is not null && testExperimentId is not null || benchmarkId is not null && benchmarkExperimentId is not null)
+            throw new ArgumentException("validation_selection_conflict: Choose either a companion ID or an experiment ID for each kind, not both.");
+        ct.ThrowIfCancellationRequested();
         using var busy = proposals.Enter(proposalId);
         var p = proposals.Read(proposalId);
         if (p.Status != "prepared") throw new InvalidOperationException("Only a prepared proposal can be validated.");
+        void Authorize(string? id)
+        {
+            if (id is null) return;
+            InvestigationFiles.Id(id);
+            if (authorizeExperiment is null)
+                throw new UnauthorizedAccessException("Generated workloads require an investigation ownership check.");
+            authorizeExperiment(id);
+        }
+        // Check both supplied IDs before any generated fixture is staged.
+        Authorize(testExperimentId); Authorize(benchmarkExperimentId);
         var reportFile = Path.Combine(proposals.Folder(proposalId), "validation.json");
         ProposalValidation report;
         if (File.Exists(reportFile))
@@ -50,31 +70,52 @@ public sealed class ProposalValidationRunner(ChangeProposalStore proposals, Work
                 || !report.Stages.Select(s => s.Name).SequenceEqual(StageNames.Take(report.Stages.Count)))
                 throw new InvalidDataException("Stored workflow stage sequence is invalid.");
             if (report.ProposalId != proposalId || report.AfterHash != p.AfterHash) throw new InvalidDataException("Validation receipt does not match proposal content.");
-            if (testId is not null && Choose(p, "test", testId).Path != report.TestProject
-                || benchmarkId is not null && Choose(p, "benchmark", benchmarkId).Path != report.BenchmarkProject
+            Authorize(report.GeneratedTest?.ExperimentId); Authorize(report.GeneratedBenchmark?.ExperimentId);
+            if (testId is not null && (report.GeneratedTest is not null || Choose(p, "test", testId).Path != report.TestProject)
+                || benchmarkId is not null && (report.GeneratedBenchmark is not null || Choose(p, "benchmark", benchmarkId).Path != report.BenchmarkProject)
+                || testExperimentId is not null && testExperimentId != report.GeneratedTest?.ExperimentId
+                || benchmarkExperimentId is not null && benchmarkExperimentId != report.GeneratedBenchmark?.ExperimentId
                 || benchmarkFilter is not null && benchmarkFilter != report.BenchmarkFilter)
                 throw new InvalidOperationException("validation_plan_changed: Keep the frozen plan or prepare a new proposal. Completed stages will not be reused with different workloads.");
+            ProposalGeneratedExperiments.VerifyAll(proposals, p, report);
             if (report.Stages.Any(s => s.Status == "running"))
                 throw new InvalidOperationException("validation_outcome_unknown: A prior stage started without a terminal receipt. Inspect its artifacts; it will not be repeated automatically.");
             if (report.Status is not "awaiting_next_stage") return report;
         }
         else
         {
-            var test = Choose(p, "test", testId); var benchmark = Choose(p, "benchmark", benchmarkId);
             var filter = benchmarkFilter ?? "*";
             if (string.IsNullOrWhiteSpace(filter) || filter.Length > 200 || filter.Any(char.IsControl)) throw new ArgumentException("Invalid benchmarkFilter.");
-            report = new(proposalId, p.AfterHash, test.Path, benchmark.Path, filter, "awaiting_next_stage", [], [], Note);
+            var test = testExperimentId is null ? Choose(p, "test", testId) : null;
+            var benchmark = benchmarkExperimentId is null ? Choose(p, "benchmark", benchmarkId) : null;
+            // Validate existing fixture separation before writing a new plan or starting a child.
+            ValidateExistingFixtureSeparation(p, new[] { test?.Path, benchmark?.Path });
+            proposals.VerifyInputs(p, proposals.CopyRoot(proposalId, "baseline"), false, ct);
+            proposals.VerifyInputs(p, proposals.CopyRoot(proposalId, "candidate"), true, ct);
+            ProposalGeneratedFixture? generatedTest = null, generatedBenchmark = null;
+            if (testExperimentId is not null || benchmarkExperimentId is not null)
+            {
+                var generated = new ProposalGeneratedExperiments(proposals, experiments
+                    ?? throw new InvalidOperationException("Generated experiment storage is not available in this runner."));
+                if (testExperimentId is not null) generatedTest = generated.Prepare(p, testExperimentId, "test");
+                if (benchmarkExperimentId is not null) generatedBenchmark = generated.Prepare(p, benchmarkExperimentId, "benchmark");
+            }
+            report = new(proposalId, p.AfterHash,
+                generatedTest is null ? test!.Path : ProposalGeneratedExperiments.Selection(generatedTest),
+                generatedBenchmark is null ? benchmark!.Path : ProposalGeneratedExperiments.Selection(generatedBenchmark),
+                filter, "awaiting_next_stage", [], [], Note)
+            { GeneratedTest = generatedTest, GeneratedBenchmark = generatedBenchmark };
             proposals.SaveValidation(report);
         }
-        ValidateFixtureSeparation(p, report.TestProject, report.BenchmarkProject);
-        // A bounded foreground call; no hidden task or background process. Continue
-        // with the same tool/proposal ID when the returned status requests it.
+        ValidateExistingFixtureSeparation(p, new[]
+        { report.GeneratedTest is null ? report.TestProject : null, report.GeneratedBenchmark is null ? report.BenchmarkProject : null });
         var clock = Stopwatch.StartNew();
         foreach (var name in StageNames.Skip(report.Stages.Count))
         {
             ct.ThrowIfCancellationRequested();
             proposals.VerifyInputs(p, proposals.CopyRoot(proposalId, "baseline"), false, ct);
             proposals.VerifyInputs(p, proposals.CopyRoot(proposalId, "candidate"), true, ct);
+            ProposalGeneratedExperiments.VerifyAll(proposals, p, report);
             var running = new ProposalStage(name, "running", null, null, [], "", "");
             report = report with { Stages = report.Stages.Append(running).ToArray(), Status = "running" };
             proposals.SaveValidation(report); // Durable intent BEFORE any child starts.
@@ -84,6 +125,7 @@ public sealed class ProposalValidationRunner(ChangeProposalStore proposals, Work
                 stage = await RunStage(p, report, name, ct);
                 proposals.VerifyInputs(p, proposals.CopyRoot(proposalId, "baseline"), false, ct);
                 proposals.VerifyInputs(p, proposals.CopyRoot(proposalId, "candidate"), true, ct);
+                ProposalGeneratedExperiments.VerifyAll(proposals, p, report);
             }
             catch (OperationCanceledException)
             {
@@ -105,27 +147,29 @@ public sealed class ProposalValidationRunner(ChangeProposalStore proposals, Work
             ? "validation_completed" : "comparison_incomplete" };
         proposals.SaveValidation(report); return report;
     }
-    internal static void ValidateFixtureSeparation(ChangeProposal proposal, string testProject, string benchmarkProject)
+    internal static void ValidateFixtureSeparation(ChangeProposal proposal, string testProject, string benchmarkProject) =>
+        ValidateExistingFixtureSeparation(proposal, new[] { testProject, benchmarkProject });
+    private static void ValidateExistingFixtureSeparation(ChangeProposal proposal, IEnumerable<string?> fixtures)
     {
         var editedFile = ChangeProposalStore.Within(proposal.Root, proposal.File);
         var editedProject = ChangeProposalStore.Within(proposal.Root, proposal.Project);
         var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        foreach (var fixture in new[] { testProject, benchmarkProject })
+        foreach (var fixture in fixtures.Where(f => f is not null))
         {
-            var project = ChangeProposalStore.Within(proposal.Root, fixture);
+            var project = ChangeProposalStore.Within(proposal.Root, fixture!);
             if (string.Equals(project, editedProject, comparison)
                 || InvestigationFiles.Within(Path.GetDirectoryName(project)!, editedFile))
                 throw new InvalidOperationException("validation_fixture_changed: The edited file/project belongs to the selected test or benchmark fixture. This workflow requires unchanged, separate validation fixtures; it does not treat edited expectations or workloads as equivalent.");
         }
     }
-
     private async Task<ProposalStage> RunStage(ChangeProposal p, ProposalValidation report, string name, CancellationToken ct)
     {
         var variant = name.StartsWith("baseline", StringComparison.Ordinal) ? "baseline" : "candidate";
         var test = name.EndsWith("_test", StringComparison.Ordinal);
         var root = proposals.CopyRoot(p.Id, variant);
-        var relative = test ? report.TestProject : report.BenchmarkProject;
-        var project = ChangeProposalStore.Within(root, relative);
+        var fixture = test ? report.GeneratedTest : report.GeneratedBenchmark;
+        var project = fixture is not null ? ProposalGeneratedExperiments.ProjectPath(proposals, p, fixture, variant)
+            : ChangeProposalStore.Within(root, test ? report.TestProject : report.BenchmarkProject);
         var config = Path.Combine(proposals.Folder(p.Id), "offline.config");
         InvestigationFiles.NoLinks(config);
         const string offline = "<configuration><packageSources><clear /></packageSources></configuration>";
@@ -160,8 +204,6 @@ public sealed class ProposalValidationRunner(ChangeProposalStore proposals, Work
     {
         var info = TrustedWorkspaceBuilder.CreateStartInfo(project, null, false); info.ArgumentList.Clear();
         foreach (var arg in args) info.ArgumentList.Add(arg);
-        // The existing process wrapper clears unrelated credentials and bounds both
-        // execution and inherited output pipes. CLI flags are not network isolation.
         return _process.RunAsync(info, seconds, ct);
     }
     private static ProposalStage Stage(string name, string status, WorkspaceBuildProcessResult run,

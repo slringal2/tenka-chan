@@ -60,9 +60,13 @@ public sealed partial class AgentGateway
             {
                 snapshotId = selection.SnapshotId, selection.Target, workspaceRoot = selection.Root,
                 editInput = proposals.EditInput(selection.Target), companions = selection.Companions,
+                prepareExperiment = new { tool = "tenka_prepare_experiment", snapshotId = selection.SnapshotId,
+                    projectId = selection.Target.ProjectId, kinds = new[] { "test", "benchmark" },
+                    requiredInput = "generatedCode authored from independently checked behavior/workload",
+                    nextStep = "Pass the returned IDs as testExperimentId/benchmarkExperimentId to mode=validate; do not run them standalone first." },
                 executionPlan = new[] { "baseline_test", "candidate_test", "baseline_benchmark", "candidate_benchmark" },
                 nextAction = "Use tenka_propose_change with targetId, snapshotId, editInput.expectedFileSha256 and complete replacementCode; inspect its diff before validation.",
-                note = "Preparation only. No expected test result is invented. Existing test/benchmark projects are required for this first workflow." }), ct);
+                note = "Preparation only. No expected test result is invented. Use existing companions or prepare generated test/benchmark experiments. Each kind may be selected independently; preparation does not execute code." }), ct);
         }
         if (proposalId is null) throw new ArgumentException("Missing field: proposalId.");
         _investigations.RequireProposal(session, proposalId);
@@ -84,9 +88,11 @@ public sealed partial class AgentGateway
         if (mode == "result") return proposals.ReadValidation(proposalId);
         if (mode != "validate") throw new ArgumentException("mode must be inspect, validate or result.");
         BuildPermission(a); ExecutionPermission(a);
-        var result = await new ProposalValidationRunner(proposals, guard).RunAsync(proposalId, Optional(a, "testCompanionId"),
-            Optional(a, "benchmarkCompanionId"), Optional(a, "benchmarkFilter"), Bool(a, "approved"), ct);
+        var result = await new ProposalValidationRunner(proposals, guard, experiments: Get<ExperimentStore>()).RunAsync(proposalId, Optional(a, "testCompanionId"),
+            Optional(a, "benchmarkCompanionId"), Optional(a, "benchmarkFilter"), Bool(a, "approved"), ct,
+            Optional(a, "testExperimentId"), Optional(a, "benchmarkExperimentId"), id => OwnExperiment(session, id));
         return new { proposalId, result.Status, result.Stages, result.Cases, result.Note,
+            result.TestProject, result.BenchmarkProject, result.BenchmarkFilter, result.GeneratedTest, result.GeneratedBenchmark,
             nextAction = result.Status == "awaiting_next_stage" ? "Continue tenka_review_workflow mode=validate with this proposalId after approval; completed stages are reused."
                 : "Inspect results. Applying source and recording checked/optimized remain separate explicit actions.",
             sourceApplyPerformed = false, allStagesComplete = result.Status == "validation_completed" };

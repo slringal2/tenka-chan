@@ -243,6 +243,9 @@ public sealed class ChangeProposalStore
             var validation = ReadValidation(id);
             if (validation.ProposalId != id || validation.AfterHash != p.AfterHash || !ProposalValidationRunner.CanApply(validation))
                 throw new InvalidOperationException("validation_required: Both copies must pass the selected tests and complete comparable benchmark reports before applying.");
+            ProposalGeneratedExperiments.VerifyAll(this, p, validation);
+            VerifyInputs(p, CopyRoot(id, "baseline"), false, ct);
+            VerifyInputs(p, CopyRoot(id, "candidate"), true, ct);
             VerifyInputs(p, p.Root, false, ct);
         }
         var before = InvestigationFiles.Bytes(Path.Combine(Folder(id), "before.bin"), 500_000);
