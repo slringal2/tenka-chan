@@ -3,6 +3,8 @@ using TenkaChan.Mcp.Analysis;
 using TenkaChan.Mcp.Experiments;
 using TenkaChan.Mcp.Tracking;
 using Xunit;
+// A same-named alias outside this namespace is hidden by Analysis.ReviewTarget.
+using TrackedReviewTarget = global::TenkaChan.Mcp.Tracking.ReviewTarget;
 
 namespace TenkaChan.Tests;
 
@@ -11,7 +13,7 @@ public sealed class ReviewContextPlanTests
     private const string Hash = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
     private static readonly string Dll = Path.GetFullPath("context-target.dll");
     private static ExplorerMethod Method() => new("m", "t", "p", "C.Run(int)", "C.cs", 1, "Ordinary", "C", "Run", "C:Run", null);
-    private static ReviewTarget Target(string kind = "method") => new("target", kind == "method" ? "m" : "t", kind,
+    private static TrackedReviewTarget Target(string kind = "method") => new("target", kind == "method" ? "m" : "t", kind,
         "p", "Project", "Project.csproj", "C.Run", "C.cs", 1, Hash, Hash, true, null, "source");
     private static ExplorerAssembly Assembly() => new("assembly", "p", "Project", Dll, "net8.0", "Release", false, "library");
     private static BinaryMethodCatalog Catalog(params BinaryMethodEntry[] methods) => new(Dll, Hash, "mvid", methods.Length, false, methods);

@@ -1,6 +1,8 @@
 using TenkaChan.Mcp.Analysis;
 using TenkaChan.Mcp.Experiments;
 using TenkaChan.Mcp.Tracking;
+// A same-named alias outside this namespace is hidden by Analysis.ReviewTarget.
+using TrackedReviewTarget = global::TenkaChan.Mcp.Tracking.ReviewTarget;
 
 namespace TenkaChan.Mcp.Agent;
 
@@ -16,7 +18,7 @@ public sealed record ReviewBinaryCandidates(string AssemblyId, string TargetFram
 public static class ReviewContextPlan
 {
     public const int MaximumAssemblies = 8, MaximumCandidatesPerAssembly = 50;
-    public static ReviewSelection Selection(string snapshotId, ReviewTarget target, ExplorerMethod? method)
+    public static ReviewSelection Selection(string snapshotId, TrackedReviewTarget target, ExplorerMethod? method)
     {
         if (string.IsNullOrWhiteSpace(snapshotId)) throw new ArgumentException("Snapshot is required.");
         if (target.Kind == "type" && method is null)
