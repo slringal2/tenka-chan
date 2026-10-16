@@ -1,5 +1,7 @@
 # Review context stability and diagnosis
 
+> 更新: ユーザーから同一構成ビルド＋再ロード後の安定を確認したとの報告あり。詳細と生ログの有無は [実機フィードバック](validation-feedback-2026-10-17.md)。旧記録の根因特定とは区別します。
+
 ## Scope and verification status
 
 Base: `012ee82f1241858c46a9004cb05358b2aeec05f8` (includes the user's `TrackedReviewTarget` alias fix).

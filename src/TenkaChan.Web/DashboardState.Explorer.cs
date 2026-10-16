@@ -1,3 +1,4 @@
+using TenkaChan.Mcp.Agent;
 using TenkaChan.Mcp.Analysis;
 using TenkaChan.Mcp.Experiments;
 using TenkaChan.Mcp.Security;
@@ -15,9 +16,9 @@ public sealed partial class DashboardState
     // stale method ID can be substituted by opening a different workspace mid-operation.
     public async Task<object> ExploreAsync(string? expectedSnapshot,
         Func<SourceExplorerIndex, TenkaChan.Mcp.Analysis.RoslynReviewService, Task<object>> operation,
-        CancellationToken ct)
+        CancellationToken ct, bool waitForRead = false)
     {
-        if (!await _gate.WaitAsync(0, ct))
+        if (!await AgentWorkspaceAccess.EnterAsync(_gate, waitForRead, ct))
             throw new WorkspaceBuildConflictException("別の処理を実行中です。完了後にもう一度操作してください。追加の実行は予約しません。");
         try
         {
@@ -30,8 +31,13 @@ public sealed partial class DashboardState
         finally { _gate.Release(); }
     }
 
-    public Task<object> ExplorerContextAsync(WorkspaceGuard guard, WorkspaceBinaryDiscovery discovery, CancellationToken ct) =>
-        ExploreAsync(null, (index, _) => Task.FromResult((object)new
+    public Task<object> ExplorerContextAsync(WorkspaceGuard guard, WorkspaceBinaryDiscovery discovery, CancellationToken ct,
+        string? expectedPath = null) =>
+        ExploreAsync(null, (index, _) =>
+        {
+            if (expectedPath is not null && !AgentWorkspaceAccess.MatchesLoadedPath(expectedPath, _path))
+                throw new WorkspaceBuildConflictException("The requested workspace is not the loaded workspace. Read tenka_context; attach does not open or replace a workspace.");
+            return Task.FromResult((object)new
         {
             snapshotId = index.SnapshotId, path = _path, projects = index.Projects,
             assemblies = ExplorerProjectActions.Assemblies(index, discovery),
@@ -48,7 +54,8 @@ public sealed partial class DashboardState
             history = _explorerResults.Values.Where(r => r.SnapshotId == index.SnapshotId)
                 .OrderByDescending(r => r.CreatedUtc).Select(r => new { r.Id, r.Kind, r.Label, r.CreatedUtc }).ToArray(),
             note = "対象は読み込み済みのスナップショットです。クラス一覧は参照のみ。実行・ビルドはボタンを押して承認した時だけ行います。"
-        }), ct);
+        });
+        }, ct, waitForRead: true);
 
     public ExplorerArtifact RememberExplorerResult(SourceExplorerIndex index, string kind, string label, object result)
     {

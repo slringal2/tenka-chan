@@ -16,10 +16,17 @@ public static class AgentRecoveryAdvice
         var text = error ?? "";
         if (cancelled)
             return new("action_cancelled", "Inspect this callId in the activity monitor before any retry. A build or target process may have started; cancellation is not proof of rollback. Re-run only after checking the outcome and obtaining any required approval.");
+        if (text.StartsWith("InvalidOperationException:", StringComparison.Ordinal) &&
+            (text.Contains("Open a trusted .sln or .csproj first.", StringComparison.Ordinal) ||
+             text.Contains("Call workspace_open first.", StringComparison.Ordinal) ||
+             text.Contains("読み込み済みプロジェクトがありません。", StringComparison.Ordinal)))
+            return new("workspace_unloaded", "No workspace is loaded. Call tenka_context to confirm the server, then open a trusted .sln/.slnx/.csproj using tenka_open_project with explicit approval and expectedSnapshotId=null. Do not invent snapshot/project IDs. If the UI already has the intended workspace, use tenka_attach_workspace instead of reopening it.");
         if (text.StartsWith("UnauthorizedAccessException:", StringComparison.Ordinal))
         {
+            if (text.Contains("Session approval requires explicit user consent.", StringComparison.Ordinal))
+                return new("session_consent_required", "Obtain user consent for the exact project, named tools and duration before tenka_approve_session with approved=true. Consent is not implied by connecting; the server switches remain mandatory.");
             if (text.Contains("requires explicit per-call approval.", StringComparison.Ordinal))
-                return new("approval_required", "Obtain explicit user approval for this build/open or execution, then call the same tool with approved=true. The named server switch is already enabled; do not change environment switches or auto-approve.");
+                return new("approval_required", "Obtain explicit user approval, then call this tool with approved=true. For repeated operations, use tenka_approve_session once for the agreed project/tools/duration. Check tenka_session_status for scope or expiry. open_project still needs per-call approval; do not auto-approve or change server switches.");
             if (text.Contains("Agent build/open is disabled on the server.", StringComparison.Ordinal))
                 return new("build_disabled", "Ask the user to enable TENKA_AGENT_ALLOW_BUILD=1 on the intended server and restart it only if they authorize local build/open. Reconnect explicitly and refresh selection; per-call approval is still required. Do not change execution permissions.");
             if (text.Contains("Agent execution is disabled on the server.", StringComparison.Ordinal))
@@ -68,9 +75,9 @@ public static class AgentRecoveryAdvice
     {
         var text = detail ?? "";
         if (status == 409 && text.Contains("session limit reached", StringComparison.OrdinalIgnoreCase))
-            return "Finish unused sessions through their owning clients with tenka_finish before starting another. The server keeps at most 16 sessions; do not terminate another client's active work or restart the server just to clear capacity.";
+            return "Finish unused sessions through their owning clients with tenka_finish before starting another. The server keeps at most 16 sessions; tenka_session_status shows limits in an existing usable session; do not terminate another client's active work or restart the server just to clear capacity.";
         if (status == 409 && text.Contains("call budget exhausted", StringComparison.OrdinalIgnoreCase))
-            return "The session call budget is exhausted. Preserve durable review checkpoints, then use tenka_finish and tenka_connect explicitly. Session-owned experiment IDs and evidence calls do not transfer; never replay execution automatically.";
+            return "The session call budget is exhausted. Preserve durable review checkpoints, then use tenka_finish and tenka_connect explicitly. Session-owned experiment IDs, evidence calls and approval do not transfer; never replay execution automatically.";
         if (status == 409 && (text.Contains("expired", StringComparison.OrdinalIgnoreCase) || text.Contains("Unknown agent session", StringComparison.OrdinalIgnoreCase)))
             return "Reconnect explicitly with tenka_connect and refresh tenka_context. Recover durable review checkpoints, not stale session IDs; experiments and evidence ownership do not transfer. Do not replay execution automatically.";
         return AgentClientFailure.HttpNextAction(status);
