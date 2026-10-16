@@ -5,6 +5,7 @@ using TenkaChan.Mcp.Analysis;
 using TenkaChan.Mcp.Experiments;
 using TenkaChan.Mcp.Review;
 using TenkaChan.Mcp.Security;
+using TenkaChan.Mcp.Tracking;
 
 namespace TenkaChan.Web;
 
@@ -78,12 +79,12 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
     };
     private static readonly HashSet<string> OtherTools = new(["context", "sample", "open_project", "list_types", "rules", "note", "read_result",
         "prepare_experiment", "run_experiment", "experiment_result", "compare_benchmarks",
-        "review_queue", "review_target", "review_history", "review_diff", "review_mark"], StringComparer.Ordinal);
+        "review_queue", "review_context", "review_target", "review_history", "review_diff", "review_mark"], StringComparer.Ordinal);
     private static readonly HashSet<string> Fields = new(["snapshotId", "projectId", "typeId", "methodId", "assemblyId", "companionId", "artifactId",
         "baselineId", "nativeIndex", "baselineIndex", "profileIndex", "metadataToken", "assemblySha256", "approved", "allowRestore", "arguments",
         "sample", "path", "expectedSnapshotId", "query", "offset", "limit", "callId", "pointer", "kind", "message", "evidenceCallIds",
         "generatedCode", "targetFramework", "runtimeFramework", "experimentId", "baselineExperimentId", "candidateExperimentId",
-        "cursor", "trackableOnly", "state", "targetId", "sourceHash", "contextHash", "expectedRevision", "status", "summary", "fromRevision", "toRevision"], StringComparer.Ordinal);
+        "cursor", "trackableOnly", "includeBinary", "state", "targetId", "sourceHash", "contextHash", "expectedRevision", "status", "summary", "fromRevision", "toRevision"], StringComparer.Ordinal);
 
     public async Task<object> CallAsync(AgentCallRequest request, CancellationToken ct)
     {
@@ -100,11 +101,16 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
             var result = await Execute(request.SessionId, request.Tool, request.Arguments, deadline.Token);
             return journal.Complete(callId, result);
         }
-        catch (OperationCanceledException) { return journal.Complete(callId, null, "Action cancelled or time budget reached.", true); }
+        catch (OperationCanceledException)
+        {
+            return journal.Complete(callId, AgentRecoveryAdvice.ForFailure(request.Tool, null, cancelled: true),
+                "Action cancelled or time budget reached.", true);
+        }
         catch (Exception ex)
         {
             // Nothing is automatically retried. The journal reports operational failure, not a target-code defect.
-            return journal.Complete(callId, null, ex.GetType().Name + ": " + (ex.Message.Length > 1000 ? ex.Message[..1000] : ex.Message));
+            var error = ex.GetType().Name + ": " + (ex.Message.Length > 1000 ? ex.Message[..1000] : ex.Message);
+            return journal.Complete(callId, AgentRecoveryAdvice.ForFailure(request.Tool, error), error);
         }
     }
     private void BuildPermission(JsonElement a) =>
@@ -133,7 +139,9 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
         switch (tool)
         {
             case "review_queue": return await Get<ReviewTrackingService>().Queue(Str(a,"snapshotId"), Optional(a,"projectId"),
-                Optional(a,"kind")??"method", Optional(a,"state")??"pending", Optional(a,"query"),Number(a,"offset"),Number(a,"limit",50),ct,Optional(a,"cursor"),Bool(a,"trackableOnly"));
+                Optional(a,"kind")??ReviewQueueViews.DefaultKind, Optional(a,"state")??"pending", Optional(a,"query"),Number(a,"offset"),Number(a,"limit",50),ct,Optional(a,"cursor"),Bool(a,"trackableOnly"));
+            case "review_context": return await ReviewContextReader.ReadAsync(dashboard, guard, discovery,
+                Get<ReviewProgressStore>(), Str(a,"snapshotId"), Str(a,"targetId"), Bool(a,"includeBinary",true), ct);
             case "review_target": return await Get<ReviewTrackingService>().Target(Str(a,"snapshotId"),Str(a,"targetId"),ct);
             case "review_history": return await Get<ReviewTrackingService>().History(Str(a,"snapshotId"),Str(a,"targetId"),Number(a,"offset"),Number(a,"limit",50),ct);
             case "review_diff": return await Get<ReviewTrackingService>().Diff(Str(a,"snapshotId"),Str(a,"targetId"),Long(a,"fromRevision"),Long(a,"toRevision"),Number(a,"offset"),Number(a,"limit",150),ct);
@@ -153,7 +161,7 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
                     ? await dashboard.ExplorerContextAsync(guard, discovery, ct) : null;
                 return new { instanceId = journal.InstanceId, workspace, overview,
                     permissions = new { build = policy.AllowBuild, execution = policy.AllowExecution },
-                    workflow = "Inspect context -> tenka_review_queue for pending/changed work -> enumerate types -> inspect method/references -> inspect IL -> request authorized execution -> read actual results -> report a qualified conclusion. Always refresh context after a build. Record checked/optimized checkpoints only after completing the work; these are agent reports, not verified speedups. No model endpoint is configured in Tenka." };
+                    workflow = "Inspect context -> tenka_review_queue (kind=all; inspect coverage) -> tenka_review_context by targetId -> inspect references and choose the exact IL candidate -> request authorized execution -> read actual results -> report a qualified conclusion. Always refresh context after a build. Record checked/optimized checkpoints only after completing the work; these are agent reports, not verified speedups. No model endpoint is configured in Tenka." };
             }
             case "sample":
                 return (Optional(a, "sample") ?? "game-lab") switch
@@ -214,6 +222,6 @@ public sealed class AgentGateway(IServiceProvider services, AgentJournal journal
     private static long? Long(JsonElement a, string key) => a.TryGetProperty(key,out var p) && p.ValueKind!=JsonValueKind.Null ? p.GetInt64() : null;
     private static int Number(JsonElement a, string key, int fallback = 0) => NullableNumber(a, key) ?? fallback;
     private static int? NullableNumber(JsonElement a, string key) => a.TryGetProperty(key, out var p) && p.ValueKind != JsonValueKind.Null ? p.GetInt32() : null;
-    private static bool Bool(JsonElement a, string key) => a.TryGetProperty(key, out var p) && p.ValueKind != JsonValueKind.Null && p.GetBoolean();
+    private static bool Bool(JsonElement a, string key, bool fallback = false) => a.TryGetProperty(key, out var p) && p.ValueKind != JsonValueKind.Null ? p.GetBoolean() : fallback;
     private static string[]? Strings(JsonElement a, string key) => a.TryGetProperty(key, out var p) && p.ValueKind != JsonValueKind.Null ? p.Deserialize<string[]>() : null;
 }
