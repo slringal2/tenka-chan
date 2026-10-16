@@ -55,7 +55,7 @@ public static class ReviewQueueViews
             total.Pending > visiblePending ? "Pending targets are hidden by filters. Call tenka_review_queue with coverage.restart, clearing projectId, query and cursor; do not infer completion from this page." :
             total.Pending > 0 ? "Continue with nextCursor and offset=0. After the pass, call tenka_review_queue with coverage.restart; type and method checkpoints are independent." :
             "There are no pending checkpoints in the loaded index only. Check index limits and unsupported coverage; checked/optimized are not proof of correctness or speedup.");
-        return new(snapshotId, page.Total, page.Offset, page.Items, page.NextCursor, page.HasMore,
+        return new(snapshotId, page.Total, page.Offset, page.Items.Select(ReviewContextFingerprints.CompactForQueue).ToArray(), page.NextCursor, page.HasMore,
             "stable_project_name_target_id", Count(scoped), scoped.Any(r => r.State.RequiresReload), limited,
             ReviewProgress.Note,
             "nextCursorをcursorに渡すと、途中でチェック済みが増えても、先に返した対象の次から取得します。最後まで来たらcursorなしのpendingを再確認してください。空のページは索引外を含む確認完了を意味しません。",
