@@ -12,5 +12,8 @@ builder.Logging.ClearProviders();
 builder.Logging.AddConsole(logging => logging.LogToStandardErrorThreshold = LogLevel.Trace);
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton<DashboardAgentClient>();
-builder.Services.AddMcpServer().WithStdioServerTransport().WithTools<DashboardAgentTools>().WithTools<ReviewProgressTools>();
+builder.Services.AddSingleton<AgentSessionClient>();
+builder.Services.AddMcpServer().WithStdioServerTransport()
+    .WithRequestFilters(filters => filters.AddCallToolFilter(AgentToolCallFilter.Create))
+    .WithTools<DashboardAgentTools>().WithTools<ReviewProgressTools>();
 await builder.Build().RunAsync();

@@ -7,7 +7,12 @@ namespace TenkaChan.Mcp.Tracking;
 public sealed record ReviewTarget(string Id, string SelectionId, string Kind, string ProjectId,
     string Project, string ProjectPath, string Name, string File, int Line,
     string SourceHash, string ContextHash, bool Trackable, string? UnavailableReason,
-    [property: JsonIgnore] string Source);
+    [property: JsonIgnore] string Source)
+{
+    public string TargetId => Id;
+    public string? MethodId => Kind == "method" ? SelectionId : null;
+    public string? TypeId => Kind == "type" ? SelectionId : null;
+}
 public sealed record ReviewEvidenceLink(string InstanceId, string CallId, string Tool,
     string Outcome, string? ObservedStatus, string RecordedUtc);
 public sealed record ReviewCheckpoint(long Revision, string TargetId, string Kind, string Name,

@@ -14,6 +14,21 @@ public sealed class ReviewSourceCatalog(string snapshot,IReadOnlyList<ReviewTarg
     private HashSet<string>? _stale;
     public ReviewTarget Require(string id) => targets.FirstOrDefault(t=>t.Id==id)
         ?? throw new KeyNotFoundException("現在のプロジェクトにこの対象はありません。確認一覧を更新してください。");
+    // Read-only lookup accepts either namespace. Writes still use Require + exact
+    // source/context hashes and revision, so a selection alias cannot mark another target.
+    public ReviewTarget ResolveForRead(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id) || id.Length > 100)
+            throw new ArgumentException("targetId must be a non-empty targetId or current methodId/typeId of at most 100 characters.");
+        var matches = targets.Where(t => t.Id == id || t.SelectionId == id).Take(2).ToArray();
+        return matches.Length switch
+        {
+            1 => matches[0],
+            0 => throw new KeyNotFoundException("No target matches this ID in the current snapshot. Read tenka_priorities or tenka_review_queue again; names and old selection IDs are not inferred."),
+            _ => throw new InvalidOperationException("The ID is ambiguous in this snapshot. No target was selected; inspect tenka_review_queue.")
+        };
+    }
+
     public async Task<HashSet<string>> StaleProjectsAsync(WorkspaceGuard guard,bool force,CancellationToken ct)
     {
         // DashboardState serializes callers. Marking always performs an uncached content check.

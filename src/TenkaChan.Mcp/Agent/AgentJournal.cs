@@ -16,8 +16,15 @@ public sealed class AgentJournal
     private long _sequence;
     private int _resultBytes;
     private readonly TimeProvider _time;
+    private readonly AgentSessionOptions _options;
+    public int SessionLimit => _options.MaximumSessions;
+    public int IdleTimeoutMinutes => _options.IdleTimeoutMinutes;
     public string InstanceId { get; } = Guid.NewGuid().ToString("N");
-    public AgentJournal(TimeProvider? time = null) => _time = time ?? TimeProvider.System;
+    public AgentJournal(TimeProvider? time = null, AgentSessionOptions? options = null)
+    {
+        _time = time ?? TimeProvider.System;
+        _options = (options ?? new AgentSessionOptions()).Validate();
+    }
     private sealed class Session
     {
         public required string Id, Client, Goal;
@@ -40,10 +47,10 @@ public sealed class AgentJournal
         lock (_sync)
         {
             Expire();
-            if (_sessions.Count >= MaxSessions)
+            if (_sessions.Count >= SessionLimit)
             {
                 var oldest = _sessions.Values.Where(s => s.Active is null && (s.Status is "finished" or "expired"))
-                    .OrderBy(s => s.Seen).FirstOrDefault() ?? throw new InvalidOperationException("Agent session limit reached. Finish an existing session.");
+                    .OrderBy(s => s.Seen).FirstOrDefault() ?? throw new InvalidOperationException($"Agent session limit reached ({SessionLimit}). Use tenka_sessions_list without connecting, then tenka_session_end with an idle sessionId and approved:true, or wait for the {IdleTimeoutMinutes}-minute idle TTL. Running actions are never evicted.");
                 foreach (var call in _calls.Values.Where(c => c.SessionId == oldest.Id).ToArray())
                 { _resultBytes -= call.Bytes; _calls.Remove(call.Id); }
                 _sessions.Remove(oldest.Id);
@@ -79,7 +86,7 @@ public sealed class AgentJournal
             return (call.Id, null);
         }
     }
-    public AgentReply Complete(string callId, object? data, string? error = null, bool cancelled = false)
+    public AgentReply Complete(string callId, object? data, string? error = null, bool cancelled = false, string? resolvedSnapshot = null)
     {
         var json = JsonSerializer.SerializeToElement(data, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         var size = Encoding.UTF8.GetByteCount(json.GetRawText());
@@ -88,7 +95,7 @@ public sealed class AgentJournal
             var c = _calls[callId];
             if (c.Reply is not null) return c.Reply;
             var s = _sessions[c.SessionId]; s.Active = null; s.Seen = _time.GetUtcNow();
-            string? observed = Status(json), snapshot = Snapshot(json);
+            string? observed = Status(json), snapshot = Snapshot(json) ?? resolvedSnapshot;
             var fields = json.ValueKind == JsonValueKind.Object ? json.EnumerateObject().Select(p => p.Name).ToArray() : [];
             if (size <= MaxResultBytes)
             {
@@ -183,6 +190,34 @@ public sealed class AgentJournal
             Event(sessionId, null, "session_finished", "", "外部エージェントが調査終了を通知しました。", null, null);
         }
     }
+    // Machine-authenticated management paths do not need or consume an investigation session.
+    // Listing is observational: it must not refresh LastSeen or prevent idle expiry.
+    public AgentSessionList ListSessions()
+    {
+        lock (_sync)
+        {
+            Expire();
+            var items = _sessions.Values.Select(View).OrderByDescending(s => s.LastSeen).ToArray();
+            var active = items.Count(s => s.Status is "idle" or "running");
+            return new(InstanceId, SessionLimit, IdleTimeoutMinutes, active, SessionLimit - active, items,
+                "Client names are self-reported, not authenticated identities. Management requires this server's local credential. Listing does not create a session or renew its TTL. Finished/expired slots are reclaimed by the next connection.");
+        }
+    }
+    public AgentSessionView EndIdleSession(string sessionId, bool approved)
+    {
+        if (!Guid.TryParseExact(sessionId, "N", out _)) throw new ArgumentException("sessionId must be a GUID in N format.");
+        if (!approved) throw new InvalidOperationException("approval_required: Ending a selected session requires explicit client approval and approved:true. No session was ended.");
+        lock (_sync)
+        {
+            Expire();
+            if (!_sessions.TryGetValue(sessionId, out var s)) throw new KeyNotFoundException("Session not found in this server instance. Use tenka_sessions_list.");
+            if (s.Active is not null) throw new InvalidOperationException("session_busy: The selected session has a running action. It was not ended or cancelled; wait for completion or cancel through its original client.");
+            if (s.Status is "finished" or "expired") return View(s);
+            s.Status = "finished";
+            Event(sessionId, null, "session_finished", "", "ローカル資格情報を持つクライアントが承認付きでこのセッションを終了しました。", null, null);
+            return View(s);
+        }
+    }
     public object MonitorResult(string callId)
     {
         lock (_sync)
@@ -213,7 +248,7 @@ public sealed class AgentJournal
             Expire();
             return new(InstanceId, enabled, build, execution, _sequence,
                 _sessions.Values.Select(View).OrderByDescending(s => s.LastSeen).ToArray(), _events.ToArray(),
-                "この起動中の活動です。最終通信から15分で期限切れになります。LLMのメモは自己申告・未検証。ブラウザーは表示のみでモデルに接続しません。");
+                $"この起動中の活動です。実行中でないセッションは最終通信から{IdleTimeoutMinutes}分で期限切れになります。LLMのメモは自己申告・未検証。ブラウザーは表示のみでモデルに接続しません。");
         }
     }
     private Session RequireSession(string id)
@@ -225,7 +260,7 @@ public sealed class AgentJournal
     private void Expire()
     {
         foreach (var s in _sessions.Values)
-            if (s.Status == "idle" && s.Active is null && _time.GetUtcNow() - s.Seen > TimeSpan.FromMinutes(15)) s.Status = "expired";
+            if (s.Status == "idle" && s.Active is null && _time.GetUtcNow() - s.Seen >= TimeSpan.FromMinutes(IdleTimeoutMinutes)) s.Status = "expired";
     }
     private AgentSessionView View(Session s) => new(s.Id, s.Client, s.Goal, s.Active is null ? s.Status : "running", s.Seen, s.Count, s.Active);
     private void Event(string session, string? call, string kind, string tool, string message, string? snapshot, string? observed)
