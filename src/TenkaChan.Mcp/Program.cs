@@ -20,6 +20,7 @@ builder.Services.AddMcpServer()
     .WithStdioServerTransport()
     .WithTools<DashboardAgentTools>()
     .WithTools<ReviewProgressTools>()
+    .WithTools<AgentWorkflowTools>()
     .WithRequestFilters(filters => filters.AddCallToolFilter(next =>
         async (RequestContext<CallToolRequestParams> request, CancellationToken cancellationToken) =>
         {

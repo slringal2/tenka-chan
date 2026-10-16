@@ -61,5 +61,5 @@ public static class ReviewContextReader
                     note = "Candidates match metadata type/name only. Choose the exact overload and build configuration; even a single candidate is NOT proof of source/build identity. Pass a candidate's arguments unchanged to tenka_il, which rechecks snapshot and assembly SHA-256. For omitted assemblies/candidates, use tenka_context and tenka_binary_methods. No build or target execution was performed." },
                 note = ReviewProgress.Note
             };
-        }, ct);
+        }, ct, waitForRead: true);
 }

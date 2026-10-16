@@ -14,5 +14,6 @@
   <ItemGroup>
     <ProjectReference Include="../../src/TenkaChan.Mcp/TenkaChan.Mcp.csproj" />
     <ProjectReference Include="../../src/Chan.Core/Chan.Core.csproj" />
+    <ProjectReference Include="../../src/TenkaChan.Web/TenkaChan.Web.csproj" />
   </ItemGroup>
 </Project>

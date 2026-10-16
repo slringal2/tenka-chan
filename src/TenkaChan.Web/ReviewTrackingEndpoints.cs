@@ -35,8 +35,8 @@ public static class ReviewTrackingEndpoints
 public sealed class ReviewTrackingService(DashboardState dashboard,WorkspaceGuard guard,ReviewProgressStore store)
 {
     private readonly ReviewDiffCache _diffCache = new();
-    private Task<object> With(string? snapshot,Func<ReviewSourceCatalog,Task<object>> run,CancellationToken ct) =>
-        dashboard.ExploreAsync(snapshot,async(index,_)=>await run(await index.ReviewCatalogAsync(guard,ct)),ct);
+    private Task<object> With(string? snapshot,Func<ReviewSourceCatalog,Task<object>> run,CancellationToken ct,bool waitForRead=true) =>
+        dashboard.ExploreAsync(snapshot,async(index,_)=>await run(await index.ReviewCatalogAsync(guard,ct)),ct,waitForRead:waitForRead);
     private async Task<ReviewQueueItem[]> Items(ReviewSourceCatalog catalog,CancellationToken ct)
     {
         var marks=store.Latest();var stale=await catalog.StaleProjectsAsync(guard,false,ct);
@@ -88,5 +88,5 @@ public sealed class ReviewTrackingService(DashboardState dashboard,WorkspaceGuar
             var checkpoint=store.Save(target,request,agent,session,evidence);
             return new {snapshotId=catalog.SnapshotId,targetId=target.Id,status="review_mark_recorded",checkpoint,
                 state=ReviewProgress.State(target,checkpoint,false),note=ReviewProgress.Note};
-        },ct);
+        },ct,waitForRead:false);
 }

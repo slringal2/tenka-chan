@@ -23,7 +23,7 @@ public sealed class ReviewContextChurnTests : IDisposable
     private async Task<TrackedReviewTarget> Catalog(string snapshot, string referencePath = "cache-one.dll",
         string code = "class C { public int M()=>1; public int N()=>1; }", bool release = false,
         string[]? symbols = null, string? generated = null, bool dependency = false, int dependencyValue = 1,
-        bool reverseDocuments = false, string[]? referenceAliases = null)
+        bool reverseDocuments = false, string[]? referenceAliases = null, bool diskReference = false)
     {
         Directory.CreateDirectory(_root);
         var workspace = new AdhocWorkspace(); _workspaces.Add(workspace);
@@ -34,7 +34,15 @@ public sealed class ReviewContextChurnTests : IDisposable
             compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
                 optimizationLevel: release ? OptimizationLevel.Release : OptimizationLevel.Debug),
             parseOptions: new CSharpParseOptions(LanguageVersion.Preview, preprocessorSymbols: symbols ?? [])));
-        var reference = MetadataReference.CreateFromImage(ImmutableArray.CreateRange(_core), filePath: Path.Combine(_root, referencePath));
+        var referenceFile = Path.Combine(_root, referencePath);
+        PortableExecutableReference reference;
+        if (diskReference)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(referenceFile)!);
+            File.WriteAllBytes(referenceFile, _core);
+            reference = MetadataReference.CreateFromFile(referenceFile);
+        }
+        else reference = MetadataReference.CreateFromImage(ImmutableArray.CreateRange(_core), filePath: referenceFile);
         if (referenceAliases is not null) reference = reference.WithAliases(ImmutableArray.CreateRange(referenceAliases));
         solution = solution.AddMetadataReference(id, reference);
         var documents = new List<(string Name, string Code)> { ("A.cs", code) };
@@ -86,6 +94,22 @@ public sealed class ReviewContextChurnTests : IDisposable
         Assert.NotEqual(a.LegacyContextHash, b.LegacyContextHash);
         Assert.Equal(a.ContextHash, b.ContextHash);
         Assert.Equal("checked", ReviewProgress.State(b, Mark(a), false).Status);
+    }
+    [Fact]
+    public async Task PhysicalDllRelocationKeepsV2CheckpointAndChangesLegacyHash()
+    {
+        var left = Path.Combine("first-cache", "core.dll");
+        var right = Path.Combine("relocated-cache", "core.dll");
+        var before = await Catalog("before", referencePath: left, diskReference: true);
+        var after = await Catalog("after", referencePath: right, diskReference: true);
+        Assert.Equal(File.ReadAllBytes(Path.Combine(_root, left)), File.ReadAllBytes(Path.Combine(_root, right)));
+        Assert.Equal(before.Id, after.Id);
+        Assert.Equal(before.SourceHash, after.SourceHash);
+        Assert.NotEqual(before.LegacyContextHash, after.LegacyContextHash);
+        Assert.Equal(before.ContextHash, after.ContextHash);
+        var state = ReviewProgress.State(after, Mark(before), false);
+        Assert.Equal("checked", state.Status);
+        Assert.Empty(state.ContextChange!.ChangedComponents);
     }
     [Fact]
     public async Task RepeatedReopenDoesNotChangeTheFingerprint()
