@@ -21,6 +21,7 @@ builder.Services.AddMcpServer()
     .WithTools<DashboardAgentTools>()
     .WithTools<ReviewProgressTools>()
     .WithTools<AgentWorkflowTools>()
+    .WithTools<InvestigationTools>()
     .WithRequestFilters(filters => filters.AddCallToolFilter(next =>
         async (RequestContext<CallToolRequestParams> request, CancellationToken cancellationToken) =>
         {

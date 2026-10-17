@@ -131,17 +131,17 @@ public sealed class DashboardAgentTools
         client.CallAsync("prepare_experiment", new { snapshotId, projectId, kind, generatedCode, targetFramework, runtimeFramework }, cancellationToken);
 
     [McpServerTool(Name = "tenka_run_experiment")]
-    [Description("Execute a generated experiment created by THIS agent session. UNSANDBOXED code. Requires host allow-build, allow-execution, generated-host-experiments enabled and external-client approval.")]
+    [Description("Execute a generated experiment owned by the current or explicitly resumed investigation. Use tenka_measure_target instead to bind benchmark results to a review target. UNSANDBOXED code. Requires host allow-build, allow-execution, generated-host-experiments enabled and external-client approval.")]
     public static Task<string> RunExperiment(DashboardAgentClient client, string experimentId, bool approved = false, CancellationToken cancellationToken = default) =>
         client.CallAsync("run_experiment", new { experimentId, approved }, cancellationToken);
 
     [McpServerTool(Name = "tenka_experiment_result")]
-    [Description("Read an experiment created by this session; tests and benchmarks are actual recorded outputs, not model claims.")]
+    [Description("Read an experiment owned by the current or explicitly resumed investigation; tests and benchmarks are actual recorded outputs, not model claims.")]
     public static Task<string> ExperimentResult(DashboardAgentClient client, string experimentId, CancellationToken cancellationToken = default) =>
         client.CallAsync("experiment_result", new { experimentId }, cancellationToken);
 
     [McpServerTool(Name = "tenka_compare_benchmarks")]
-    [Description("Compare two completed experiments from this session with matching benchmark source and environment. Descriptive comparison, not proof of a regression.")]
+    [Description("Compare two completed experiments from the current or explicitly resumed investigation with matching benchmark source and environment. Descriptive comparison, not proof of a regression.")]
     public static Task<string> CompareBenchmarks(DashboardAgentClient client, string baselineExperimentId, string candidateExperimentId, CancellationToken cancellationToken = default) =>
         client.CallAsync("compare_benchmarks", new { baselineExperimentId, candidateExperimentId }, cancellationToken);
 
@@ -151,12 +151,12 @@ public sealed class DashboardAgentTools
         client.CallAsync("note", new { kind, message, evidenceCallIds }, cancellationToken);
 
     [McpServerTool(Name = "tenka_read_result")]
-    [Description("Read a large prior tool result from THIS session using its callId and JSON pointer (e.g. /findings); arrays are paged. Do not rerun expensive tools merely to retrieve output.")]
+    [Description("Read a prior tool result using its callId and JSON pointer (e.g. /findings); arrays are paged. Live large results use the current session. Small retained data can also be read after explicitly resuming its investigation. Large live-only results may not survive restart. Do not rerun expensive tools merely to retrieve output.")]
     public static Task<string> ReadResult(DashboardAgentClient client, string callId, string pointer = "", int offset = 0, int limit = 30, CancellationToken cancellationToken = default) =>
         client.CallAsync("read_result", new { callId, pointer, offset, limit }, cancellationToken);
 
     [McpServerTool(Name = "tenka_finish")]
-    [Description("Mark this external investigation session finished. Publish a concise qualified conclusion with tenka_note first. This does not assert every issue was found or fixed.")]
+    [Description("Finish this transport session and revoke its temporary approval. Durable investigation records remain available for explicit resume. Publish a concise qualified conclusion with tenka_note first. This does not assert every issue was found or fixed.")]
     public static Task<string> Finish(DashboardAgentClient client, CancellationToken cancellationToken = default) =>
         client.FinishAsync(cancellationToken);
 }

@@ -11,7 +11,10 @@ public sealed record AgentSessionView(string Id, string ClientName, string Goal,
     DateTimeOffset LastSeen, int Calls, string? ActiveTool);
 public sealed record AgentReply(string CallId, string Outcome, string? ObservedStatus,
     string? SnapshotId, string? Error, JsonElement? Data, bool ResultAvailable,
-    string[] AvailableFields);
+    string[] AvailableFields)
+{
+    public string? PersistenceWarning { get; init; }
+}
 public sealed record AgentMonitor(string InstanceId, bool Enabled, bool AllowBuild, bool AllowExecution,
     long LastSequence, IReadOnlyList<AgentSessionView> Sessions, IReadOnlyList<AgentEvent> Events,
     string Note);

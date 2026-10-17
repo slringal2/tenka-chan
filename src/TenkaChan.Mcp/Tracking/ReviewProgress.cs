@@ -23,6 +23,8 @@ public sealed record ReviewCheckpoint(long Revision, string TargetId, string Kin
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ReviewContextFingerprint? ContextFingerprint { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ReviewBenchmarkEvidence? Measurement { get; init; }
 }
 public sealed record ReviewState(string Status, string? PreviousStatus, string Reason,
     long Revision, bool SourceChanged, bool ContextChanged, bool RequiresReload,
@@ -30,11 +32,16 @@ public sealed record ReviewState(string Status, string? PreviousStatus, string R
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ReviewContextChange? ContextChange { get; init; }
+    public ReviewPerformanceState Performance { get; init; } = ReviewPerformanceState.Unmeasured;
 }
 public sealed record ReviewQueueItem(ReviewTarget Target, ReviewState State);
 public sealed record ReviewMarkRequest(string SnapshotId, string TargetId, string SourceHash,
     string ContextHash, long ExpectedRevision, string Status, string Summary,
-    string[]? EvidenceCallIds = null);
+    string[]? EvidenceCallIds = null)
+{
+    // Only the authenticated gateway's server-side measurement factory sets this.
+    [JsonIgnore] public ReviewBenchmarkEvidence? Measurement { get; init; }
+}
 public sealed class ReviewConflictException(string message) : InvalidOperationException(message);
 
 public static class ReviewProgress
@@ -61,7 +68,7 @@ public static class ReviewProgress
         var reason = stale ? "snapshot_outdated" : changed ? "source_changed" : unavailable ? "context_unavailable" : context ? "context_changed" : "current";
         var state = mark.Status == "unreviewed" ? "unreviewed" : stale || changed || context ? "needs_review" : mark.Status;
         return new(state, mark.Status, reason, mark.Revision, changed, context, stale, mark)
-        { ContextChange = explanation };
+        { ContextChange = explanation, Performance = ReviewPerformanceState.From(mark.Measurement, stale || changed || context) };
     }
 
     public static void ValidateMark(ReviewTarget target, ReviewMarkRequest request, bool stale)
@@ -73,6 +80,11 @@ public static class ReviewProgress
         if (target.Id != request.TargetId || target.SourceHash != request.SourceHash || target.ContextHash != request.ContextHash)
             throw new ReviewConflictException("確認対象のコードまたは周辺コードが変わりました。tenka_review_targetで現在のハッシュを取得してください。");
         if (request.Status is not ("unreviewed" or "checked" or "optimized")) throw new ArgumentException("status must be unreviewed, checked or optimized.");
+        if (request.Measurement is not null)
+        {
+            if (request.Status == "unreviewed") throw new ArgumentException("A reset must not attach a measurement.");
+            ReviewBenchmarkMeasurements.ValidateAttachment(target, request.Measurement);
+        }
         if (request.ExpectedRevision < 0) throw new ArgumentException("expectedRevision must be nonnegative.");
         if (string.IsNullOrWhiteSpace(request.Summary) || request.Summary.Length > 2000)
             throw new ArgumentException("何を確認・最適化したか、1～2000文字のsummaryを記録してください。");

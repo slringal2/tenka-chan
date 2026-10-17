@@ -24,10 +24,11 @@ public sealed class ReviewProgressTools
         client.CallAsync("review_target", new {snapshotId,targetId},cancellationToken);
 
     [McpServerTool(Name = "tenka_mark_review")]
-    [Description("Record completed inspection (checked), reported optimization work (optimized), or explicit reset (unreviewed). NOT proof of correctness or speedup. Requires exact source/context hashes and expectedRevision (0 initially); conflicts/stale source are rejected. Explain the work and limitations in summary; evidenceCallIds must be completed calls in this session. Does not edit source or execute code; type/method marks do not cascade.")]
+    [Description("Record completed inspection (checked), reported optimization work (optimized), or explicit reset (unreviewed). NOT proof of correctness or speedup. Requires exact source/context hashes and expectedRevision (0 initially); conflicts/stale source are rejected. Explain the work and limitations in summary; evidenceCallIds must be completed calls in this session or its explicitly resumed investigation. Optional baselineExperimentId and candidateExperimentId attach server-read before/after reports recorded through tenka_measure_target; both must be supplied. Without them performance is unmeasured, including for optimized. Attachments do not prove correctness, source/DLL identity or significance. Does not edit source or execute code; type/method marks do not cascade.")]
     public static Task<string> MarkReview(DashboardAgentClient client, string snapshotId, string targetId, string sourceHash, string contextHash,
-        long expectedRevision, string status, string summary, string[]? evidenceCallIds = null, CancellationToken cancellationToken = default) =>
-        client.CallAsync("review_mark", new {snapshotId,targetId,sourceHash,contextHash,expectedRevision,status,summary,evidenceCallIds},cancellationToken);
+        long expectedRevision, string status, string summary, string[]? evidenceCallIds = null, CancellationToken cancellationToken = default,
+        string? baselineExperimentId = null, string? candidateExperimentId = null) =>
+        client.CallAsync("review_mark", new {snapshotId,targetId,sourceHash,contextHash,expectedRevision,status,summary,evidenceCallIds,baselineExperimentId,candidateExperimentId},cancellationToken);
 
     [McpServerTool(Name = "tenka_review_diff")]
     [Description("Read paged +/- line differences between a recorded checkpoint and loaded source, or two saved revisions. Default fromRevision=latest, toRevision=loaded source. Select an earlier revision to see optimization changes after marking. Not a Git diff or semantic equivalence check. Reopen if source changed since loading.")]
