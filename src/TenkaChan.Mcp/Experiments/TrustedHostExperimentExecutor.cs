@@ -53,13 +53,11 @@ public sealed class TrustedHostExperimentExecutor(
             Directory.CreateDirectory(artifacts);
             var projectFile = manifest.Kind == "test" ? "GeneratedTests.csproj" : "GeneratedBenchmarks.csproj";
             var project = XDocument.Load(Path.Combine(dir, projectFile));
-            foreach (var reference in project.Descendants()
-                .Where(x => x.Name.LocalName == "ProjectReference").ToArray())
-                reference.Remove();
-            project.Root!.Add(new XElement("ItemGroup",
-                new XElement("Reference",
-                    new XAttribute("Include", Path.GetFileNameWithoutExtension(source)),
-                    new XElement("HintPath", source), new XElement("Private", "true"))));
+            // Keep the execution surface to already-built assemblies. Explicitly
+            // reference the subject's local PE dependency closure at COMPILE time;
+            // copying dependency DLLs after build is too late for public API types.
+            // Never leave ProjectReference: that could execute target MSBuild targets.
+            var referenceCount = TrustedExperimentReferenceClosure.ReplaceProjectReferences(project, guard, source);
             var stagedProject = Path.Combine(work, projectFile);
             project.Save(stagedProject);
             File.Copy(Path.Combine(dir, "Generated.cs"), Path.Combine(work, "Generated.cs"));
@@ -156,6 +154,7 @@ public sealed class TrustedHostExperimentExecutor(
                 "No Docker isolation; even cached packages, test discovery or build targets can execute code. " +
                 "Offline restore does NOT block network operations inside generated programs. " +
                 $"Subject framework: {subjectFramework}; experiment runtime: {manifest.TargetFramework}. " +
+                $"Already-built local compile references: {referenceCount}; no subject project was rebuilt. " +
                 "Framework selection is not proof of a production-matched environment. " +
                 "The reference was prepared from an existing allowlisted DLL; Tenka did not retarget the source project. " +
                 "Time limits and child-tree termination are best effort, not security boundaries. " +
