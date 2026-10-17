@@ -116,14 +116,44 @@ public sealed partial class AgentGateway
             // the same explicit host trust and approval as tenka_run_companion apply.
             Get<DashboardState>().InvalidateExplorerReports();
             var benchmarkJob = Optional(a, "benchmarkJob") ?? "medium";
-            var run = await ExplorerProjectActions.RunAsync(companion, guard, true,
-                Bool(a, "allowRestore"), ct, benchmarkJob);
+            // InvalidateExplorerReports clears the loaded snapshot. Match the existing
+            // run_companion path by restoring the workspace even for failed runs.
+            async Task<(string? SnapshotId, string? Warning)> ReloadAsync()
+            {
+                try
+                {
+                    var fresh = await Get<DashboardState>().ReloadExplorerWorkspaceAsync(ct);
+                    return (fresh.SnapshotId, null);
+                }
+                catch (Exception ex) when (ex is IOException or InvalidOperationException or
+                    ArgumentException or UnauthorizedAccessException or OperationCanceledException)
+                {
+                    return (null, "Companion build invalidated the workspace, but automatic reload failed. Explicitly re-open the intended solution before further review; no previous snapshot is current.");
+                }
+            }
+            ExplorerProjectRun run;
+            try
+            {
+                run = await ExplorerProjectActions.RunAsync(companion, guard, true,
+                    Bool(a, "allowRestore"), ct, benchmarkJob);
+            }
+            catch
+            {
+                // A target MSBuild failure may throw before producing a structured
+                // result. Restore the workspace without replaying the process.
+                _ = await ReloadAsync();
+                throw;
+            }
             if (run.Status != "benchmark_completed" || run.ExitCode != 0)
+            {
+                var reload = await ReloadAsync();
                 return (object)new
                 {
                     status = run.Status, result = run, observationRetained = false,
+                    currentSnapshotId = reload.SnapshotId, reloadWarning = reload.Warning,
                     note = "Companion did not produce a verified benchmark report. No measurement ID was registered. Inspect the failure before another explicitly approved run."
                 };
+            }
 
             bool unchanged = false;
             string? warning = null;
@@ -153,9 +183,11 @@ public sealed partial class AgentGateway
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException
                 or ArgumentException or JsonException or InvalidDataException)
             {
+                var reload = await ReloadAsync();
                 return (object)new
                 {
                     status = run.Status, result = run, observationRetained = false,
+                    currentSnapshotId = reload.SnapshotId, reloadWarning = reload.Warning,
                     persistenceWarning = "The companion ran, but its report/ownership was not fully retained. Do not rerun it just to save metadata. " + ex.GetType().Name,
                     note = "Inspect the live result and storage. No independently verified speedup is asserted."
                 };
@@ -177,9 +209,11 @@ public sealed partial class AgentGateway
             {
                 warning = "The real companion report was saved, but its target observation was not. Do not replay execution to fill missing provenance.";
             }
+            var refreshed = await ReloadAsync();
             return (object)new
             {
                 status = run.Status, experimentId = receipt.Id, investigationId = Investigations.CurrentId(session),
+                currentSnapshotId = refreshed.SnapshotId, reloadWarning = refreshed.Warning,
                 result = savedRun, observation, observationRetained = retained, persistenceWarning = warning,
                 independentlyVerified = false,
                 note = "Use tenka_measure_companion with the same benchmark project before and after the source change. " +
