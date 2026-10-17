@@ -86,6 +86,107 @@ public sealed partial class AgentGateway
             baseline, ReviewBenchmarkMeasurements.ReadReport(store, before), Investigations.Measurement(session, before),
             candidate, ReviewBenchmarkMeasurements.ReadReport(store, after), Investigations.Measurement(session, after));
     }
+    /// <summary>
+    /// Existing companion measurements have no target observation unless the target
+    /// is selected BEFORE execution. Never import a previous run_companion artifact
+    /// and infer target provenance after the fact.
+    /// </summary>
+    private Task<object> MeasureCompanionAsync(string session, JsonElement a, CancellationToken ct) =>
+        Get<DashboardState>().ExploreAsync(Str(a, "snapshotId"), async (index, _) =>
+        {
+            var guard = Get<WorkspaceGuard>();
+            var companion = ExplorerProjectActions.Companions(index, guard)
+                .SingleOrDefault(c => c.Id == Str(a, "companionId"))
+                ?? throw new WorkspaceBuildConflictException("Select a currently discovered benchmark companion.");
+            if (companion.Kind != "benchmark")
+                throw new ArgumentException("tenka_measure_companion only supports BenchmarkDotNet companions.");
+            var catalog = await index.ReviewCatalogAsync(guard, ct);
+            var target = catalog.Require(Str(a, "targetId"));
+            if (!target.Trackable) throw new InvalidOperationException(target.UnavailableReason);
+            if (!AgentInvestigationStore.SameProject(companion.ProjectPath, target.ProjectPath) &&
+                !CompanionBenchmarkWorkloads.DeclaresReferenceTo(guard, companion.ProjectPath, target.ProjectPath))
+                throw new InvalidOperationException("measurement_companion_unlinked: Benchmark project must declare a literal ProjectReference chain to the target project.");
+            if ((await catalog.StaleProjectsAsync(guard, true, ct)).Contains(target.ProjectId))
+                throw new ReviewConflictException("Target source changed before the companion measurement; refresh source selection.");
+            _approvals.Authorize(session, companion.ProjectPath, "run_companion",
+                Bool(a, "approved"), policy.AllowBuild, policy.AllowExecution);
+            var before = CompanionBenchmarkWorkloads.Capture(guard, companion.ProjectPath);
+            var start = DateTimeOffset.UtcNow.ToString("O");
+            // Existing companion builds may run arbitrary user-defined MSBuild targets;
+            // the same explicit host trust and approval as tenka_run_companion apply.
+            Get<DashboardState>().InvalidateExplorerReports();
+            var run = await ExplorerProjectActions.RunAsync(companion, guard, true,
+                Bool(a, "allowRestore"), ct);
+            if (run.Status != "benchmark_completed" || run.ExitCode != 0)
+                return (object)new
+                {
+                    status = run.Status, result = run, observationRetained = false,
+                    note = "Companion did not produce a verified benchmark report. No measurement ID was registered. Inspect the failure before another explicitly approved run."
+                };
+
+            bool unchanged = false;
+            string? warning = null;
+            try
+            {
+                unchanged = !(await catalog.StaleProjectsAsync(guard, true, ct)).Contains(target.ProjectId);
+                var after = CompanionBenchmarkWorkloads.Capture(guard, companion.ProjectPath);
+                if (after != before)
+                {
+                    unchanged = false;
+                    warning = "Companion source or project inputs changed during the run. The report is retained, but cannot be attached as unchanged-input evidence.";
+                }
+            }
+            catch (Exception ex) when (ex is OperationCanceledException or IOException or UnauthorizedAccessException or InvalidOperationException)
+            {
+                warning = "The post-run source/workload check did not complete. The report is retained without a current-input claim.";
+            }
+
+            ExperimentReceipt? receipt = null;
+            ExecutionResult? savedRun = null;
+            try
+            {
+                (receipt, savedRun) = Get<ExperimentStore>().RecordCompanionBenchmark(
+                    target.ProjectPath, before, run, start);
+                Investigations.AddExperiment(session, receipt.Id, target.ProjectPath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException
+                or ArgumentException or JsonException or InvalidDataException)
+            {
+                return (object)new
+                {
+                    status = run.Status, result = run, observationRetained = false,
+                    persistenceWarning = "The companion ran, but its report/ownership was not fully retained. Do not rerun it just to save metadata. " + ex.GetType().Name,
+                    note = "Inspect the live result and storage. No independently verified speedup is asserted."
+                };
+            }
+
+            ReviewRunObservation? observation = null;
+            bool retained = false;
+            try
+            {
+                var saved = ReviewBenchmarkMeasurements.ReadReport(Get<ExperimentStore>(), receipt.Id);
+                observation = new ReviewRunObservation(receipt.Id, target.Id, target.ProjectPath,
+                    index.SnapshotId, target.SourceHash, target.ContextHash, unchanged,
+                    saved.Sha256, savedRun!.CompletedUtc);
+                Investigations.SaveMeasurement(session, observation);
+                retained = true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException
+                or ArgumentException or JsonException or InvalidDataException)
+            {
+                warning = "The real companion report was saved, but its target observation was not. Do not replay execution to fill missing provenance.";
+            }
+            return (object)new
+            {
+                status = run.Status, experimentId = receipt.Id, investigationId = Investigations.CurrentId(session),
+                result = savedRun, observation, observationRetained = retained, persistenceWarning = warning,
+                independentlyVerified = false,
+                note = "Use tenka_measure_companion with the same benchmark project before and after the source change. " +
+                    "Both returned experimentIds can be supplied to tenka_mark_review as baseline/candidate. " +
+                    "A compiled binary/source identity, benchmark coverage, behavioral equivalence and statistical significance are not established. Refresh tenka_context after a companion build."
+            };
+        }, ct);
+
     private Task<object> MeasureTargetAsync(string session, JsonElement a, CancellationToken ct) =>
         Get<DashboardState>().ExploreAsync(Str(a, "snapshotId"), async (index, _) =>
         {
