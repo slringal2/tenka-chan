@@ -46,11 +46,9 @@ public sealed class TrustedHostExperimentExecutor(
             if (!Directory.Exists(cache))
                 throw new DirectoryNotFoundException("NuGet package cache is missing. Restore trusted dependencies first.");
 
-            var work = Path.Combine(dir, "host-work");
-            if (Directory.Exists(work)) throw new IOException("Host staging directory already exists.");
-            Directory.CreateDirectory(work);
-            var artifacts = Path.Combine(dir, "host-artifacts");
-            Directory.CreateDirectory(artifacts);
+            // Resolve the dependency closure BEFORE creating any staging directories,
+            // so a missing/ambiguous build reference can be fixed without poisoning a
+            // prepared experiment ID or accidentally causing a partial second run.
             var projectFile = manifest.Kind == "test" ? "GeneratedTests.csproj" : "GeneratedBenchmarks.csproj";
             var project = XDocument.Load(Path.Combine(dir, projectFile));
             // Keep the execution surface to already-built assemblies. Explicitly
@@ -58,6 +56,11 @@ public sealed class TrustedHostExperimentExecutor(
             // copying dependency DLLs after build is too late for public API types.
             // Never leave ProjectReference: that could execute target MSBuild targets.
             var referenceCount = TrustedExperimentReferenceClosure.ReplaceProjectReferences(project, guard, source);
+            var work = Path.Combine(dir, "host-work");
+            if (Directory.Exists(work)) throw new IOException("Host staging directory already exists.");
+            Directory.CreateDirectory(work);
+            var artifacts = Path.Combine(dir, "host-artifacts");
+            Directory.CreateDirectory(artifacts);
             var stagedProject = Path.Combine(work, projectFile);
             project.Save(stagedProject);
             File.Copy(Path.Combine(dir, "Generated.cs"), Path.Combine(work, "Generated.cs"));
