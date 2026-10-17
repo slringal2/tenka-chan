@@ -82,7 +82,7 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
     private static readonly HashSet<string> Fields = new(["action", "investigationId", "tools", "minutes", "snapshotId", "projectId", "typeId", "methodId", "assemblyId", "companionId", "artifactId",
         "baselineId", "nativeIndex", "baselineIndex", "profileIndex", "metadataToken", "assemblySha256", "approved", "allowRestore", "arguments",
         "sample", "path", "expectedSnapshotId", "query", "offset", "limit", "callId", "pointer", "kind", "message", "evidenceCallIds",
-        "generatedCode", "targetFramework", "runtimeFramework", "experimentId", "baselineExperimentId", "candidateExperimentId",
+        "generatedCode", "targetFramework", "runtimeFramework", "benchmarkJob", "experimentId", "baselineExperimentId", "candidateExperimentId",
         "cursor", "trackableOnly", "includeBinary", "state", "targetId", "sourceHash", "contextHash", "expectedRevision", "status", "summary", "fromRevision", "toRevision"], StringComparer.Ordinal);
 
     public async Task<object> CallAsync(AgentCallRequest request, CancellationToken ct)

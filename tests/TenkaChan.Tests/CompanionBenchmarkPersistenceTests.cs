@@ -29,6 +29,7 @@ public sealed class CompanionBenchmarkPersistenceTests : IDisposable
         var (manifest, _) = store.Read(receipt.Id);
         Assert.Equal("companion_benchmark", manifest.Kind);
         Assert.Equal(companion, manifest.CompanionProjectPath);
+        Assert.Equal("short", manifest.CompanionBenchmarkJob);
         Assert.Equal("benchmark", report.Kind);
         Assert.Equal("benchmark_completed", store.ReadExecutionResult(receipt.Id).Status);
         Assert.Throws<InvalidOperationException>(() => store.CreateArtifactsDirectory(receipt.Id));

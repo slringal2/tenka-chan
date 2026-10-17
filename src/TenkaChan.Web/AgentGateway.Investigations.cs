@@ -115,8 +115,9 @@ public sealed partial class AgentGateway
             // Existing companion builds may run arbitrary user-defined MSBuild targets;
             // the same explicit host trust and approval as tenka_run_companion apply.
             Get<DashboardState>().InvalidateExplorerReports();
+            var benchmarkJob = Optional(a, "benchmarkJob") ?? "medium";
             var run = await ExplorerProjectActions.RunAsync(companion, guard, true,
-                Bool(a, "allowRestore"), ct);
+                Bool(a, "allowRestore"), ct, benchmarkJob);
             if (run.Status != "benchmark_completed" || run.ExitCode != 0)
                 return (object)new
                 {
@@ -146,7 +147,7 @@ public sealed partial class AgentGateway
             try
             {
                 (receipt, savedRun) = Get<ExperimentStore>().RecordCompanionBenchmark(
-                    target.ProjectPath, before, run, start);
+                    target.ProjectPath, before, run, start, benchmarkJob);
                 Investigations.AddExperiment(session, receipt.Id, target.ProjectPath);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException

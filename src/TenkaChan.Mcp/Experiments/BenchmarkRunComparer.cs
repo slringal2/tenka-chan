@@ -37,7 +37,8 @@ public sealed class BenchmarkRunComparer
             baselineManifest.Kind is not ("benchmark" or "companion_benchmark"))
             throw new ArgumentException("Both benchmark reports must have the same generated/companion origin.");
         if (baselineManifest.Kind == "companion_benchmark" &&
-            (baselineManifest.CompanionProjectPath is null || candidateManifest.CompanionProjectPath is null ||
+            (baselineManifest.CompanionBenchmarkJob != candidateManifest.CompanionBenchmarkJob ||
+             baselineManifest.CompanionProjectPath is null || candidateManifest.CompanionProjectPath is null ||
              !TenkaChan.Mcp.Agent.AgentInvestigationStore.SameProject(baselineManifest.CompanionProjectPath, candidateManifest.CompanionProjectPath)))
             throw new InvalidOperationException("Different companion projects; workloads are not reliably comparable.");
         if (!string.Equals(baselineManifest.SourceSha256, candidateManifest.SourceSha256,

@@ -17,6 +17,7 @@ public sealed record ExperimentManifest(
     public string? RuntimeResolution { get; init; }
     /// <summary>Set only for a real, previously executed trusted companion benchmark.</summary>
     public string? CompanionProjectPath { get; init; }
+    public string? CompanionBenchmarkJob { get; init; }
 }
 
 public sealed record ExperimentReceipt(string Id, string Kind, string Directory,
@@ -143,8 +144,9 @@ public sealed class ExperimentStore
     /// </summary>
     public (ExperimentReceipt Receipt, ExecutionResult Report) RecordCompanionBenchmark(
         string subjectProjectPath, CompanionBenchmarkWorkload workload, ExplorerProjectRun run,
-        string startedUtc)
+        string startedUtc, string benchmarkJob = "short")
     {
+        if (benchmarkJob is not ("short" or "medium")) throw new ArgumentException("Invalid companion benchmark job.");
         if (run.Kind != "benchmark" || run.Status != "benchmark_completed" || run.ExitCode != 0 ||
             run.Benchmarks.Count is 0 or > 200 || run.Benchmarks.Any(x =>
                 x.SampleCount <= 0 || x.MeanNanoseconds is not > 0 || !double.IsFinite(x.MeanNanoseconds.Value)))
@@ -166,7 +168,7 @@ public sealed class ExperimentStore
             runtimeFramework, RunnerSha256: workload.RunnerSha256)
         {
             SubjectTargetFramework = subjectFramework, RuntimeResolution = "existing_companion",
-            CompanionProjectPath = companion
+            CompanionProjectPath = companion, CompanionBenchmarkJob = benchmarkJob
         };
         File.WriteAllText(Path.Combine(directory, "companion-workload.json"),
             JsonSerializer.Serialize(workload, _json));
@@ -177,7 +179,8 @@ public sealed class ExperimentStore
             run.Stderr.Length > 12000 ? run.Stderr[^12000..] : run.Stderr,
             "Existing UNSANDBOXED companion, explicitly run through tenka_measure_companion. " +
             "The workload fingerprint is limited to conventional .cs files, the .csproj and Directory.Build props/targets. " +
-            "It is not a complete MSBuild-input or source/binary identity proof. " + run.Note)
+            "It is not a complete MSBuild-input or source/binary identity proof. " +
+            "Benchmark job: " + benchmarkJob + ". " + run.Note)
         { TargetFramework = runtimeFramework };
         SaveExecutionResult(report);
         return (new ExperimentReceipt(id, "companion_benchmark", directory, "companion_report_retained",
@@ -202,8 +205,9 @@ public sealed class ExperimentStore
         ExperimentFrameworkPolicy.ValidatePair(manifest.SubjectTargetFramework ?? manifest.TargetFramework, manifest.TargetFramework);
         if (manifest.Kind == "companion_benchmark")
         {
-            if (string.IsNullOrWhiteSpace(manifest.CompanionProjectPath))
-                throw new InvalidDataException("Companion project provenance is missing.");
+            if (string.IsNullOrWhiteSpace(manifest.CompanionProjectPath) ||
+                manifest.CompanionBenchmarkJob is not ("short" or "medium"))
+                throw new InvalidDataException("Companion project/job provenance is missing.");
             var companion = _guard.RequireFile(manifest.CompanionProjectPath, ".csproj");
             var snapshotFile = Path.Combine(directory, "companion-workload.json");
             if (!File.Exists(snapshotFile) || new FileInfo(snapshotFile).Length > 100_000)

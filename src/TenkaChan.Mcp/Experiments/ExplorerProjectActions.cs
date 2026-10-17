@@ -84,8 +84,10 @@ public static class ExplorerProjectActions
     }
 
     public static async Task<ExplorerProjectRun> RunAsync(ExplorerCompanion selected, WorkspaceGuard guard,
-        bool approved, bool allowRestore, CancellationToken ct)
+        bool approved, bool allowRestore, CancellationToken ct, string benchmarkJob = "short")
     {
+        if (benchmarkJob is not ("short" or "medium"))
+            throw new ArgumentException("benchmarkJob must be short or medium.");
         if (!approved || !guard.TrustMsBuild || Environment.GetEnvironmentVariable("TENKA_ENABLE_LOCAL_EXEC") != "1")
             throw new UnauthorizedAccessException("ローカルのビルド・実行には設定の有効化と今回の実行への承認が必要です。");
         ct.ThrowIfCancellationRequested();
@@ -103,7 +105,7 @@ public static class ExplorerProjectActions
         foreach (var arg in args) info.ArgumentList.Add(arg);
         if (!allowRestore) info.ArgumentList.Add("--no-restore");
         if (selected.Kind == "benchmark")
-            foreach (var arg in new[] { "--", "--filter", "*", "--job", "short", "--exporters", "FullJSON", "--artifacts", output })
+            foreach (var arg in new[] { "--", "--filter", "*", "--job", benchmarkJob, "--exporters", "FullJSON", "--artifacts", output })
                 info.ArgumentList.Add(arg);
         WorkspaceBuildProcessResult result;
         try { result = await new DotnetWorkspaceBuildProcess().RunAsync(info, selected.Kind == "test" ? 180 : 300, ct); }

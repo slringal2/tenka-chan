@@ -62,7 +62,8 @@ public static class ReviewBenchmarkMeasurements
             baselineManifest.Kind is not ("benchmark" or "companion_benchmark"))
             throw new InvalidOperationException("measurement_origin_mismatch: Both benchmarks must use the same generated or companion execution path.");
         if (baselineManifest.Kind == "companion_benchmark" &&
-            (baselineManifest.CompanionProjectPath is null || candidateManifest.CompanionProjectPath is null ||
+            (baselineManifest.CompanionBenchmarkJob != candidateManifest.CompanionBenchmarkJob ||
+             baselineManifest.CompanionProjectPath is null || candidateManifest.CompanionProjectPath is null ||
              !AgentInvestigationStore.SameProject(baselineManifest.CompanionProjectPath, candidateManifest.CompanionProjectPath)))
             throw new InvalidOperationException("measurement_companion_mismatch: Both measurements must use the same benchmark project.");
         if (baselineManifest.SourceSha256 != candidateManifest.SourceSha256 ||
