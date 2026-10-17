@@ -79,7 +79,7 @@ public static class ReviewContextFingerprints
         {
             ContextChange = null,
             Checkpoint = item.State.Checkpoint is { } checkpoint
-                ? checkpoint with { ContextFingerprint = null } : null
+                ? checkpoint with { ContextFingerprint = null, Measurement = null } : null
         }
     };
 

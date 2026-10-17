@@ -99,7 +99,7 @@ public sealed class ReviewProgressStore
         var record = new ReviewCheckpoint(0, target.Id, target.Kind, target.Name, target.ProjectPath,
             request.Status, target.SourceHash, target.ContextHash, request.Summary.Trim(), agent, session,
             DateTimeOffset.UtcNow.ToString("O"), evidence)
-        { ContextFingerprint = target.ContextFingerprint };
+        { ContextFingerprint = target.ContextFingerprint, Measurement = request.Measurement };
         cmd.CommandText = "INSERT INTO review_checkpoints(target_id,payload,source,source_chars) VALUES($id,$payload,$source,$size); SELECT last_insert_rowid();";
         cmd.Parameters.AddWithValue("$id", target.Id); cmd.Parameters.AddWithValue("$payload", JsonSerializer.Serialize(record, Json));
         cmd.Parameters.AddWithValue("$source", target.Source); cmd.Parameters.AddWithValue("$size", target.Source.Length);

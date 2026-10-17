@@ -61,9 +61,8 @@ public static class AgentGatewayEndpoints
     }
 }
 
-public sealed partial class AgentGateway(IServiceProvider services, AgentJournal journal, AgentConnection policy)
+public sealed partial class AgentGateway(IServiceProvider services, AgentJournal journal, AgentConnection policy, AgentInvestigationStore? investigations = null)
 {
-    private readonly Dictionary<string, Dictionary<string, string>> _experiments = new(StringComparer.Ordinal);
     private T Get<T>() where T : notnull => services.GetRequiredService<T>();
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly Dictionary<string, string> ExplorerActions = new(StringComparer.Ordinal)
@@ -77,10 +76,10 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
         ["runtime_costs"] = "runtime-costs", ["import_thread"] = "import-thread",
         ["run_companion"] = "run-companion"
     };
-    private static readonly HashSet<string> OtherTools = new(["approve_session", "revoke_approval", "session_status", "attach_workspace", "context", "sample", "open_project", "list_types", "rules", "note", "read_result",
+    private static readonly HashSet<string> OtherTools = new(["investigation", "measure_target", "approve_session", "revoke_approval", "session_status", "attach_workspace", "context", "sample", "open_project", "list_types", "rules", "note", "read_result",
         "prepare_experiment", "run_experiment", "experiment_result", "compare_benchmarks",
         "review_queue", "review_context", "review_target", "review_history", "review_diff", "review_mark"], StringComparer.Ordinal);
-    private static readonly HashSet<string> Fields = new(["tools", "minutes", "snapshotId", "projectId", "typeId", "methodId", "assemblyId", "companionId", "artifactId",
+    private static readonly HashSet<string> Fields = new(["action", "investigationId", "tools", "minutes", "snapshotId", "projectId", "typeId", "methodId", "assemblyId", "companionId", "artifactId",
         "baselineId", "nativeIndex", "baselineIndex", "profileIndex", "metadataToken", "assemblySha256", "approved", "allowRestore", "arguments",
         "sample", "path", "expectedSnapshotId", "query", "offset", "limit", "callId", "pointer", "kind", "message", "evidenceCallIds",
         "generatedCode", "targetFramework", "runtimeFramework", "experimentId", "baselineExperimentId", "candidateExperimentId",
@@ -96,22 +95,29 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
         if (cached is not null) return cached;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(TimeSpan.FromMinutes(6));
+        IDisposable? investigationLease = null;
+        var entered = false;
         try
         {
+            investigationLease = EnterInvestigation(request);
+            entered = true;
             var result = await Execute(request.SessionId, request.Tool, request.Arguments, deadline.Token);
-            return journal.Complete(callId, result);
+            return CompleteDurable(request, journal.Complete(callId, result));
         }
         catch (OperationCanceledException)
         {
-            return journal.Complete(callId, AgentRecoveryAdvice.ForFailure(request.Tool, null, cancelled: true),
+            var reply = journal.Complete(callId, AgentRecoveryAdvice.ForFailure(request.Tool, null, cancelled: true),
                 "Action cancelled or time budget reached.", true);
+            return entered ? CompleteDurable(request, reply) : reply;
         }
         catch (Exception ex)
         {
             // Nothing is automatically retried. The journal reports operational failure, not a target-code defect.
             var error = ex.GetType().Name + ": " + (ex.Message.Length > 1000 ? ex.Message[..1000] : ex.Message);
-            return journal.Complete(callId, AgentRecoveryAdvice.ForFailure(request.Tool, error), error);
+            var reply = journal.Complete(callId, AgentRecoveryAdvice.ForFailure(request.Tool, error), error);
+            return entered ? CompleteDurable(request, reply) : reply;
         }
+        finally { investigationLease?.Dispose(); }
     }
     private void BuildPermission(JsonElement a) =>
         AgentPermissionGate.Require("build/open", "TENKA_AGENT_ALLOW_BUILD", policy.AllowBuild, Bool(a, "approved"));
@@ -134,6 +140,8 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
         }
         switch (tool)
         {
+            case "investigation": return InvestigationAction(session, a);
+            case "measure_target": return await MeasureTargetAsync(session, a, ct);
             case "approve_session": return await ApproveSessionAsync(session, a, ct);
             case "revoke_approval": return new { status = "session_approval_revoked", revoked = _approvals.Revoke(session) };
             case "session_status": return SessionStatus(session);
@@ -147,11 +155,12 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
             case "review_diff": return await Get<ReviewTrackingService>().Diff(Str(a,"snapshotId"),Str(a,"targetId"),Long(a,"fromRevision"),Long(a,"toRevision"),Number(a,"offset"),Number(a,"limit",150),ct);
             case "review_mark":
             {
-                var attribution=journal.ReviewAttribution(session,Strings(a,"evidenceCallIds"));
+                var attribution=journal.ReviewAttribution(session, null);
+                var evidence=ResolveEvidence(session,Strings(a,"evidenceCallIds"));
                 var request=new TenkaChan.Mcp.Tracking.ReviewMarkRequest(Str(a,"snapshotId"),Str(a,"targetId"),
                     Str(a,"sourceHash"),Str(a,"contextHash"),Long(a,"expectedRevision")??throw new ArgumentException("expectedRevision is required"),
                     Str(a,"status"),Str(a,"summary"));
-                return await Get<ReviewTrackingService>().Mark(request,attribution.Agent,session,attribution.Evidence,ct);
+                return await Get<ReviewTrackingService>().Mark(request,attribution.Agent,session,evidence,ct, target => MeasurementFor(session,a,target));
             }
             case "context":
             {
@@ -180,9 +189,13 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
                     index.Types(Optional(a, "projectId"), Optional(a, "query"), Number(a, "offset"), Number(a, "limit", 80))), ct, waitForRead: true);
             case "rules": return new { version = DeterministicRuleCatalog.Version, rules = DeterministicRuleCatalog.Rules };
             case "note":
-                journal.Report(session, new AgentNote(Str(a, "kind"), Str(a, "message"), Strings(a, "evidenceCallIds")));
-                return new { status = "agent_reported_unverified", note = "Displayed as an agent statement, not promoted to verified evidence." };
-            case "read_result": return journal.ReadResult(session, Str(a, "callId"), Optional(a, "pointer") ?? "", Number(a, "offset"), Number(a, "limit", 30));
+            {
+                var evidence = ResolveEvidence(session, Strings(a, "evidenceCallIds"));
+                journal.Report(session, new AgentNote(Str(a, "kind"), Str(a, "message")));
+                return new { status = "agent_reported_unverified", evidence,
+                    note = "Agent statement, not verified evidence. Referenced completed calls may belong to the resumed investigation." };
+            }
+            case "read_result": return ReadInvestigationResult(session, a);
             case "prepare_experiment":
                 return await dashboard.ExploreAsync(Str(a, "snapshotId"), (index, _) =>
                 {
@@ -191,13 +204,7 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
                     var project = index.Project(Str(a, "projectId"));
                     var result = Get<ExperimentStore>().Create(Path.GetDirectoryName(project.Path)!, Path.GetFileName(project.Path), kind, code, Optional(a, "targetFramework"), null, Optional(a, "runtimeFramework"));
                     var id = JsonSerializer.SerializeToElement(result, Json).GetProperty("id").GetString()!;
-                    lock (_experiments)
-                    {
-                        var live = journal.Monitor(policy.Enabled, policy.AllowBuild, policy.AllowExecution).Sessions.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
-                        foreach (var old in _experiments.Keys.Where(k => !live.Contains(k)).ToArray()) _experiments.Remove(old);
-                        if (!_experiments.TryGetValue(session, out var ids)) _experiments[session] = ids = new(StringComparer.Ordinal);
-                        ids.Add(id, project.Path);
-                    }
+                    Investigations.AddExperiment(session, id, project.Path);
                     return Task.FromResult((object)result);
                 }, ct);
             case "run_experiment":
@@ -215,12 +222,11 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
     }
     private string OwnExperiment(string session, string id)
     {
-        lock (_experiments)
-        {
-            if (!_experiments.TryGetValue(session, out var ids) || !ids.TryGetValue(id, out var project))
-                throw new UnauthorizedAccessException("Only experiments created in this agent session can be used.");
-            return project;
-        }
+        var project = Investigations.RequireExperiment(session, id);
+        var manifest = Get<ExperimentStore>().Read(id).Manifest;
+        if (!AgentInvestigationStore.SameProject(project, Path.Combine(manifest.RepositoryRoot, manifest.ProjectRelativePath)))
+            throw new UnauthorizedAccessException("Experiment project does not match its saved investigation provenance.");
+        return project;
     }
     private static string Str(JsonElement a, string key) => Optional(a, key) ?? throw new ArgumentException("Missing field: " + key);
     private static string? Optional(JsonElement a, string key) => a.TryGetProperty(key, out var p) && p.ValueKind != JsonValueKind.Null ? p.GetString() : null;

@@ -58,8 +58,8 @@ context / attach / list_types / review_queue / review_target / review_history / 
 `tenka_session_status` および tenka_context.session に、残り呼び出し数、最大16セッション、
 1セッション200呼び出し・同時処理1件、非実行時の15分アイドル期限、承認の対象・期限を表示する。
 status自体も1呼び出しとして数える。未ロードでも利用可能。
-実験・結果・evidenceCallIdsの同一セッション制約は解除しない。
-セッション移行を装って別エージェントの実験を実行しない。
+実験・小さい保存済み結果・evidenceCallIdsは、明示承認で同じinvestigationIdを再開して引き継げる。
+実行承認は引き継がず、別調査の実験を無断で使わない。詳しくは[永続調査と測定添付](durable-investigations-and-measurements.md)を参照。
 
 未ロード時の既知の例外はツール名にかかわらずworkspace_unloadedに分類し、
 信頼できる.sln/.slnx/.csprojを開く操作を案内する。SDKの必須引数エラー処理は維持する。
@@ -79,6 +79,6 @@ C#ビルド・xUnit・Windows実MCP/UIはこの開発環境では未実行。詳
 
 ## 残るもの
 
-古いsnapshotの保持、複数Roslyn readerの並列実行、永続investigationを用いたセッション跨ぎ実験、
-レビューmarkへのbefore/after測定の任意添付は未実装。checked/optimizedは引き続き自己申告で、
-この変更を速度改善の裏取りとして扱わない。
+古いsnapshotの保持、複数Roslyn readerの並列実行、完全なソース/ビルド同一性と独立検証は未実装。
+永続investigationとレビューmarkへのbefore/after測定添付は追加した。checked/optimizedは引き続き作業申告で、
+測定状態はstate.performanceで区別する。測定があることを動作保持や有意差の証明としない。

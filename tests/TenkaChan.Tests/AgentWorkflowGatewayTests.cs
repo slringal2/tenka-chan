@@ -32,7 +32,7 @@ public sealed class AgentWorkflowGatewayTests : IDisposable
             .AddSingleton<ReviewTrackingService>().BuildServiceProvider();
         var policy = new AgentConnection(_journal.InstanceId, 5077, enabled: true, allowBuild: false,
             allowExecution: false, filePath: Path.Combine(_root, "unused-connection.json"));
-        _gateway = new AgentGateway(_services, _journal, policy);
+        _gateway = new AgentGateway(_services, _journal, policy, new AgentInvestigationStore(_root));
         _session = _journal.Begin("test", "workflow regression").Id;
     }
     private AgentCallRequest Request(string tool, object args) => new(_session, Guid.NewGuid().ToString("N"), tool,
@@ -48,7 +48,7 @@ public sealed class AgentWorkflowGatewayTests : IDisposable
         var data = reply.Data!.Value;
         Assert.Equal(AgentJournal.MaxCallsPerSession - 1, data.GetProperty("remainingCalls").GetInt32());
         Assert.Equal(AgentJournal.MaxSessions, data.GetProperty("limits").GetProperty("maxSessions").GetInt32());
-        Assert.Equal("current_session_only", data.GetProperty("ownership").GetProperty("experiments").GetString());
+        Assert.Equal("current_investigation", data.GetProperty("ownership").GetProperty("experiments").GetString());
         Assert.Equal(JsonValueKind.Null, data.GetProperty("approval").ValueKind);
         Assert.False(File.Exists(Path.Combine(_root, "unused-connection.json")));
     }
@@ -89,15 +89,68 @@ public sealed class AgentWorkflowGatewayTests : IDisposable
     [Fact]
     public async Task UnownedExperimentIsRejectedBeforeAnyExecutorIsResolved()
     {
-        var reply = await Call("run_experiment", new { experimentId = "not-owned", approved = true });
+        var reply = await Call("run_experiment", new { experimentId = Guid.NewGuid().ToString("N"), approved = true });
         Assert.Equal("failed", reply.Outcome);
-        Assert.Equal("experiment_session_mismatch", reply.Data!.Value.GetProperty("code").GetString());
+        Assert.Equal("experiment_investigation_mismatch", reply.Data!.Value.GetProperty("code").GetString());
     }
     [Fact]
     public async Task EndedSessionsCannotReuseTheWorkflow()
     {
         _journal.Finish(_session); _gateway.EndSession(_session);
         await Assert.ThrowsAsync<InvalidOperationException>(() => _gateway.CallAsync(Request("session_status", new { }), default));
+    }
+    private async Task<AgentReply> CallFor(string session, string tool, object args) =>
+        Assert.IsType<AgentReply>(await _gateway.CallAsync(new AgentCallRequest(session, Guid.NewGuid().ToString("N"), tool,
+            JsonSerializer.SerializeToElement(args, new JsonSerializerOptions(JsonSerializerDefaults.Web))), default));
+
+    [Fact]
+    public async Task ActualGatewayCanResumeAndReadPriorSessionResultWithoutReexecution()
+    {
+        var first = await Call("context", new { });
+        var id = first.Data!.Value.GetProperty("session").GetProperty("investigation").GetProperty("investigationId").GetString()!;
+        _journal.Finish(_session); _gateway.EndSession(_session);
+        var next = _journal.Begin("same-client-name", "continued").Id;
+        var denied = await CallFor(next, "read_result", new { callId = first.CallId });
+        Assert.Equal("failed", denied.Outcome);
+        var resumed = await CallFor(next, "investigation", new { action = "resume", investigationId = id, approved = true });
+        Assert.Equal("returned", resumed.Outcome);
+        var read = await CallFor(next, "read_result", new { callId = first.CallId });
+        Assert.Equal("returned", read.Outcome);
+        Assert.False(read.Data!.Value.GetProperty("data").GetProperty("overview").GetProperty("loaded").GetBoolean());
+        var note = await CallFor(next, "note", new { kind = "progress", message = "resumed evidence", evidenceCallIds = new[] { first.CallId } });
+        Assert.Equal("returned", note.Outcome);
+        Assert.Equal(first.CallId, note.Data!.Value.GetProperty("evidence")[0].GetProperty("callId").GetString());
+    }
+    [Fact]
+    public async Task ResumeDoesNotCarryAnExistingExecutionGrantIntoAnotherInvestigation()
+    {
+        var first = await Call("session_status", new { });
+        var id = first.Data!.Value.GetProperty("investigation").GetProperty("investigationId").GetString()!;
+        var next = _journal.Begin("test", "separate").Id;
+        var approvals = (AgentSessionApprovals)typeof(AgentGateway)
+            .GetField("_approvals", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(_gateway)!;
+        approvals.Grant(next, "fixture", Path.Combine(_root, "Target.csproj"), ["run_experiment"], 10, true, true, true);
+        Assert.NotNull(approvals.Get(next));
+        var resumed = await CallFor(next, "investigation", new { action = "resume", investigationId = id, approved = true });
+        Assert.Equal("returned", resumed.Outcome);
+        Assert.Null(approvals.Get(next));
+    }
+    [Fact]
+    public async Task CallerCannotInjectMeasurementNumbersIntoAGatewayMark()
+    {
+        var request = Request("review_mark", new { measurement = new { mean = 1, independentlyVerified = true } });
+        await Assert.ThrowsAsync<ArgumentException>(() => _gateway.CallAsync(request, default));
+        Assert.Equal(0, _journal.Monitor(true, false, false).Sessions.Single().Calls);
+    }
+    [Fact]
+    public async Task ASecondInvestigationReaderDoesNotQueueDuplicateActions()
+    {
+        var first = await Call("session_status", new { });
+        var id = first.Data!.Value.GetProperty("investigation").GetProperty("investigationId").GetString()!;
+        using var held = new AgentInvestigationStore(_root).ResumeAndEnter(Guid.NewGuid().ToString("N"), id, true);
+        var busy = await Call("context", new { });
+        Assert.Equal("failed", busy.Outcome);
+        Assert.Equal("investigation_busy", busy.Data!.Value.GetProperty("code").GetString());
     }
     public void Dispose()
     {

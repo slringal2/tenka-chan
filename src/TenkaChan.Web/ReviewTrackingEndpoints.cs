@@ -78,14 +78,19 @@ public sealed class ReviewTrackingService(DashboardState dashboard,WorkspaceGuar
             diff=_diffCache.Compare(left.Item2,right.Item2,offset,limit),
             note=leftRevision is null?"未確認の対象です。比較元がないため、表示は現在のソース全体です。変更量とはみなしません。":ReviewProgress.Note};
     },ct);
-    public Task<object> Mark(ReviewMarkRequest request,string agent,string session,IReadOnlyList<ReviewEvidenceLink> evidence,CancellationToken ct) =>
+    public Task<object> Mark(ReviewMarkRequest request,string agent,string session,IReadOnlyList<ReviewEvidenceLink> evidence,CancellationToken ct,
+        Func<TenkaChan.Mcp.Tracking.ReviewTarget, ReviewBenchmarkEvidence?>? measurementFactory=null) =>
         With(request.SnapshotId,async catalog=>
         {
             var target=catalog.Require(request.TargetId);
             var stale=await catalog.StaleProjectsAsync(guard,true,ct);
             ReviewProgress.ValidateMark(target,request,stale.Contains(target.ProjectId));
             ct.ThrowIfCancellationRequested();
-            var checkpoint=store.Save(target,request,agent,session,evidence);
+            var measuredRequest = request with { Measurement = measurementFactory?.Invoke(target) };
+            if (measuredRequest.Measurement is not null)
+                ReviewProgress.ValidateMark(target,measuredRequest,(await catalog.StaleProjectsAsync(guard,true,ct)).Contains(target.ProjectId));
+            ct.ThrowIfCancellationRequested();
+            var checkpoint=store.Save(target,measuredRequest,agent,session,evidence);
             return new {snapshotId=catalog.SnapshotId,targetId=target.Id,status="review_mark_recorded",checkpoint,
                 state=ReviewProgress.State(target,checkpoint,false),note=ReviewProgress.Note};
         },ct,waitForRead:false);

@@ -16,6 +16,16 @@ public static class AgentRecoveryAdvice
         var text = error ?? "";
         if (cancelled)
             return new("action_cancelled", "Inspect this callId in the activity monitor before any retry. A build or target process may have started; cancellation is not proof of rollback. Re-run only after checking the outcome and obtaining any required approval.");
+        if (text.Contains("investigation_busy:", StringComparison.Ordinal))
+            return new("investigation_busy", "Another session is using this investigation. Inspect its activity and retry the read/resume explicitly after it finishes. No second execution was queued; do not terminate another client's work.");
+        if (text.Contains("investigation_resume_approval_required:", StringComparison.Ordinal))
+            return new("investigation_resume_approval_required", "Obtain approval to access the saved investigation, then call tenka_investigation with action=resume, investigationId and approved=true. This does not restore execution approval; refresh context and authorize only intended operations.");
+        if (text.Contains("experiment_investigation_mismatch:", StringComparison.Ordinal))
+            return new("experiment_investigation_mismatch", "List investigations with tenka_investigation action=list and explicitly resume the owning investigation. Reuse its experimentId; do not re-create or re-run it merely to transfer ownership. Execution approval must be granted again in this session.");
+        if (text.Contains("measurement_", StringComparison.Ordinal))
+            return new("measurement_rejected", "Check the named measurement failure. Use two completed benchmarks from this investigation, recorded by tenka_measure_target with the same target and workload. The candidate source/context must still match. Inspect saved results; never replay an executed experiment or fabricate missing binding evidence.");
+        if (text.Contains("investigation_not_found:", StringComparison.Ordinal))
+            return new("investigation_not_found", "Call tenka_investigation action=list and use an existing investigationId from this server's data directory. Old in-memory sessions are not automatically imported.");
         if (text.StartsWith("InvalidOperationException:", StringComparison.Ordinal) &&
             (text.Contains("Open a trusted .sln or .csproj first.", StringComparison.Ordinal) ||
              text.Contains("Call workspace_open first.", StringComparison.Ordinal) ||
@@ -52,13 +62,13 @@ public static class AgentRecoveryAdvice
         if (text.StartsWith("WorkspaceBuildConflictException:", StringComparison.Ordinal) && tool is not ("il" or "binary_methods"))
             return new("workspace_conflict", "Read tenka_context, confirm the intended workspace, and reselect IDs from its current snapshot. An active review/build must finish or be cancelled by its owner. Do not automatically reopen or replace the shared workspace.");
         if (tool == "review_mark")
-            return new("review_mark_rejected", "Call tenka_review_target for the intended target and snapshot. Reinspect changed source/context before using its current hashes and revision; use only completed evidenceCallIds from this session. Do not copy an old checked/optimized claim onto new code.");
+            return new("review_mark_rejected", "Call tenka_review_target for the intended target and snapshot. Reinspect changed source/context before using its current hashes and revision; use only completed evidenceCallIds from this session or its explicitly resumed investigation. Do not copy an old checked/optimized claim onto new code.");
         if (tool is "il" or "binary_methods")
             return new("binary_selection_invalid", "Use tenka_review_context for the intended target, or tenka_binary_methods with current snapshotId/methodId/assemblyId. Choose the exact signature and pass its metadataToken and assemblySha256 to tenka_il. After a build, refresh snapshot IDs; never guess a token or reuse a stale hash.");
         if (tool is "review_context" or "review_target" or "review_history" or "review_diff")
             return new("review_target_unavailable", "Refresh tenka_context and tenka_review_queue, kind=all, to obtain the current snapshotId and intended targetId. If source changed, reload only with approval. Use exact saved revision numbers for history/diff; do not substitute another target.");
         if (tool == "read_result")
-            return new("result_unavailable", "Use a completed callId from this session and an available JSON pointer. An evicted result cannot be recovered by paging. Do not rerun execution just to retrieve output; inspect the activity and saved artifacts first.");
+            return new("result_unavailable", "Use a completed callId from this session or its explicitly resumed investigation, and an available JSON pointer. Only retained data can be paged; large live-only results may be unavailable after restart. Do not rerun execution just to retrieve output; inspect the activity and saved artifacts first.");
         return new("tool_failed", "Inspect the error and callId for this specific operation. Refresh tenka_context only when workspace selection changed. Do not retry automatically or treat an operational failure as a target-code defect.");
     }
     public static string NextAction(string tool, AgentReply reply)
@@ -77,9 +87,9 @@ public static class AgentRecoveryAdvice
         if (status == 409 && text.Contains("session limit reached", StringComparison.OrdinalIgnoreCase))
             return "Finish unused sessions through their owning clients with tenka_finish before starting another. The server keeps at most 16 sessions; tenka_session_status shows limits in an existing usable session; do not terminate another client's active work or restart the server just to clear capacity.";
         if (status == 409 && text.Contains("call budget exhausted", StringComparison.OrdinalIgnoreCase))
-            return "The session call budget is exhausted. Preserve durable review checkpoints, then use tenka_finish and tenka_connect explicitly. Session-owned experiment IDs, evidence calls and approval do not transfer; never replay execution automatically.";
+            return "The session call budget is exhausted. Preserve durable review checkpoints, then use tenka_finish and tenka_connect explicitly. Explicitly resume the saved investigationId to reuse experiments and evidence. Execution approval and old snapshot IDs do not transfer; never replay execution automatically.";
         if (status == 409 && (text.Contains("expired", StringComparison.OrdinalIgnoreCase) || text.Contains("Unknown agent session", StringComparison.OrdinalIgnoreCase)))
-            return "Reconnect explicitly with tenka_connect and refresh tenka_context. Recover durable review checkpoints, not stale session IDs; experiments and evidence ownership do not transfer. Do not replay execution automatically.";
+            return "Reconnect explicitly with tenka_connect and refresh tenka_context. Recover durable review checkpoints, not stale session IDs; explicitly resume the saved investigationId to reuse experiments and evidence. Execution approval and old snapshot IDs do not transfer. Do not replay execution automatically.";
         return AgentClientFailure.HttpNextAction(status);
     }
 }
