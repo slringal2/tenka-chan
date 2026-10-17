@@ -15,6 +15,8 @@ public sealed record ExperimentManifest(
     // Null in older manifests: subject and runtime were the same framework.
     public string? SubjectTargetFramework { get; init; }
     public string? RuntimeResolution { get; init; }
+    /// <summary>Set only for a real, previously executed trusted companion benchmark.</summary>
+    public string? CompanionProjectPath { get; init; }
 }
 
 public sealed record ExperimentReceipt(string Id, string Kind, string Directory,
@@ -133,6 +135,57 @@ public sealed class ExperimentStore
         };
     }
 
+    /// <summary>
+    /// Store a completed, explicitly approved existing companion run as a measurement
+    /// report. This NEVER launches it; callers must capture source/target state around
+    /// execution. The manifest is distinct from agent-generated experiments, so the
+    /// generated host runner cannot replay it.
+    /// </summary>
+    public (ExperimentReceipt Receipt, ExecutionResult Report) RecordCompanionBenchmark(
+        string subjectProjectPath, CompanionBenchmarkWorkload workload, ExplorerProjectRun run,
+        string startedUtc)
+    {
+        if (run.Kind != "benchmark" || run.Status != "benchmark_completed" || run.ExitCode != 0 ||
+            run.Benchmarks.Count is 0 or > 200 || run.Benchmarks.Any(x =>
+                x.SampleCount <= 0 || x.MeanNanoseconds is not > 0 || !double.IsFinite(x.MeanNanoseconds.Value)))
+            throw new InvalidOperationException("companion_measurement_unverified: The actual BenchmarkDotNet run did not produce a complete successful report.");
+        var subject = _guard.RequireFile(subjectProjectPath, ".csproj");
+        var companion = _guard.RequireFile(workload.ProjectPath, ".csproj");
+        if (new[] { workload.SourceSha256, workload.ProjectSha256, workload.RunnerSha256 }
+            .Any(hash => hash.Length != 64 || !hash.All(Uri.IsHexDigit)))
+            throw new InvalidDataException("Invalid companion benchmark workload hashes.");
+        var subjectFramework = ExperimentFrameworkPolicy.Resolve(subject).SubjectTargetFramework;
+        var runtimeFramework = ExperimentFrameworkPolicy.Resolve(companion).SubjectTargetFramework;
+        ExperimentFrameworkPolicy.ValidatePair(subjectFramework, runtimeFramework);
+        var id = Guid.NewGuid().ToString("N");
+        var directory = Path.Combine(_storeRoot, "experiments", id);
+        Directory.CreateDirectory(directory);
+        var manifest = new ExperimentManifest(id, "companion_benchmark",
+            Path.GetDirectoryName(subject)!, Path.GetFileName(subject),
+            DateTimeOffset.UtcNow.ToString("O"), workload.SourceSha256, workload.ProjectSha256,
+            runtimeFramework, RunnerSha256: workload.RunnerSha256)
+        {
+            SubjectTargetFramework = subjectFramework, RuntimeResolution = "existing_companion",
+            CompanionProjectPath = companion
+        };
+        File.WriteAllText(Path.Combine(directory, "companion-workload.json"),
+            JsonSerializer.Serialize(workload, _json));
+        File.WriteAllText(Path.Combine(directory, "manifest.json"), JsonSerializer.Serialize(manifest, _json));
+        var report = new ExecutionResult(id, "benchmark", run.Status, run.ExitCode, startedUtc,
+            DateTimeOffset.UtcNow.ToString("O"), null, run.Benchmarks, [],
+            run.Output.Length > 12000 ? run.Output[^12000..] : run.Output,
+            run.Stderr.Length > 12000 ? run.Stderr[^12000..] : run.Stderr,
+            "Existing UNSANDBOXED companion, explicitly run through tenka_measure_companion. " +
+            "The workload fingerprint is limited to conventional .cs files, the .csproj and Directory.Build props/targets. " +
+            "It is not a complete MSBuild-input or source/binary identity proof. " + run.Note)
+        { TargetFramework = runtimeFramework };
+        SaveExecutionResult(report);
+        return (new ExperimentReceipt(id, "companion_benchmark", directory, "companion_report_retained",
+            "Existing companion report saved. Bind to the selected review target using its source/context observation; " +
+            "do not run this ID through the generated experiment executor.")
+        { TargetFramework = runtimeFramework, SubjectTargetFramework = subjectFramework }, report);
+    }
+
     public (ExperimentManifest Manifest, string Directory) Read(string experimentId)
     {
         if (!Guid.TryParseExact(experimentId, "N", out _))
@@ -146,8 +199,26 @@ public sealed class ExperimentStore
         if (manifest.Id != experimentId)
             throw new InvalidDataException("Manifest ID mismatch.");
         _guard.RequireProjectWithin(manifest.RepositoryRoot, manifest.ProjectRelativePath);
-        var source = Path.Combine(directory, "Generated.cs");
         ExperimentFrameworkPolicy.ValidatePair(manifest.SubjectTargetFramework ?? manifest.TargetFramework, manifest.TargetFramework);
+        if (manifest.Kind == "companion_benchmark")
+        {
+            if (string.IsNullOrWhiteSpace(manifest.CompanionProjectPath))
+                throw new InvalidDataException("Companion project provenance is missing.");
+            var companion = _guard.RequireFile(manifest.CompanionProjectPath, ".csproj");
+            var snapshotFile = Path.Combine(directory, "companion-workload.json");
+            if (!File.Exists(snapshotFile) || new FileInfo(snapshotFile).Length > 100_000)
+                throw new InvalidDataException("Companion workload receipt is unavailable.");
+            var snapshot = JsonSerializer.Deserialize<CompanionBenchmarkWorkload>(File.ReadAllText(snapshotFile))
+                ?? throw new InvalidDataException("Companion workload receipt is invalid.");
+            if (!string.Equals(companion, snapshot.ProjectPath, OperatingSystem.IsWindows()
+                    ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
+                || snapshot.SourceSha256 != manifest.SourceSha256
+                || snapshot.ProjectSha256 != manifest.ProjectSha256
+                || snapshot.RunnerSha256 != manifest.RunnerSha256)
+                throw new InvalidDataException("Companion workload receipt differs from its manifest.");
+            return (manifest, directory);
+        }
+        var source = Path.Combine(directory, "Generated.cs");
         if (manifest.Kind == "jit")
             _ = TargetFrameworkPolicy.ValidateJitFilter(manifest.JitFilter ?? "");
         var projectName = manifest.Kind switch
@@ -173,6 +244,8 @@ public sealed class ExperimentStore
     internal string CreateArtifactsDirectory(string experimentId)
     {
         var (manifest, directory) = Read(experimentId);
+        if (manifest.Kind == "companion_benchmark")
+            throw new InvalidOperationException("A retained companion report is read-only and cannot be relaunched as a generated experiment.");
         if (ExperimentFrameworkPolicy.IsStandardLibrary(manifest.SubjectTargetFramework))
             throw new InvalidOperationException("This library experiment requires the host runner. " +
                 "The legacy container project-reference route does not guarantee the selected library TFM.");
