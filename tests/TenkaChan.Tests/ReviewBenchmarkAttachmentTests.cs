@@ -47,6 +47,32 @@ public sealed class ReviewBenchmarkAttachmentTests
         Assert.False(ReviewPerformanceState.From(evidence, false).IndependentlyVerified);
     }
     [Fact]
+    public void StoredCompanionMeasurementsSupportTheSameConservativeComparison()
+    {
+        var target = Target(); var a = Guid.NewGuid().ToString("N"); var b = Guid.NewGuid().ToString("N");
+        var before = Report(a, 100); var after = Report(b, 90, true);
+        var companion = Path.Combine(Path.GetDirectoryName(Project)!, "Benchmarks.csproj");
+        var baseline = Manifest(a) with { Kind = "companion_benchmark", CompanionProjectPath = companion };
+        var candidate = Manifest(b) with { Kind = "companion_benchmark", CompanionProjectPath = companion };
+        var result = ReviewBenchmarkMeasurements.Create(Investigation, target, baseline, Stored(before),
+            Observation(target, before), candidate, Stored(after), Observation(target, after));
+        Assert.Equal("measured_comparison", result.Status);
+        Assert.False(ReviewPerformanceState.From(result, false).IndependentlyVerified);
+        Assert.Contains(result.Limitations, x => x.Contains("Companion workload hashes"));
+    }
+    [Fact]
+    public void GeneratedAndCompanionResultsCannotBeMixed()
+    {
+        var target = Target(); var a = Guid.NewGuid().ToString("N"); var b = Guid.NewGuid().ToString("N");
+        var before = Report(a, 100); var after = Report(b, 90, true);
+        var companion = Manifest(b) with { Kind = "companion_benchmark",
+            CompanionProjectPath = Path.Combine(Path.GetDirectoryName(Project)!, "Benchmarks.csproj") };
+        Assert.Throws<InvalidOperationException>(() => ReviewBenchmarkMeasurements.Create(Investigation, target,
+            Manifest(a), Stored(before), Observation(target, before),
+            companion, Stored(after), Observation(target, after)));
+    }
+
+    [Fact]
     public void DifferentEnvironmentIsExplicitlyIncomparable()
     {
         var evidence = Evidence(env: "other-env");
