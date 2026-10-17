@@ -39,6 +39,27 @@ function Invoke-Tool([string]$exe, [string[]]$arguments, [string]$title) {
     } finally { $ErrorActionPreference = $old }
     return ($code -eq 0)
 }
+function Ensure-ChanCore {
+    $core = Join-Path $repo 'shared\chan-core\src\Chan.Core\Chan.Core.csproj'
+    if (Test-Path -LiteralPath $core -PathType Leaf) { return }
+    if (-not (Test-Path -LiteralPath (Join-Path $repo '.git'))) {
+        throw 'Chan.Coreがありません。GitHubのZIPにはサブモジュールが入りません。git clone --recurse-submodules で取得してください。'
+    }
+    $git = Get-Command git.exe -CommandType Application -ErrorAction SilentlyContinue
+    if (-not $git) {
+        throw 'Chan.Coreの取得にはGit for Windowsが必要です。Gitを入れてから setup.bat を再実行してください。'
+    }
+    Say '共通基盤 Chan.Core が未取得です。GitHubの非公開リポジトリへの認証が必要な場合があります。'
+    if (-not (Ask 'Gitサブモジュールをダウンロードしますか？')) {
+        throw 'Chan.Coreの取得を取り消しました。git submodule update --init --recursive を実行することもできます。'
+    }
+    if (-not (Invoke-Tool $git.Source @('-C',$repo,'submodule','update','--init','--recursive','--','shared/chan-core') 'Chan.Coreを取得中…')) {
+        throw 'Chan.Coreを取得できませんでした。GitHubのアクセス権とGit Credential Managerを確認してください。'
+    }
+    if (-not (Test-Path -LiteralPath $core -PathType Leaf)) {
+        throw 'Chan.Coreの取得後もプロジェクトがありません。git submodule status を確認してください。'
+    }
+}
 function Find-Dotnet {
     $candidates = @()
     foreach ($root in @($env:ProgramW6432, $env:ProgramFiles)) {
@@ -207,6 +228,7 @@ try {
         $settings.agentExecution = Ask '外部エージェントによるJIT・計測・テスト等のローカル実行を許可しますか？' ([bool]$settings.agentExecution)
     }
     $workspace = Require-Root ([string]$settings.workspaceRoot)
+    Ensure-ChanCore
     Say '[2/5] .NETの確認'
     $dotnet = Find-Dotnet
     if (-not $dotnet -and $setup) { [void](Install-Sdk '10'); $dotnet = Find-Dotnet }

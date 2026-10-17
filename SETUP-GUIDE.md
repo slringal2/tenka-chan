@@ -2,11 +2,20 @@
 
 ## はじめて使うとき
 
-本体をZIPで取得した場合は、先に「すべて展開」してください。`src`、`scripts`、`global.json` と同じ場所にある **setup.bat** をダブルクリックします。BATだけを別の場所に移動しないでください。
+本体は次のようにGitから取得することを推奨します。共通基盤 `Chan.Core` はGitサブモジュールで管理しています。
+
+```powershell
+git clone --recurse-submodules https://github.com/slringal2/tenka-chan.git
+cd tenka-chan
+```
+
+既存のcloneなら `git submodule update --init --recursive` で共通基盤を取得できます。通常cloneの場合も `setup.bat` が不足を検知し、確認後にGitを使って取得します。**GitHubからダウンロードしたZIP単体には共通基盤が含まれません。** Git for Windowsと `tenka-chan` / `chan-core` のアクセス権が必要です。
+
+取得後、`src`、`scripts`、`global.json` と同じ場所にある **setup.bat** をダブルクリックします。BATだけを別の場所に移動しないでください。
 
 画面の説明を読み、解析したいプロジェクトが入ったフォルダーを選びます。よく分からなければ「2：付属サンプル」を選べます。Enterでおすすめの選択肢に進めますが、インストールやローカル実行を許可する説明は確認してください。
 
-セットアップは.NET 10 SDKの確認、必要ならMicrosoftのSDKインストール案内、本体パッケージの復元、xUnit／BenchmarkDotNetの.NET 8用キャッシュ、dotnet-trace、本体のReleaseビルドを順に行います。.NET 8アプリを実行するためのSDK導入も案内します。既存SDKの削除、Docker導入、Git更新、CIの再開、マシン全体のPowerShell実行ポリシー変更は行いません。
+セットアップは.NET 10 SDKの確認、必要ならMicrosoftのSDKインストール案内、本体パッケージの復元、xUnit／BenchmarkDotNetの.NET 8用キャッシュ、dotnet-trace、本体のReleaseビルドを順に行います。.NET 8アプリを実行するためのSDK導入も案内します。既存SDKの削除、Docker導入、Git設定の変更、CIの再開、マシン全体のPowerShell実行ポリシー変更は行いません。未取得の場合に限り、ユーザーに確認して共通基盤のサブモジュールを取得します。
 
 SDK導入時にはWindowsの許可画面が出る場合があります。会社のPCでは管理ルールに従ってください。WinGetがない・導入できない場合は、Microsoft公式のダウンロードページを案内します。「Runtime」だけではなく「SDK」が必要です。
 

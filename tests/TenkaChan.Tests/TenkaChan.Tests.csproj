@@ -13,7 +13,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/TenkaChan.Mcp/TenkaChan.Mcp.csproj" />
-    <ProjectReference Include="../../src/Chan.Core/Chan.Core.csproj" />
+    <ProjectReference Include="../../shared/chan-core/src/Chan.Core/Chan.Core.csproj" />
     <ProjectReference Include="../../src/TenkaChan.Web/TenkaChan.Web.csproj" />
   </ItemGroup>
 </Project>
