@@ -76,13 +76,13 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
         ["runtime_costs"] = "runtime-costs", ["import_thread"] = "import-thread",
         ["run_companion"] = "run-companion"
     };
-    private static readonly HashSet<string> OtherTools = new(["investigation", "measure_target", "approve_session", "revoke_approval", "session_status", "attach_workspace", "context", "sample", "open_project", "list_types", "rules", "note", "read_result",
+    private static readonly HashSet<string> OtherTools = new(["investigation", "measure_target", "measure_companion", "approve_session", "revoke_approval", "session_status", "attach_workspace", "context", "sample", "open_project", "list_types", "rules", "note", "read_result",
         "prepare_experiment", "run_experiment", "experiment_result", "compare_benchmarks",
         "review_queue", "review_context", "review_target", "review_history", "review_diff", "review_mark"], StringComparer.Ordinal);
     private static readonly HashSet<string> Fields = new(["action", "investigationId", "tools", "minutes", "snapshotId", "projectId", "typeId", "methodId", "assemblyId", "companionId", "artifactId",
         "baselineId", "nativeIndex", "baselineIndex", "profileIndex", "metadataToken", "assemblySha256", "approved", "allowRestore", "arguments",
         "sample", "path", "expectedSnapshotId", "query", "offset", "limit", "callId", "pointer", "kind", "message", "evidenceCallIds",
-        "generatedCode", "targetFramework", "runtimeFramework", "experimentId", "baselineExperimentId", "candidateExperimentId",
+        "generatedCode", "targetFramework", "runtimeFramework", "benchmarkJob", "experimentId", "baselineExperimentId", "candidateExperimentId",
         "cursor", "trackableOnly", "includeBinary", "state", "targetId", "sourceHash", "contextHash", "expectedRevision", "status", "summary", "fromRevision", "toRevision"], StringComparer.Ordinal);
 
     public async Task<object> CallAsync(AgentCallRequest request, CancellationToken ct)
@@ -142,6 +142,7 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
         {
             case "investigation": return InvestigationAction(session, a);
             case "measure_target": return await MeasureTargetAsync(session, a, ct);
+            case "measure_companion": return await MeasureCompanionAsync(session, a, ct);
             case "approve_session": return await ApproveSessionAsync(session, a, ct);
             case "revoke_approval": return new { status = "session_approval_revoked", revoked = _approvals.Revoke(session) };
             case "session_status": return SessionStatus(session);
@@ -205,7 +206,7 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
                     var result = Get<ExperimentStore>().Create(Path.GetDirectoryName(project.Path)!, Path.GetFileName(project.Path), kind, code, Optional(a, "targetFramework"), null, Optional(a, "runtimeFramework"));
                     var id = JsonSerializer.SerializeToElement(result, Json).GetProperty("id").GetString()!;
                     Investigations.AddExperiment(session, id, project.Path);
-                    return Task.FromResult((object)result);
+                    return Task.FromResult((object)(result with { InvestigationId = Investigations.CurrentId(session) }));
                 }, ct);
             case "run_experiment":
                 _approvals.Authorize(session, OwnExperiment(session, Str(a, "experimentId")), tool,

@@ -58,6 +58,14 @@ public static class ReviewBenchmarkMeasurements
             throw new ArgumentException("Choose different before/after experiments.");
         if (after.SourceHash != target.SourceHash || after.ContextHash != target.ContextHash)
             throw new ReviewConflictException("measurement_candidate_stale: Candidate measurement does not match the current source/context. Do not attach it to changed code.");
+        if (baselineManifest.Kind != candidateManifest.Kind ||
+            baselineManifest.Kind is not ("benchmark" or "companion_benchmark"))
+            throw new InvalidOperationException("measurement_origin_mismatch: Both benchmarks must use the same generated or companion execution path.");
+        if (baselineManifest.Kind == "companion_benchmark" &&
+            (baselineManifest.CompanionBenchmarkJob != candidateManifest.CompanionBenchmarkJob ||
+             baselineManifest.CompanionProjectPath is null || candidateManifest.CompanionProjectPath is null ||
+             !AgentInvestigationStore.SameProject(baselineManifest.CompanionProjectPath, candidateManifest.CompanionProjectPath)))
+            throw new InvalidOperationException("measurement_companion_mismatch: Both measurements must use the same benchmark project.");
         if (baselineManifest.SourceSha256 != candidateManifest.SourceSha256 ||
             baselineManifest.ProjectSha256 != candidateManifest.ProjectSha256 ||
             baselineManifest.RunnerSha256 != candidateManifest.RunnerSha256)
@@ -85,6 +93,7 @@ public static class ReviewBenchmarkMeasurements
              "Target source/context was observed under the workspace gate during each run. The existing built DLL may still differ from that source: binary/source identity is NOT verified.",
              "The benchmark author must independently justify workload coverage and test oracles. Attaching a report does not prove this method was exercised or behavior was preserved.",
              "Matching captured environment fingerprints and aggregate means are descriptive, not statistical significance or production performance guarantees.",
+             "Companion workload hashes cover conventional local .cs, csproj and Directory.Build files only; linked sources, imported build logic and build-output identity are not proven.",
              "Local reports and fingerprints are not tamper-proof against code running as the same OS user."]);
         ValidateAttachment(target, evidence);
         return evidence;
@@ -94,7 +103,7 @@ public static class ReviewBenchmarkMeasurements
     {
         var result = saved.Report;
         InvestigationFiles.Id(manifest.Id);
-        if (manifest.Kind != "benchmark" || result.Kind != "benchmark" || result.Status != "benchmark_completed" || result.ExitCode != 0 ||
+        if (manifest.Kind is not ("benchmark" or "companion_benchmark") || result.Kind != "benchmark" || result.Status != "benchmark_completed" || result.ExitCode != 0 ||
             result.ExperimentId != manifest.Id || observation.ExperimentId != manifest.Id)
             throw new InvalidOperationException("measurement_not_completed: Both runs must be completed successful benchmark reports with matching IDs.");
         if (observation.TargetId != target.Id || !AgentInvestigationStore.SameProject(target.ProjectPath, observation.ProjectPath) ||
