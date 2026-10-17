@@ -22,6 +22,8 @@ public sealed record ExperimentReceipt(string Id, string Kind, string Directory,
 {
     public string TargetFramework { get; init; } = "net10.0";
     public string? SubjectTargetFramework { get; init; }
+    /// <summary>Save this alongside the experimentId when another MCP adapter/session is used.</summary>
+    public string? InvestigationId { get; init; }
 }
 
 public sealed record ExperimentListItem(string Id, string Kind, string CreatedUtc,

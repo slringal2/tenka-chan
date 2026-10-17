@@ -126,7 +126,7 @@ public sealed class DashboardAgentTools
         client.CallAsync("run_companion", new { snapshotId, companionId, approved, allowRestore }, cancellationToken);
 
     [McpServerTool(Name = "tenka_prepare_experiment")]
-    [Description("Stage agent-authored C# test/benchmark code using a current project ID. No source edits or execution. targetFramework selects the library target; optional runtimeFramework selects the experiment runtime for netstandard2.0/2.1 (default net8.0 baseline, not inferred production). Portable net8+ targets retain their own runtime. Use a justified independent oracle.")]
+    [Description("Stage agent-authored C# test/benchmark code using a current project ID. Returns experimentId (id) AND durable investigationId: retain both; use the same MCP investigation for measure_target, or explicitly tenka_investigation resume in another adapter before measuring. No source edits or execution. targetFramework selects the library target; runtimeFramework selects the runtime for netstandard2.0/2.1. Use a justified independent oracle.")]
     public static Task<string> PrepareExperiment(DashboardAgentClient client, string snapshotId, string projectId, string kind, string generatedCode, string? targetFramework = null, string? runtimeFramework = null, CancellationToken cancellationToken = default) =>
         client.CallAsync("prepare_experiment", new { snapshotId, projectId, kind, generatedCode, targetFramework, runtimeFramework }, cancellationToken);
 

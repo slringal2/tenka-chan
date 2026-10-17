@@ -205,7 +205,7 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
                     var result = Get<ExperimentStore>().Create(Path.GetDirectoryName(project.Path)!, Path.GetFileName(project.Path), kind, code, Optional(a, "targetFramework"), null, Optional(a, "runtimeFramework"));
                     var id = JsonSerializer.SerializeToElement(result, Json).GetProperty("id").GetString()!;
                     Investigations.AddExperiment(session, id, project.Path);
-                    return Task.FromResult((object)result);
+                    return Task.FromResult((object)(result with { InvestigationId = Investigations.CurrentId(session) }));
                 }, ct);
             case "run_experiment":
                 _approvals.Authorize(session, OwnExperiment(session, Str(a, "experimentId")), tool,

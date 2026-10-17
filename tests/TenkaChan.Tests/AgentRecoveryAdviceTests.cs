@@ -59,6 +59,17 @@ public sealed class AgentRecoveryAdviceTests
         Assert.DoesNotContain("=1", hint.NextAction);
     }
     [Fact]
+    public void ForeignExperimentRecoveryExplainsSafeCrossAdapterResume()
+    {
+        var hint = AgentRecoveryAdvice.ForFailure("measure_target",
+            "UnauthorizedAccessException: experiment_investigation_mismatch: not owned here");
+        Assert.Equal("experiment_investigation_mismatch", hint.Code);
+        Assert.Contains("same connected MCP investigation", hint.NextAction);
+        Assert.Contains("investigationId", hint.NextAction);
+        Assert.Contains("action=resume", hint.NextAction);
+        Assert.Contains("approved=true", hint.NextAction);
+    }
+    [Fact]
     public void CancellationDoesNotImplyExecutionWasRolledBack()
     {
         var hint = AgentRecoveryAdvice.ForFailure("build", null, cancelled: true);
