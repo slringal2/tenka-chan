@@ -1,5 +1,5 @@
 ﻿#requires -version 5.1
-param([ValidateSet('Setup','Start')][string]$Mode = 'Setup')
+param([ValidateSet('Setup','Start')][string]$Mode = 'Setup', [switch]$VerifyStartup)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -14,6 +14,7 @@ $launcherHome = Join-Path $stateRoot $key
 $settingsFile = Join-Path $launcherHome 'settings.json'
 $logs = Join-Path $launcherHome 'logs'
 $server = $null
+$verifiedInstanceId = $null
 $transcribing = $false
 $exitCode = 0
 
@@ -149,6 +150,9 @@ function Find-Port([int]$preferred) {
 }
 
 try {
+    if ($VerifyStartup -and $Mode -ne 'Start') {
+        throw '実起動検証は -Mode Start -VerifyStartup で指定してください。setup.bat での初回設定を先に完了してください。'
+    }
     if ($env:OS -ne 'Windows_NT') { throw 'このセットアップはWindows専用です。' }
     [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
     $OutputEncoding = [Console]::OutputEncoding
@@ -176,6 +180,9 @@ try {
             Copy-Item -LiteralPath $settingsFile -Destination ($settingsFile + '.backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
             $settings = $null
         }
+    }
+    if ($VerifyStartup -and $null -eq $settings) {
+        throw '実起動検証には保存済み設定が必要です。最初に setup.bat を実行してください。検証は初回設定・ダウンロードを自動実行しません。'
     }
     $setup = $Mode -eq 'Setup' -or $null -eq $settings
     if ($setup) {
@@ -274,6 +281,9 @@ try {
     if ($setup -and -not (Ask '今すぐ甜花ちゃんを起動しますか？')) { Say 'セットアップを保存しました。start.batで起動できます。' }
     else {
         $port = Find-Port ([int]$settings.port)
+        if ($VerifyStartup -and $port -ne [int]$settings.port) {
+            throw "検証を中止しました。設定済みポート$($settings.port)は使用中です。既存サーバーは停止せず、新しいポートへの切替も行いません。"
+        }
         if ($port -ne [int]$settings.port) { Write-Warning "ポート$($settings.port)は使用中のため、今回は$portを使用します。既存プロセスは終了しません。" }
         $env:TENKA_WEB_PORT = [string]$port
         $mcpConfig = Join-Path $launcherHome 'mcp-config.json'
@@ -300,18 +310,107 @@ try {
             $server.Refresh()
         }
         if (-not $ready) { throw "サーバーの起動を確認できませんでした。詳細ログ: $stdout / $stderr" }
-        $url = $base + '/agent.html'
-        Start-Process $url
-        Say "起動しました: $url"
-        Write-Host '外部エージェント側で調査を依頼してください。ブラウザーは活動と結果を表示します。手動の調査画面もサイドバーに残しています。'
-        Write-Host 'ブラウザーを閉じてもサーバーは動作します。終了するときはこの画面でEnterを押してください。'
-        Write-Host "サーバーログ: $stdout"
-        while (-not $server.HasExited) {
-            if ([Console]::KeyAvailable -and [Console]::ReadKey($true).Key -eq [ConsoleKey]::Enter) { break }
-            Start-Sleep -Milliseconds 300
+        if ($VerifyStartup) {
+            # Probe the ACTUAL server launched above. Never print its CSRF or
+            # machine bearer token; the transcript must remain safe to share.
+            $probe = Invoke-RestMethod -Uri ($base + '/api/session') -TimeoutSec 5
+            if ($probe.listening -ne 'loopback' -or [int]$probe.port -ne $port -or
+                [string]::IsNullOrWhiteSpace([string]$probe.csrfToken) -or
+                $probe.msbuildEnabled -ne $true -or $probe.dockerEnabled -ne $false -or
+                $probe.trustedLocalExecutionEnabled -ne $true -or
+                $probe.hostExperimentsEnabled -ne ([bool]$settings.generatedExperiments)) {
+                throw '検証したHTTPサーバーの設定が保存済みランチャー設定と一致しません。'
+            }
+            # The agent connection descriptor is published only after ASP.NET
+            # startup. Its credential is read locally, never written to a log.
+            $connectionFile = $env:TENKA_AGENT_CONNECTION_FILE
+            if (-not (Test-Path -LiteralPath $connectionFile -PathType Leaf)) {
+                throw 'MCP接続ファイルが発行されませんでした。サーバーログを確認してください。'
+            }
+            $descriptor = Get-Content -LiteralPath $connectionFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($descriptor.schema -ne 1 -or $descriptor.endpoint -ne $base -or
+                [string]::IsNullOrWhiteSpace([string]$descriptor.instanceId) -or
+                [string]$descriptor.token -notmatch '^[a-fA-F0-9]{64}
+    }
+} catch {
+    $exitCode = 1
+    Write-Host ''
+    Write-Host '途中で停止しました。成功としては扱っていません。' -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor Yellow
+    Write-Host '画面はすぐ閉じません。必要ならこのメッセージをコピーしてください。'
+    Write-Host "ログ保存フォルダー: $logs"
+    Write-Host 'ソースコードやパスがログに含まれる場合があります。共有前に内容を確認してください。'
+} finally {
+    if ($null -ne $server) {
+        try {
+            if (-not $server.HasExited) {
+                # Only terminate the exact process tree started by this launcher, never all dotnet processes.
+                & "$env:SystemRoot\System32\taskkill.exe" /PID $server.Id /T /F 2>&1 | ForEach-Object { Write-Host ([string]$_) }
+            }
+        } catch { Write-Warning '起動したサーバーの終了を確認できませんでした。' }
+        $server.Dispose()
+    }
+    if ($VerifyStartup -and -not [string]::IsNullOrWhiteSpace($verifiedInstanceId)) {
+        # taskkill /F may not run ASP.NET ApplicationStopped callbacks.
+        # Remove ONLY our own connection descriptor, never another instance's.
+        try {
+            $ownFile = $env:TENKA_AGENT_CONNECTION_FILE
+            if (Test-Path -LiteralPath $ownFile -PathType Leaf) {
+                $lastDescriptor = Get-Content -LiteralPath $ownFile -Raw -Encoding UTF8 | ConvertFrom-Json
+                if ([string]$lastDescriptor.instanceId -eq $verifiedInstanceId) {
+                    Remove-Item -LiteralPath $ownFile -Force
+                }
+            }
+        } catch { Write-Warning '検証用MCP接続ファイルの後片付けを確認できませんでした。ファイルのinstanceIdを確認してください。' }
+    }
+    if ($transcribing) { Stop-Transcript | Out-Null }
+    if ((Get-Location).Path -eq $repo) { Pop-Location }
+}
+exit $exitCode
+) {
+                throw 'MCP接続ファイルがこのサーバーを指していません。認証情報を表示せず検証を終了します。'
+            }
+            $verifiedInstanceId = [string]$descriptor.instanceId
+            $headers = @{ Authorization = ('Bearer ' + [string]$descriptor.token) }
+            $probeSessionId = $null
+            try {
+                $started = Invoke-RestMethod -Uri ($base + '/agent/v1/begin') -Method Post `
+                    -ContentType 'application/json' -Headers $headers `
+                    -Body '{"clientName":"launcher-startup-probe","goal":"read-only connectivity check"}' -TimeoutSec 5
+                $probeSessionId = [string]$started.id
+                $parsedSessionId = [Guid]::Empty
+                if (-not [Guid]::TryParse($probeSessionId, [ref]$parsedSessionId)) {
+                    throw 'MCP接続テストでセッションIDを確認できませんでした。'
+                }
+            } finally {
+                if (-not [string]::IsNullOrWhiteSpace($probeSessionId)) {
+                    # Explicitly finish the test session; do not keep a slot occupied.
+                    try {
+                        $endBody = @{ sessionId = $probeSessionId } | ConvertTo-Json -Compress
+                        [void](Invoke-RestMethod -Uri ($base + '/agent/v1/end') -Method Post `
+                            -ContentType 'application/json' -Headers $headers -Body $endBody -TimeoutSec 5)
+                    } catch { Write-Warning 'MCP検証セッションの終了を確認できませんでした。起動プロセスは終了します。' }
+                }
+            }
             $server.Refresh()
+            if ($server.HasExited) { throw '検証中にサーバーが終了しました。ログを確認してください。' }
+            Say "実起動検証に成功: HTTP / MCP認証 / ポート$port"
+            Write-Host 'ブラウザー・外部モデル・解析対象アプリは起動していません。'
+            Write-Host '検証で開始したWebプロセスはこのあと終了します。'
+        } else {
+            $url = $base + '/agent.html'
+            Start-Process $url
+            Say "起動しました: $url"
+            Write-Host '外部エージェント側で調査を依頼してください。ブラウザーは活動と結果を表示します。手動の調査画面もサイドバーに残しています。'
+            Write-Host 'ブラウザーを閉じてもサーバーは動作します。終了するときはこの画面でEnterを押してください。'
+            Write-Host "サーバーログ: $stdout"
+            while (-not $server.HasExited) {
+                if ([Console]::KeyAvailable -and [Console]::ReadKey($true).Key -eq [ConsoleKey]::Enter) { break }
+                Start-Sleep -Milliseconds 300
+                $server.Refresh()
+            }
+            if ($server.HasExited -and $server.ExitCode -ne 0) { throw "サーバーが異常終了しました。ログ: $stderr" }
         }
-        if ($server.HasExited -and $server.ExitCode -ne 0) { throw "サーバーが異常終了しました。ログ: $stderr" }
     }
 } catch {
     $exitCode = 1
