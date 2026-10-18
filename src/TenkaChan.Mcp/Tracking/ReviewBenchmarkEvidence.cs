@@ -21,6 +21,8 @@ public sealed record ReviewBenchmarkEvidence(string InvestigationId, string Targ
     // identical for baseline/candidate by validation, never caller-supplied.
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? BenchmarkJob { get; init; }
+    /// <summary>Source/binary identity is not established by the measurement.</summary>
+    public bool BinariesVerified => false;
 }
 
 public sealed record ReviewPerformanceState(string Status, bool HasMeasurements,
@@ -29,6 +31,8 @@ public sealed record ReviewPerformanceState(string Status, bool HasMeasurements,
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? BenchmarkJob { get; init; }
+    /// <summary>False means no verification, not a detected mismatch.</summary>
+    public bool BinariesVerified => false;
 
     public static ReviewPerformanceState Unmeasured => new("unmeasured", false, false, null, null, 0, 0);
     public static ReviewPerformanceState From(ReviewBenchmarkEvidence? evidence, bool stale)

@@ -103,7 +103,8 @@ public sealed class AgentJournal
             }
             c.Reply = new(c.Id, cancelled ? "cancelled" : error is null ? "returned" : "failed",
                 observed, snapshot, error is null ? null : Text(error.Length <= 1200 ? error : error[..1200], 1200),
-                size <= 60000 ? json : null, c.Result.HasValue, fields);
+                size <= 60000 ? json : null, c.Result.HasValue, fields)
+            { NextAction = size > 60000 ? LargeResultNextAction(json, c.Result.HasValue, c.Id) : null };
             Event(s.Id, c.Id, c.Reply.Outcome == "returned" ? "tool_result" : c.Reply.Outcome,
                 c.Tool, error is not null ? Text(error.Length <= 1200 ? error : error[..1200], 1200) : size > MaxResultBytes
                     ? "結果が保存上限を超えました。表示範囲を絞って再調査してください。"
@@ -194,6 +195,21 @@ public sealed class AgentJournal
                 note = call.Reply.Data is null ? "大きい結果は外部エージェントのtenka_read_resultで取得できます。元の解析結果は対応する調査画面でも確認できます。" : "ツールが返したデータです。LLMが書いた説明と区別してください。" };
         }
     }
+    /// <summary>
+    /// Large results are retained separately from their small MCP reply. Return a
+    /// concrete read-result recipe without replaying an executable operation.
+    /// </summary>
+    private static string LargeResultNextAction(JsonElement data, bool retained, string callId)
+    {
+        if (!retained)
+            return "The result exceeded local retention limits. Do not replay builds, tests or measurements to retrieve output. For read-only queries, narrow the filter and limit in a new call.";
+        if (data.ValueKind == JsonValueKind.Object)
+            foreach (var field in new[] { "items", "findings", "methods", "targets", "results" })
+                if (data.TryGetProperty(field, out var value) && value.ValueKind == JsonValueKind.Array)
+                    return $"The large result is retained but omitted from inline data. Call tenka_read_result with callId={callId}, pointer=/{field}, offset=0, limit=10; page by offset until total is reached. Do not repeat the original operation.";
+        return $"The large result is retained but omitted from inline data. Call tenka_read_result with callId={callId} and a JSON pointer for one of availableFields. Do not repeat the original operation.";
+    }
+
     private static string DescribeResult(JsonElement value)
     {
         var name = "";

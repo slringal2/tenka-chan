@@ -148,7 +148,7 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
             case "session_status": return SessionStatus(session);
             case "attach_workspace": return await dashboard.ExplorerContextAsync(guard, discovery, ct, Str(a, "path"));
             case "review_queue": return await Get<ReviewTrackingService>().Queue(Str(a,"snapshotId"), Optional(a,"projectId"),
-                Optional(a,"kind")??ReviewQueueViews.DefaultKind, Optional(a,"state")??"pending", Optional(a,"query"),Number(a,"offset"),Number(a,"limit",50),ct,Optional(a,"cursor"),Bool(a,"trackableOnly"));
+                Optional(a,"kind")??ReviewQueueViews.DefaultKind, Optional(a,"state")??"pending", Optional(a,"query"),Number(a,"offset"),Number(a,"limit",20),ct,Optional(a,"cursor"),Bool(a,"trackableOnly"));
             case "review_context": return await ReviewContextReader.ReadAsync(dashboard, guard, discovery,
                 Get<ReviewProgressStore>(), Str(a,"snapshotId"), Str(a,"targetId"), Bool(a,"includeBinary",true), ct);
             case "review_target": return await Get<ReviewTrackingService>().Target(Str(a,"snapshotId"),Str(a,"targetId"),ct);

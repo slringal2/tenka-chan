@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace TenkaChan.Mcp.Agent;
 
@@ -14,6 +15,8 @@ public sealed record AgentReply(string CallId, string Outcome, string? ObservedS
     string[] AvailableFields)
 {
     public string? PersistenceWarning { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? NextAction { get; init; }
 }
 public sealed record AgentMonitor(string InstanceId, bool Enabled, bool AllowBuild, bool AllowExecution,
     long LastSequence, IReadOnlyList<AgentSessionView> Sessions, IReadOnlyList<AgentEvent> Events,

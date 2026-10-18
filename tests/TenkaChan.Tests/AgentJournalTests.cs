@@ -92,8 +92,23 @@ public sealed class AgentJournalTests
         var j = new AgentJournal(); var s = j.Begin("c", ""); var c = j.Start(Request(s.Id));
         var r = j.Complete(c.CallId, new { summary = "available", source = new string('x', 70000) });
         Assert.Null(r.Data); Assert.True(r.ResultAvailable); Assert.Contains("source", r.AvailableFields);
+        Assert.Contains("tenka_read_result", r.NextAction);
+        Assert.Contains(c.CallId, r.NextAction);
         var result = JsonSerializer.SerializeToElement(j.ReadResult(s.Id, c.CallId, "/summary", 0, 10));
         Assert.Equal("available", result.GetProperty("data").GetString());
+    }
+    [Fact] public void LargeReviewQueueHasAConcretePagingRecipeWithoutReexecuting()
+    {
+        var j = new AgentJournal(); var s = j.Begin("c", ""); var c = j.Start(Request(s.Id, tool: "review_queue"));
+        var rows = Enumerable.Range(0, 200).Select(i => new { index = i, summary = new string('x', 500) }).ToArray();
+        var result = j.Complete(c.CallId, new { items = rows, total = rows.Length, nextCursor = "fixture" });
+        Assert.Null(result.Data);
+        Assert.True(result.ResultAvailable);
+        Assert.Contains("pointer=/items", result.NextAction);
+        Assert.Contains("limit=10", result.NextAction);
+        var page = JsonSerializer.SerializeToElement(j.ReadResult(s.Id, c.CallId, "/items", 0, 10));
+        Assert.Equal(200, page.GetProperty("total").GetInt32());
+        Assert.Equal(10, page.GetProperty("items").GetArrayLength());
     }
     [Fact] public void SessionCountIsBounded()
     {
