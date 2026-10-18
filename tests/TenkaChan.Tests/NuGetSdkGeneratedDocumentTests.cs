@@ -79,7 +79,12 @@ public sealed class NuGetSdkGeneratedDocumentTests : IDisposable
         using var service = new RoslynReviewService(guard, new NuGetSdkGeneratedDocumentPolicy(Packages));
         var result = await service.OpenAsync(solution);
         Assert.Equal(2, result.Projects.Count);
-        Assert.Contains(result.Projects, p => p.Name == "Tests" && p.Documents == 1);
+        var app = Assert.Single(result.Projects, p => p.Name == "App");
+        var tests = Assert.Single(result.Projects, p => p.Name == "Tests");
+        // The synthetic SDK source is removed from the Tests project, leaving it with the
+        // same document set as the App project (one user source plus any SDK-generated
+        // documents, whose count varies by SDK version). Do not pin an absolute count.
+        Assert.Equal(app.Documents, tests.Documents);
         Assert.Contains(result.WorkspaceWarnings, w => w.Contains("synthetic source document"));
         Assert.NotEmpty(service.FindMethods("Check.Go"));
         Assert.DoesNotContain(service.GetReviewTargets(), t => t.Method.File == Synthetic);
