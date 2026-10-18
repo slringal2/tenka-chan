@@ -57,12 +57,31 @@ public sealed class ReviewBenchmarkAttachmentTests
         var result = ReviewBenchmarkMeasurements.Create(Investigation, target, baseline, Stored(before),
             Observation(target, before), candidate, Stored(after), Observation(target, after));
         Assert.Equal("measured_comparison", result.Status);
-        Assert.False(ReviewPerformanceState.From(result, false).IndependentlyVerified);
+        Assert.Equal("medium", result.BenchmarkJob);
+        var state = ReviewPerformanceState.From(result, false);
+        Assert.Equal("medium", state.BenchmarkJob);
+        Assert.False(state.IndependentlyVerified);
+        var json = JsonSerializer.Serialize(state, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Contains("\"benchmarkJob\":\"medium\"", json);
         Assert.Contains(result.Limitations, x => x.Contains("Companion workload hashes"));
         Assert.Throws<InvalidOperationException>(() => ReviewBenchmarkMeasurements.Create(Investigation,
             target, baseline, Stored(before), Observation(target, before),
             candidate with { CompanionBenchmarkJob = "short" }, Stored(after), Observation(target, after)));
     }
+    [Fact]
+    public void HistoricalCheckpointWithoutBenchmarkJobRemainsReadable()
+    {
+        var state = JsonSerializer.Deserialize<ReviewPerformanceState>(
+            """
+            {"status":"insufficient_samples","hasMeasurements":true,
+             "independentlyVerified":false,"baselineExperimentId":"old","candidateExperimentId":"new",
+             "comparedCases":2,"incomparableCases":0}
+            """, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.NotNull(state);
+        Assert.Null(state.BenchmarkJob);
+        Assert.Equal("insufficient_samples", state.Status);
+    }
+
     [Fact]
     public void GeneratedAndCompanionResultsCannotBeMixed()
     {

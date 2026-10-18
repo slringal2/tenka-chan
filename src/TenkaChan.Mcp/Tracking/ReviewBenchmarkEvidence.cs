@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using TenkaChan.Mcp.Agent;
 using TenkaChan.Mcp.Experiments;
 using Core = Chan.Core.Benchmarks;
@@ -14,17 +15,27 @@ public sealed record ReviewBenchmarkEvidence(string InvestigationId, string Targ
     string CandidateSourceHash, string CandidateContextHash, string Status, string RecordedUtc,
     string WorkloadSha256, string RuntimeFramework, string SubjectFramework,
     ReviewRunObservation Baseline, ReviewRunObservation Candidate,
-    BenchmarkRunComparison Comparison, IReadOnlyList<string> Limitations);
+    BenchmarkRunComparison Comparison, IReadOnlyList<string> Limitations)
+{
+    // Null for generated experiments and older records. Companion jobs are
+    // identical for baseline/candidate by validation, never caller-supplied.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? BenchmarkJob { get; init; }
+}
 
 public sealed record ReviewPerformanceState(string Status, bool HasMeasurements,
     bool IndependentlyVerified, string? BaselineExperimentId, string? CandidateExperimentId,
     int ComparedCases, int IncomparableCases)
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? BenchmarkJob { get; init; }
+
     public static ReviewPerformanceState Unmeasured => new("unmeasured", false, false, null, null, 0, 0);
     public static ReviewPerformanceState From(ReviewBenchmarkEvidence? evidence, bool stale)
         => evidence is null ? Unmeasured : new(stale ? "stale_measurement" : evidence.Status,
             true, false, evidence.Baseline.ExperimentId, evidence.Candidate.ExperimentId,
-            evidence.Comparison.ComparedCases, evidence.Comparison.IncomparableCases);
+            evidence.Comparison.ComparedCases, evidence.Comparison.IncomparableCases)
+        { BenchmarkJob = evidence.BenchmarkJob };
 }
 
 /// <summary>
@@ -62,7 +73,8 @@ public static class ReviewBenchmarkMeasurements
             baselineManifest.Kind is not ("benchmark" or "companion_benchmark"))
             throw new InvalidOperationException("measurement_origin_mismatch: Both benchmarks must use the same generated or companion execution path.");
         if (baselineManifest.Kind == "companion_benchmark" &&
-            (baselineManifest.CompanionBenchmarkJob != candidateManifest.CompanionBenchmarkJob ||
+            (baselineManifest.CompanionBenchmarkJob is not ("short" or "medium") ||
+             baselineManifest.CompanionBenchmarkJob != candidateManifest.CompanionBenchmarkJob ||
              baselineManifest.CompanionProjectPath is null || candidateManifest.CompanionProjectPath is null ||
              !AgentInvestigationStore.SameProject(baselineManifest.CompanionProjectPath, candidateManifest.CompanionProjectPath)))
             throw new InvalidOperationException("measurement_companion_mismatch: Both measurements must use the same benchmark project.");
@@ -94,7 +106,9 @@ public static class ReviewBenchmarkMeasurements
              "The benchmark author must independently justify workload coverage and test oracles. Attaching a report does not prove this method was exercised or behavior was preserved.",
              "Matching captured environment fingerprints and aggregate means are descriptive, not statistical significance or production performance guarantees.",
              "Companion workload hashes cover conventional local .cs, csproj and Directory.Build files only; linked sources, imported build logic and build-output identity are not proven.",
-             "Local reports and fingerprints are not tamper-proof against code running as the same OS user."]);
+             "Local reports and fingerprints are not tamper-proof against code running as the same OS user."])
+        { BenchmarkJob = candidateManifest.Kind == "companion_benchmark"
+            ? candidateManifest.CompanionBenchmarkJob : null };
         ValidateAttachment(target, evidence);
         return evidence;
     }
