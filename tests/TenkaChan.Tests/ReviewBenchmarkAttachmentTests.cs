@@ -45,6 +45,8 @@ public sealed class ReviewBenchmarkAttachmentTests
         Assert.Equal(100d, row.BaselineMeanNanoseconds); Assert.Equal(80d, row.CandidateMeanNanoseconds);
         Assert.Equal(-20d, row.MeanChangePercent); Assert.Equal("faster_observed", row.Status);
         Assert.False(ReviewPerformanceState.From(evidence, false).IndependentlyVerified);
+        Assert.False(evidence.BinariesVerified);
+        Assert.False(ReviewPerformanceState.From(evidence, false).BinariesVerified);
     }
     [Fact]
     public void StoredCompanionMeasurementsSupportTheSameConservativeComparison()
@@ -63,6 +65,7 @@ public sealed class ReviewBenchmarkAttachmentTests
         Assert.False(state.IndependentlyVerified);
         var json = JsonSerializer.Serialize(state, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         Assert.Contains("\"benchmarkJob\":\"medium\"", json);
+        Assert.Contains("\"binariesVerified\":false", json);
         Assert.Contains(result.Limitations, x => x.Contains("Companion workload hashes"));
         Assert.Throws<InvalidOperationException>(() => ReviewBenchmarkMeasurements.Create(Investigation,
             target, baseline, Stored(before), Observation(target, before),
@@ -111,6 +114,7 @@ public sealed class ReviewBenchmarkAttachmentTests
             status, target.SourceHash, target.ContextHash, "report", "agent", "session", "utc", []);
         Assert.Equal(status, ReviewProgress.State(target, mark, false).Status);
         Assert.Equal("unmeasured", ReviewProgress.State(target, mark, false).Performance.Status);
+        Assert.False(ReviewProgress.State(target, mark, false).Performance.BinariesVerified);
     }
     [Fact]
     public void OldCheckpointJsonWithoutMeasurementStillLoads()
