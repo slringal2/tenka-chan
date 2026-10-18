@@ -141,7 +141,7 @@ public sealed partial class AgentGateway
             {
                 // A target MSBuild failure may throw before producing a structured
                 // result. Restore the workspace without replaying the process.
-                _ = await ReloadAsync();
+                await ReloadAsync();
                 throw;
             }
             if (run.Status != "benchmark_completed" || run.ExitCode != 0)
