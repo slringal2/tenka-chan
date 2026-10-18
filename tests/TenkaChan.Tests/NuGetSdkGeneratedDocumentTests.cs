@@ -80,7 +80,7 @@ public sealed class NuGetSdkGeneratedDocumentTests : IDisposable
         var result = await service.OpenAsync(solution);
         Assert.Equal(2, result.Projects.Count);
         Assert.Contains(result.Projects, p => p.Name == "Tests" && p.Documents == 1);
-        Assert.Contains(result.Warnings, w => w.Contains("synthetic source document"));
+        Assert.Contains(result.WorkspaceWarnings, w => w.Contains("synthetic source document"));
         Assert.NotEmpty(service.FindMethods("Check.Go"));
         Assert.DoesNotContain(service.GetReviewTargets(), t => t.Method.File == Synthetic);
     }
