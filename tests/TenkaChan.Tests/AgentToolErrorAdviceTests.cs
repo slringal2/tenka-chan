@@ -137,6 +137,17 @@ public sealed class AgentToolErrorAdviceTests
     }
 
     [Fact]
+    public void UnknownSchemaReferenceIsNotIncorrectlyRejected()
+    {
+        var schema = Schema("""
+            {"type":"object","properties":{"value":{
+              "anyOf":[{"$ref":"#/$defs/Reference"},{"type":"null"}]
+            }}}
+            """);
+        Assert.Empty(AgentToolErrorAdvice.InvalidTypes(schema, Args("""{"value":{"ok":1}}""")));
+    }
+
+    [Fact]
     public void MessageNamesTheMissingArguments()
     {
         var message = AgentToolErrorAdvice.Message("tenka_build", new[] { "projectId" });

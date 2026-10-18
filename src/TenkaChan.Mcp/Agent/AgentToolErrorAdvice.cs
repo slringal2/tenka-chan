@@ -107,8 +107,15 @@ public static class AgentToolErrorAdvice
             if (!schema.TryGetProperty(union, out var options) || options.ValueKind != JsonValueKind.Array)
                 continue;
             foreach (var item in options.EnumerateArray())
-                if (item.ValueKind == JsonValueKind.Object)
-                    types.AddRange(ExpectedKinds(item));
+            {
+                if (item.ValueKind != JsonValueKind.Object) return [];
+                var branch = ExpectedKinds(item);
+                // A $ref or another unrestricted branch might legally accept a
+                // type we cannot inspect here. Never produce a false-positive
+                // input rejection from an incomplete union.
+                if (branch.Length == 0) return [];
+                types.AddRange(branch);
+            }
         }
         return types.Distinct(StringComparer.Ordinal).ToArray();
     }
