@@ -15,6 +15,17 @@ foreach ($scriptName in @('tenka-windows.ps1', 'start-tenka-local.ps1')) {
     [void][Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$errors)
     if ($errors.Count -gt 0) { $errors | Format-List; throw "PowerShell syntax check failed: $scriptName" }
 }
+# These checks examine the real-startup opt-in path without starting a server.
+$canonical = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'tenka-windows.ps1') -Raw -Encoding UTF8
+$smoke = Get-Content -LiteralPath (Join-Path $repo 'verify-start.bat') -Raw
+if ($canonical -notmatch '\[switch\]\$VerifyStartup' -or
+    $canonical -notmatch 'if \(\$VerifyStartup\)' -or
+    $canonical -notmatch 'agent/v1/begin' -or
+    $canonical -notmatch 'agent/v1/end' -or
+    $canonical -notmatch '\$verifiedInstanceId' -or
+    $smoke -notmatch '\-Mode Start \-VerifyStartup') {
+    throw 'Real startup smoke route is incomplete. Verify launcher and verify-start.bat.'
+}
 Push-Location $repo
 try {
     node --test tests/Fixtures/path-picker.test.cjs
