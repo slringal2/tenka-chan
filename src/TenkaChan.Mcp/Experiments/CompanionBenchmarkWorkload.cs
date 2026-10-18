@@ -89,6 +89,39 @@ public static class CompanionBenchmarkWorkloads
         return false;
     }
 
+    /// <summary>
+    /// Resolve a benchmark companion from the loaded workspace, NOT from an
+    /// arbitrary path supplied by the agent. Automatic choice is safe only if
+    /// exactly one compatible companion exists; ambiguity never starts a build.
+    /// </summary>
+    public static ExplorerCompanion SelectForTarget(WorkspaceGuard guard,
+        IReadOnlyList<ExplorerCompanion> companions, string targetProjectPath,
+        string? companionId)
+    {
+        var target = guard.RequireFile(targetProjectPath, ".csproj");
+        bool Linked(ExplorerCompanion item) =>
+            item.Kind == "benchmark" &&
+            (Paths.Equals(Path.GetFullPath(item.ProjectPath), target) ||
+             DeclaresReferenceTo(guard, item.ProjectPath, target));
+
+        if (!string.IsNullOrWhiteSpace(companionId))
+        {
+            var chosen = companions.SingleOrDefault(x => x.Id == companionId)
+                ?? throw new InvalidOperationException("measurement_companion_unknown: Refresh tenka_context and choose a current companionId.");
+            if (!Linked(chosen))
+                throw new InvalidOperationException("measurement_companion_unlinked: The selected benchmark must declare a ProjectReference path to the target.");
+            return chosen;
+        }
+        var matching = companions.Where(Linked).OrderBy(x => x.Name, StringComparer.Ordinal)
+            .ThenBy(x => x.Id, StringComparer.Ordinal).Take(3).ToArray();
+        if (matching.Length == 0)
+            throw new InvalidOperationException("measurement_companion_unavailable: No benchmark companion references this target; inspect tenka_context and select another project.");
+        if (matching.Length > 1)
+            throw new InvalidOperationException("measurement_companion_ambiguous: Specify companionId from tenka_context. Candidates: " +
+                string.Join(", ", matching.Select(x => x.Id + " (" + x.Name + ")")));
+        return matching[0];
+    }
+
     private static IEnumerable<string> ProjectReferences(string project)
     {
         using var reader = XmlReader.Create(project, new XmlReaderSettings

@@ -52,5 +52,52 @@ public sealed class CompanionBenchmarkWorkloadTests : IDisposable
         File.WriteAllText(unrelated, "<Project />");
         Assert.False(CompanionBenchmarkWorkloads.DeclaresReferenceTo(guard, project, unrelated));
     }
+    [Fact]
+    public void AutoCompanionSelectionUsesAnUnambiguousProjectReference()
+    {
+        var project = Setup();
+        var target = Path.Combine(_root, "App", "App.csproj");
+        var guard = new WorkspaceGuard([_root], false, false);
+        var companion = new ExplorerCompanion("bench-id", "project-id", "Bench", project, "benchmark");
+        var unrelated = new ExplorerCompanion("test-id", "project-id", "Tests", project, "test");
+        var selected = CompanionBenchmarkWorkloads.SelectForTarget(guard,
+            [unrelated, companion], target, null);
+        Assert.Equal(companion, selected);
+        Assert.Equal(companion, CompanionBenchmarkWorkloads.SelectForTarget(guard,
+            [companion], target, companion.Id));
+    }
+    [Fact]
+    public void AutoCompanionSelectionNeverGuessesBetweenMultipleBenchmarks()
+    {
+        var project = Setup();
+        var target = Path.Combine(_root, "App", "App.csproj");
+        var otherDir = Path.Combine(_root, "OtherBench"); Directory.CreateDirectory(otherDir);
+        var otherProject = Path.Combine(otherDir, "Other.csproj");
+        File.WriteAllText(otherProject,
+            "<Project><ItemGroup><ProjectReference Include=\"../App/App.csproj\" /></ItemGroup></Project>");
+        var guard = new WorkspaceGuard([_root], false, false);
+        var first = new ExplorerCompanion("a-id", "p", "A", project, "benchmark");
+        var second = new ExplorerCompanion("b-id", "p", "B", otherProject, "benchmark");
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            CompanionBenchmarkWorkloads.SelectForTarget(guard, [first, second], target, null));
+        Assert.Contains("measurement_companion_ambiguous", error.Message);
+        Assert.Contains("companionId", error.Message);
+        Assert.Equal(second, CompanionBenchmarkWorkloads.SelectForTarget(guard,
+            [first, second], target, second.Id));
+    }
+    [Fact]
+    public void UnlinkedOrMissingCompanionDoesNotImplicitlyExecute()
+    {
+        var project = Setup(); var target = Path.Combine(_root, "App", "App.csproj");
+        var unrelated = Path.Combine(_root, "Other", "Other.csproj");
+        Directory.CreateDirectory(Path.GetDirectoryName(unrelated)!);
+        File.WriteAllText(unrelated, "<Project />");
+        var guard = new WorkspaceGuard([_root], false, false);
+        var item = new ExplorerCompanion("other-id", "p", "Other", unrelated, "benchmark");
+        Assert.Throws<InvalidOperationException>(() =>
+            CompanionBenchmarkWorkloads.SelectForTarget(guard, [item], target, null));
+        Assert.Throws<InvalidOperationException>(() =>
+            CompanionBenchmarkWorkloads.SelectForTarget(guard, [item], target, item.Id));
+    }
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
 }

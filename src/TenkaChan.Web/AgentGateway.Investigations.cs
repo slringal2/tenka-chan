@@ -106,17 +106,12 @@ public sealed partial class AgentGateway
         Get<DashboardState>().ExploreAsync(Str(a, "snapshotId"), async (index, _) =>
         {
             var guard = Get<WorkspaceGuard>();
-            var companion = ExplorerProjectActions.Companions(index, guard)
-                .SingleOrDefault(c => c.Id == Str(a, "companionId"))
-                ?? throw new WorkspaceBuildConflictException("Select a currently discovered benchmark companion.");
-            if (companion.Kind != "benchmark")
-                throw new ArgumentException("tenka_measure_companion only supports BenchmarkDotNet companions.");
             var catalog = await index.ReviewCatalogAsync(guard, ct);
             var target = catalog.Require(Str(a, "targetId"));
             if (!target.Trackable) throw new InvalidOperationException(target.UnavailableReason);
-            if (!AgentInvestigationStore.SameProject(companion.ProjectPath, target.ProjectPath) &&
-                !CompanionBenchmarkWorkloads.DeclaresReferenceTo(guard, companion.ProjectPath, target.ProjectPath))
-                throw new InvalidOperationException("measurement_companion_unlinked: Benchmark project must declare a literal ProjectReference chain to the target project.");
+            var companion = CompanionBenchmarkWorkloads.SelectForTarget(guard,
+                ExplorerProjectActions.Companions(index, guard), target.ProjectPath,
+                Optional(a, "companionId"));
             if ((await catalog.StaleProjectsAsync(guard, true, ct)).Contains(target.ProjectId))
                 throw new ReviewConflictException("Target source changed before the companion measurement; refresh source selection.");
             _approvals.Authorize(session, companion.ProjectPath, "run_companion",
@@ -161,7 +156,7 @@ public sealed partial class AgentGateway
                 return (object)new
                 {
                     status = run.Status, result = run, observationRetained = false,
-                    currentSnapshotId = reload.SnapshotId, reloadWarning = reload.Warning,
+                    companionId = companion.Id, currentSnapshotId = reload.SnapshotId, reloadWarning = reload.Warning,
                     note = "Companion did not produce a verified benchmark report. No measurement ID was registered. Inspect the failure before another explicitly approved run."
                 };
             }
@@ -198,7 +193,7 @@ public sealed partial class AgentGateway
                 return (object)new
                 {
                     status = run.Status, result = run, observationRetained = false,
-                    currentSnapshotId = reload.SnapshotId, reloadWarning = reload.Warning,
+                    companionId = companion.Id, currentSnapshotId = reload.SnapshotId, reloadWarning = reload.Warning,
                     persistenceWarning = "The companion ran, but its report/ownership was not fully retained. Do not rerun it just to save metadata. " + ex.GetType().Name,
                     note = "Inspect the live result and storage. No independently verified speedup is asserted."
                 };
@@ -224,7 +219,7 @@ public sealed partial class AgentGateway
             return (object)new
             {
                 status = run.Status, experimentId = receipt.Id, investigationId = Investigations.CurrentId(session),
-                currentSnapshotId = refreshed.SnapshotId, reloadWarning = refreshed.Warning,
+                companionId = companion.Id, currentSnapshotId = refreshed.SnapshotId, reloadWarning = refreshed.Warning,
                 result = savedRun, observation, observationRetained = retained, persistenceWarning = warning,
                 independentlyVerified = false,
                 benchmarkJob,
