@@ -43,8 +43,8 @@ builder.Services.AddMcpServer()
             {
                 // Only classify a failure as an input error if the advertised
                 // schema independently proves it. Do not hide genuine tool errors.
-                if (services is not null && ValidateArguments(services, request.Params) is { } failure)
-                    return failure;
+                if (services is not null && ValidateArguments(services, request.Params) is { } inputFailure)
+                    return inputFailure;
                 throw;
             }
         }));
