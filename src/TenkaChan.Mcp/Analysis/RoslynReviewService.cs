@@ -23,6 +23,7 @@ public sealed partial class RoslynReviewService : IDisposable
         SyntaxNode Syntax, IMethodSymbol Symbol);
 
     private readonly WorkspaceGuard _guard;
+    private readonly NuGetSdkGeneratedDocumentPolicy _generatedDocuments;
     private readonly SemaphoreSlim _openLock = new(1, 1);
     private readonly Dictionary<string, Entry> _methods = new(StringComparer.Ordinal);
     private readonly List<string> _warnings = [];
@@ -31,7 +32,15 @@ public sealed partial class RoslynReviewService : IDisposable
     private string _snapshotId = "";
     private SampledHotspotReport? _hotspotProfile;
 
-    public RoslynReviewService(WorkspaceGuard guard) => _guard = guard;
+    public RoslynReviewService(WorkspaceGuard guard)
+        : this(guard, new NuGetSdkGeneratedDocumentPolicy()) { }
+
+    // Internal seam for an isolated MSBuild test with a synthetic NuGet cache.
+    internal RoslynReviewService(WorkspaceGuard guard, NuGetSdkGeneratedDocumentPolicy generatedDocuments)
+    {
+        _guard = guard;
+        _generatedDocuments = generatedDocuments;
+    }
 
     public SampledHotspotReport? CurrentHotspotProfile => _hotspotProfile;
 
@@ -61,8 +70,12 @@ public sealed partial class RoslynReviewService : IDisposable
             _solution = Path.GetExtension(safePath).Equals(".csproj", StringComparison.OrdinalIgnoreCase)
                 ? (await _workspace.OpenProjectAsync(safePath, cancellationToken: ct)).Solution
                 : await _workspace.OpenSolutionAsync(safePath, cancellationToken: ct);
-            // Reject project documents outside configured allowed roots (linked files too).
-            // MSBuild evaluation already requires explicit trust and is not sandboxed.
+            // Reject documents outside configured allowed roots (including arbitrary
+            // linked files). MSBuildWorkspace may expose Microsoft.NET.Test.Sdk's
+            // synthetic Program.cs from the NuGet cache. Remove only that narrowly
+            // identified, non-user source from the ANALYSIS snapshot; do not grant
+            // the cache a broad allowlist or index external source as trusted code.
+            var excluded = new List<DocumentId>();
             foreach (var project in _solution.Projects.Where(p => p.Language == LanguageNames.CSharp))
             {
                 if (project.FilePath is null)
@@ -72,9 +85,18 @@ public sealed partial class RoslynReviewService : IDisposable
                 {
                     if (document.FilePath is null)
                         throw new UnauthorizedAccessException("C# document without an on-disk path is unsupported.");
-                    _guard.RequireFile(document.FilePath, ".cs");
+                    try { _guard.RequireFile(document.FilePath, ".cs"); }
+                    catch (UnauthorizedAccessException) when (_generatedDocuments.CanExclude(document.FilePath))
+                    {
+                        excluded.Add(document.Id);
+                    }
                 }
             }
+            foreach (var id in excluded) _solution = _solution.RemoveDocument(id);
+            if (excluded.Count > 0)
+                _warnings.Add($"Excluded {excluded.Count} known Microsoft.NET.Test.Sdk synthetic source document(s) outside the workspace allowlist. " +
+                    "Their methods are not reviewed and Roslyn-only compilation diagnostics may differ from the built test assembly. " +
+                    "No NuGet directory was added to TENKA_ALLOWED_ROOTS.");
             _snapshotId = Guid.NewGuid().ToString("N");
 
             foreach (var project in _solution.Projects.Where(x => x.Language == LanguageNames.CSharp))

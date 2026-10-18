@@ -25,29 +25,27 @@ builder.Services.AddMcpServer()
     .WithRequestFilters(filters => filters.AddCallToolFilter(next =>
         async (RequestContext<CallToolRequestParams> request, CancellationToken cancellationToken) =>
         {
+            // Validate known argument types before any tool can execute.
+            // A nullable .NET binding exception is otherwise rendered as a generic
+            // MCP error, and the actual invalid field is visible only in stderr.
+            if (services is not null && ValidateArguments(services, request.Params) is { } failure)
+                return failure;
             try
             {
                 var result = await next(request, cancellationToken).ConfigureAwait(false);
-
-                // Defensive: if the SDK ever surfaces a binding failure as a result rather than an exception.
                 if (result.IsError == true && services is not null &&
                     result.Content.Count == 1 && result.Content[0] is TextContentBlock text &&
                     AgentToolErrorAdvice.IsGenericInvocationFailure(request.Params.Name, text.Text))
-                {
-                    var missing = MissingRequired(services, request.Params);
-                    if (missing.Count > 0) return AgentToolErrorAdvice.Failure(request.Params.Name, missing);
-                }
-
+                    return ValidateArguments(services, request.Params) ?? result;
                 return result;
             }
-            catch (ArgumentException) when (services is not null)
+            catch (Exception ex) when (ex is ArgumentException or System.Text.Json.JsonException)
             {
-                // Argument binding failed. The SDK's own exception is not an McpException, so it would be
-                // reported to the client as a generic "An error occurred invoking 'name'." with no detail.
-                // If the cause is a missing/null required argument, name it from the tool's input schema.
-                var missing = MissingRequired(services, request.Params);
-                if (missing.Count == 0) throw;
-                return AgentToolErrorAdvice.Failure(request.Params.Name, missing);
+                // Only classify a failure as an input error if the advertised
+                // schema independently proves it. Do not hide genuine tool errors.
+                if (services is not null && ValidateArguments(services, request.Params) is { } failure)
+                    return failure;
+                throw;
             }
         }));
 
@@ -55,11 +53,13 @@ var app = builder.Build();
 services = app.Services;
 await app.RunAsync();
 
-static IReadOnlyList<string> MissingRequired(IServiceProvider services, CallToolRequestParams request)
+static CallToolResult? ValidateArguments(IServiceProvider services, CallToolRequestParams request)
 {
     var tool = services.GetServices<McpServerTool>()
         .FirstOrDefault(candidate => candidate.ProtocolTool.Name == request.Name);
-    return tool is null
-        ? Array.Empty<string>()
-        : AgentToolErrorAdvice.MissingRequired(tool.ProtocolTool.InputSchema, request.Arguments);
+    if (tool is null) return null;
+    var missing = AgentToolErrorAdvice.MissingRequired(tool.ProtocolTool.InputSchema, request.Arguments);
+    if (missing.Count > 0) return AgentToolErrorAdvice.Failure(request.Name, missing);
+    var invalid = AgentToolErrorAdvice.InvalidTypes(tool.ProtocolTool.InputSchema, request.Arguments);
+    return invalid.Count > 0 ? AgentToolErrorAdvice.TypeFailure(request.Name, invalid) : null;
 }
