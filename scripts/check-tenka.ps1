@@ -1,6 +1,7 @@
 ﻿#requires -version 5.1
 param(
-    [ValidateSet('Menu','Environment','Build','Connection')][string]$Mode = 'Menu',
+    [ValidateSet('Menu','Environment','Build','Full','Connection','Startup')][string]$Mode = 'Menu',
+    [ValidateSet('Release','Debug')][string]$Configuration = 'Release',
     [switch]$ApproveBuild,
     [switch]$Restore
 )
@@ -65,8 +66,10 @@ try {
         Write-Host '  1  SDK・ランタイムの確認だけ'
         Write-Host '  2  本体ビルド＋対象のC#回帰テスト（先に甜花ちゃんとMCPを終了）'
         Write-Host '  3  起動中の甜花ちゃんとMCPの接続確認（先にstart.batで起動）'
+        Write-Host '  4  本体ビルド＋すべてのC#回帰テスト（Release使用中なら-Configuration Debugを指定）'
+        Write-Host '  5  WebとMCPの実起動スモーク（setup済み/既存サーバー停止後）'
         $choice = (Read-Host '番号を選択してください [Enter = 1]').Trim()
-        $Mode = switch ($choice) { '' { 'Environment' } '1' { 'Environment' } '2' { 'Build' } '3' { 'Connection' } default { throw '1～3を選んで再実行してください。' } }
+        $Mode = switch ($choice) { '' { 'Environment' } '1' { 'Environment' } '2' { 'Build' } '3' { 'Connection' } '4' { 'Full' } '5' { 'Startup' } default { throw '1～5を選んで再実行してください。' } }
     }
     $dotnet = Get-Command dotnet.exe -CommandType Application -ErrorAction SilentlyContinue
     if (-not $dotnet) { throw '.NET SDKが見つかりません。setup.batで準備してから再実行してください。' }
@@ -74,7 +77,7 @@ try {
     $version = (Get-Content -LiteralPath (Join-Path $reportDir 'sdk.log') | Where-Object { $_ -match '^\d+\.\d+\.\d+' } | Select-Object -Last 1)
     if ($version -notmatch '^10\.0\.\d+$') { throw 'このチェックアウトには.NET 10 SDKが必要です。global.jsonとsetup.batを確認してください。' }
     Invoke-Checked -Name 'runtimes' -Exe $dotnet.Source -Arguments @('--list-runtimes')
-    if ($Mode -eq 'Build') {
+    if ($Mode -in @('Build','Full')) {
         if (-not $ApproveBuild) {
             Write-Host '本体のMSBuild処理とテストコードを現在のユーザー権限で実行します。信頼するソースでのみ実行してください。'
             if ((Read-Host 'ビルドと回帰テストを実行しますか？ [Y / Enter = 中止]') -notmatch '^(y|yes)$') {
@@ -82,7 +85,8 @@ try {
             }
             if (-not $Restore) { $Restore = (Read-Host '不足パッケージの復元を許可しますか？ [Y / Enter = 復元しない]') -match '^(y|yes)$' }
         }
-        Assert-Unlocked
+        if ($Configuration -eq 'Release') { Assert-Unlocked }
+        else { Step 'output-locks' 'skipped' 'Debug構成を選択しました。Release DLLは確認・変更しません。' }
         $env:TENKA_ENABLE_DOCKER = '0'
         $env:TENKA_ENABLE_LOCAL_EXEC = '0'
         $env:TENKA_ENABLE_UNSANDBOXED_EXPERIMENTS = '0'
@@ -92,9 +96,12 @@ try {
             Invoke-Checked -Name 'restore-web' -Exe $dotnet.Source -Arguments @('restore',$web,'--nologo')
             Invoke-Checked -Name 'restore-tests' -Exe $dotnet.Source -Arguments @('restore',$tests,'--nologo')
         } else { Step 'restore' 'not_requested' '復元しません。NETSDK1004などの場合は復元を許可して再実行してください。' }
-        Invoke-Checked -Name 'build-web' -Exe $dotnet.Source -Arguments @('build',$web,'-c','Release','--no-restore','--nologo')
+        Invoke-Checked -Name 'build-web' -Exe $dotnet.Source -Arguments @('build',$web,'-c',$Configuration,'--no-restore','--nologo')
         $filter = 'FullyQualifiedName~ExperimentFrameworkPolicyTests|FullyQualifiedName~StandardLibraryDiscoveryTests|FullyQualifiedName~ExperimentStoreTests|FullyQualifiedName~WorkspaceBinaryDiscoveryTests|FullyQualifiedName~ReviewQueuePagingTests|FullyQualifiedName~ReviewCacheTests'
-        Invoke-Checked -Name 'csharp-regression' -Exe $dotnet.Source -Arguments @('test',$tests,'-c','Release','--no-restore','--filter',$filter,'--logger','trx;LogFileName=regression.trx','--results-directory',$reportDir)
+        $testArguments = @('test',$tests,'-c',$Configuration,'--no-restore')
+        if ($Mode -eq 'Build') { $testArguments += @('--filter',$filter) }
+        $testArguments += @('--logger','trx;LogFileName=regression.trx','--results-directory',$reportDir)
+        Invoke-Checked -Name 'csharp-regression' -Exe $dotnet.Source -Arguments $testArguments
         $trx = Join-Path $reportDir 'regression.trx'
         if (-not (Test-Path -LiteralPath $trx)) { throw 'テスト結果TRXがありません。成功とは扱いません。' }
         $settings = New-Object Xml.XmlReaderSettings
@@ -109,6 +116,23 @@ try {
             throw 'テスト未実行・失敗・スキップがあります。TRXを確認してください。全件成功とは扱いません。'
         }
         Step 'test-results' 'passed' ("選択したC#回帰テスト " + $counters.total + '件が全件成功しました。対象アプリの実行検証とは別です。') $trx
+    }
+    if ($Mode -eq 'Startup') {
+        if (-not $ApproveBuild) {
+            Write-Host '保存済み設定でReleaseビルドとローカルWebサーバーの実起動を検証します。信頼するコードでのみ行ってください。'
+            Write-Host '既存の甜花ちゃんは停止しません。ブラウザーや解析対象アプリも起動しません。'
+            if ((Read-Host '実起動テストを実行しますか？ [Y / Enter = 中止]') -notmatch '^(y|yes)$') {
+                Step 'startup-consent' 'cancelled' '実起動検証を開始していません。'
+                throw '実行を取り消しました。'
+            }
+        }
+        $powershellExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        if (-not (Test-Path -LiteralPath $powershellExe -PathType Leaf)) {
+            throw 'Windows PowerShell 5.1が見つかりません。'
+        }
+        Invoke-Checked -Name 'startup-smoke' -Exe $powershellExe -Arguments @(
+            '-NoLogo','-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',
+            (Join-Path $repo 'scripts\tenka-windows.ps1'),'-Mode','Start','-VerifyStartup')
     }
     if ($Mode -eq 'Connection') {
         $connection = if ($env:TENKA_AGENT_CONNECTION_FILE) { $env:TENKA_AGENT_CONNECTION_FILE } else { Join-Path $launcherHome 'agent-connection.json' }
@@ -127,7 +151,7 @@ try {
     Step 'stopped' 'failed' $_.Exception.Message
 } finally {
     if ($reportDir) {
-        $result = [ordered]@{ schema=1; mode=$Mode; startedUtc=$started; completedUtc=[DateTimeOffset]::UtcNow.ToString('O'); exitCode=$exitCode;
+        $result = [ordered]@{ schema=1; mode=$Mode; configuration=$Configuration; startedUtc=$started; completedUtc=[DateTimeOffset]::UtcNow.ToString('O'); exitCode=$exitCode;
             scope='選択した検査のみ。実ILSpy解析・性能改善・Windows全機能の完了を保証しません。'; steps=$steps.ToArray() }
         $result | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $reportDir 'summary.json') -Encoding UTF8
         Write-Host "結果の保存先: $reportDir"
