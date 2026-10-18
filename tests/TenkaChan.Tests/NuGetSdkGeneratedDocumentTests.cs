@@ -1,0 +1,105 @@
+using System.Security;
+using Microsoft.Build.Locator;
+using TenkaChan.Mcp.Analysis;
+using TenkaChan.Mcp.Security;
+using Xunit;
+
+namespace TenkaChan.Tests;
+
+public sealed class NuGetSdkGeneratedDocumentTests : IDisposable
+{
+    private readonly string _root = Path.Combine(Path.GetTempPath(),
+        "tenka-nuget-open-" + Guid.NewGuid().ToString("N"));
+    private string Workspace => Path.Combine(_root, "workspace");
+    private string Packages => Path.Combine(_root, "packages");
+    private string Synthetic => Path.Combine(Packages, "microsoft.net.test.sdk", "17.14.1",
+        "build", "net8.0", "Microsoft.NET.Test.Sdk.Program.cs");
+
+    private string Fixture(string? additionalExternal = null)
+    {
+        Directory.CreateDirectory(Workspace);
+        Directory.CreateDirectory(Path.GetDirectoryName(Synthetic)!);
+        var app = Path.Combine(Workspace, "App");
+        var tests = Path.Combine(Workspace, "Tests");
+        Directory.CreateDirectory(app);
+        Directory.CreateDirectory(tests);
+        File.WriteAllText(Path.Combine(app, "App.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>");
+        File.WriteAllText(Path.Combine(app, "Run.cs"), "namespace App; public static class Run { public static int Value() => 42; }");
+        File.WriteAllText(Synthetic, "namespace Microsoft.NET.Test.Sdk; public static class Program { public static int Main() => 0; }");
+        var extra = additionalExternal is null ? "" :
+            "<Compile Include=\"" + SecurityElement.Escape(additionalExternal) + "\" Link=\"External.cs\" />";
+        File.WriteAllText(Path.Combine(tests, "Tests.csproj"), $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+              <ItemGroup>
+                <ProjectReference Include="../App/App.csproj" />
+                <Compile Include="{SecurityElement.Escape(Synthetic)}" Link="Sdk.Program.cs" />
+                {extra}
+              </ItemGroup>
+            </Project>
+            """);
+        File.WriteAllText(Path.Combine(tests, "Check.cs"),
+            "namespace Tests; public static class Check { public static int Go() => App.Run.Value(); }");
+        var solution = Path.Combine(Workspace, "Fixture.slnx");
+        File.WriteAllText(solution, """
+            <Solution>
+              <Project Path="App/App.csproj" />
+              <Project Path="Tests/Tests.csproj" />
+            </Solution>
+            """);
+        return solution;
+    }
+
+    [Fact]
+    public void OnlyExactKnownSdkSourceInActualPackageLayoutIsExcludable()
+    {
+        Fixture();
+        var policy = new NuGetSdkGeneratedDocumentPolicy(Packages);
+        Assert.True(policy.CanExclude(Synthetic));
+        Assert.False(policy.CanExclude(Path.Combine(Workspace, "App", "Run.cs")));
+        var other = Path.Combine(Packages, "some.other.package", "1.0.0", "build", "net8.0",
+            "Microsoft.NET.Test.Sdk.Program.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(other)!);
+        File.WriteAllText(other, "unrelated");
+        Assert.False(policy.CanExclude(other));
+        var linked = Path.Combine(Packages, "microsoft.net.test.sdk", "17.14.1", "build", "net8.0", "Sensitive.cs");
+        File.WriteAllText(linked, "unrelated");
+        Assert.False(policy.CanExclude(linked));
+        Assert.False(policy.CanExclude(Path.Combine(Packages, "microsoft.net.test.sdk", "..",
+            "..", "outside.cs")));
+    }
+
+    [Fact]
+    public async Task OpensMultiProjectSolutionWithoutIndexingExternalSdkSyntheticSource()
+    {
+        if (!MSBuildLocator.IsRegistered) MSBuildLocator.RegisterDefaults();
+        var solution = Fixture();
+        var guard = new WorkspaceGuard([Workspace], true, false);
+        using var service = new RoslynReviewService(guard, new NuGetSdkGeneratedDocumentPolicy(Packages));
+        var result = await service.OpenAsync(solution);
+        Assert.Equal(2, result.Projects.Count);
+        Assert.Contains(result.Projects, p => p.Name == "Tests" && p.Documents == 1);
+        Assert.Contains(result.Warnings, w => w.Contains("synthetic source document"));
+        Assert.NotEmpty(service.FindMethods("Check.Go"));
+        Assert.DoesNotContain(service.GetReviewTargets(), t => t.Method.File == Synthetic);
+    }
+
+    [Fact]
+    public async Task ArbitraryLinkedSourceOutsideAllowlistStillFailsClosed()
+    {
+        if (!MSBuildLocator.IsRegistered) MSBuildLocator.RegisterDefaults();
+        var outside = Path.Combine(_root, "outside", "Injected.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(outside)!);
+        File.WriteAllText(outside, "public class Injected { public int Exploit() => 1; }");
+        var solution = Fixture(outside);
+        var guard = new WorkspaceGuard([Workspace], true, false);
+        using var service = new RoslynReviewService(guard, new NuGetSdkGeneratedDocumentPolicy(Packages));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.OpenAsync(solution));
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+    }
+}
