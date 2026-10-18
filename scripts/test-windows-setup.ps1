@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 # Windows PowerShell 5.1 requires UTF-8 BOM when the source contains Japanese text.
 # Both the canonical launcher and legacy shim must parse correctly WITHOUT invoking it.
-foreach ($scriptName in @('tenka-windows.ps1', 'start-tenka-local.ps1')) {
+foreach ($scriptName in @('tenka-windows.ps1', 'start-tenka-local.ps1', 'check-tenka.ps1')) {
     $script = Join-Path $PSScriptRoot $scriptName
     $bytes = [IO.File]::ReadAllBytes($script)
     if ($bytes.Length -lt 3 -or $bytes[0] -ne 0xEF -or
