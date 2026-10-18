@@ -23,8 +23,19 @@ public sealed partial class AgentGateway
             _approvals.Revoke(request.SessionId); // Resume data, never execution grants.
             return lease;
         }
+        // Measurement tools may bind directly to a stored investigation so a baseline and a
+        // candidate can be attached without a separate tenka_investigation resume round-trip.
+        // Binding reuses the same explicit approval the measurement already requires.
+        if (InvestigationBoundTools.Contains(request.Tool) && Optional(request.Arguments, "investigationId") is { } bound)
+        {
+            var lease = Investigations.ResumeAndEnter(request.SessionId, bound, Bool(request.Arguments, "approved"));
+            _approvals.Revoke(request.SessionId); // Resume data, never execution grants.
+            return lease;
+        }
         return Investigations.Enter(request.SessionId);
     }
+    private static readonly HashSet<string> InvestigationBoundTools = new(
+        ["measure_companion", "measure_target", "review_mark"], StringComparer.Ordinal);
     private AgentReply CompleteDurable(AgentCallRequest request, AgentReply reply)
     {
         try { Investigations.Record(request.SessionId, journal.InstanceId, request.Tool, reply); return reply; }
@@ -216,6 +227,9 @@ public sealed partial class AgentGateway
                 currentSnapshotId = refreshed.SnapshotId, reloadWarning = refreshed.Warning,
                 result = savedRun, observation, observationRetained = retained, persistenceWarning = warning,
                 independentlyVerified = false,
+                benchmarkJob,
+                preliminary = benchmarkJob == "short",
+                recommendedBenchmarkJob = benchmarkJob == "short" ? "medium" : null,
                 note = "Use tenka_measure_companion with the same benchmark project before and after the source change. " +
                     "Both returned experimentIds can be supplied to tenka_mark_review as baseline/candidate. " +
                     "A compiled binary/source identity, benchmark coverage, behavioral equivalence and statistical significance are not established. Refresh tenka_context after a companion build."
