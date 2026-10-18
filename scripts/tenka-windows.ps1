@@ -324,51 +324,34 @@ try {
             # The agent connection descriptor is published only after ASP.NET
             # startup. Its credential is read locally, never written to a log.
             $connectionFile = $env:TENKA_AGENT_CONNECTION_FILE
-            if (-not (Test-Path -LiteralPath $connectionFile -PathType Leaf)) {
-                throw 'MCP接続ファイルが発行されませんでした。サーバーログを確認してください。'
-            }
-            $descriptor = Get-Content -LiteralPath $connectionFile -Raw -Encoding UTF8 | ConvertFrom-Json
-            if ($descriptor.schema -ne 1 -or $descriptor.endpoint -ne $base -or
-                [string]::IsNullOrWhiteSpace([string]$descriptor.instanceId) -or
-                [string]$descriptor.token -notmatch '^[a-fA-F0-9]{64}
-    }
-} catch {
-    $exitCode = 1
-    Write-Host ''
-    Write-Host '途中で停止しました。成功としては扱っていません。' -ForegroundColor Red
-    Write-Host $_.Exception.Message -ForegroundColor Yellow
-    Write-Host '画面はすぐ閉じません。必要ならこのメッセージをコピーしてください。'
-    Write-Host "ログ保存フォルダー: $logs"
-    Write-Host 'ソースコードやパスがログに含まれる場合があります。共有前に内容を確認してください。'
-} finally {
-    if ($null -ne $server) {
-        try {
-            if (-not $server.HasExited) {
-                # Only terminate the exact process tree started by this launcher, never all dotnet processes.
-                & "$env:SystemRoot\System32\taskkill.exe" /PID $server.Id /T /F 2>&1 | ForEach-Object { Write-Host ([string]$_) }
-            }
-        } catch { Write-Warning '起動したサーバーの終了を確認できませんでした。' }
-        $server.Dispose()
-    }
-    if ($VerifyStartup -and -not [string]::IsNullOrWhiteSpace($verifiedInstanceId)) {
-        # taskkill /F may not run ASP.NET ApplicationStopped callbacks.
-        # Remove ONLY our own connection descriptor, never another instance's.
-        try {
-            $ownFile = $env:TENKA_AGENT_CONNECTION_FILE
-            if (Test-Path -LiteralPath $ownFile -PathType Leaf) {
-                $lastDescriptor = Get-Content -LiteralPath $ownFile -Raw -Encoding UTF8 | ConvertFrom-Json
-                if ([string]$lastDescriptor.instanceId -eq $verifiedInstanceId) {
-                    Remove-Item -LiteralPath $ownFile -Force
+            $descriptor = $null
+            # A previous forced shutdown may leave a stale descriptor. Match the
+            # public live instanceId to the private local credential before use.
+            for ($attempt = 0; $attempt -lt 20; $attempt++) {
+                $server.Refresh()
+                if ($server.HasExited) { break }
+                try {
+                    if (Test-Path -LiteralPath $connectionFile -PathType Leaf) {
+                        $candidate = Get-Content -LiteralPath $connectionFile -Raw -Encoding UTF8 | ConvertFrom-Json
+                        if ($candidate.schema -eq 1 -and $candidate.endpoint -eq $base -and
+                            -not [string]::IsNullOrWhiteSpace([string]$candidate.instanceId) -and
+                            [string]$candidate.token -match '^[a-fA-F0-9]{64}$') {
+                            $monitor = Invoke-RestMethod -Uri ($base + '/api/agent/monitor') -TimeoutSec 2
+                            if ($monitor.enabled -eq $true -and
+                                [string]$monitor.instanceId -eq [string]$candidate.instanceId) {
+                                $descriptor = $candidate
+                                break
+                            }
+                        }
+                    }
+                } catch {
+                    # The server may still be publishing its descriptor. Do not
+                    # echo credentials or start a second process to recover.
                 }
+                Start-Sleep -Milliseconds 250
             }
-        } catch { Write-Warning '検証用MCP接続ファイルの後片付けを確認できませんでした。ファイルのinstanceIdを確認してください。' }
-    }
-    if ($transcribing) { Stop-Transcript | Out-Null }
-    if ((Get-Location).Path -eq $repo) { Pop-Location }
-}
-exit $exitCode
-) {
-                throw 'MCP接続ファイルがこのサーバーを指していません。認証情報を表示せず検証を終了します。'
+            if ($null -eq $descriptor) {
+                throw 'MCP接続ファイルと稼働サーバーの一致が確認できませんでした。古い接続情報やサーバーログを確認してください。'
             }
             $verifiedInstanceId = [string]$descriptor.instanceId
             $headers = @{ Authorization = ('Bearer ' + [string]$descriptor.token) }
@@ -429,6 +412,19 @@ exit $exitCode
             }
         } catch { Write-Warning '起動したサーバーの終了を確認できませんでした。' }
         $server.Dispose()
+    }
+    if ($VerifyStartup -and -not [string]::IsNullOrWhiteSpace($verifiedInstanceId)) {
+        # taskkill /F may not run ASP.NET ApplicationStopped callbacks.
+        # Remove ONLY our own connection descriptor, never another instance's.
+        try {
+            $ownFile = $env:TENKA_AGENT_CONNECTION_FILE
+            if (Test-Path -LiteralPath $ownFile -PathType Leaf) {
+                $lastDescriptor = Get-Content -LiteralPath $ownFile -Raw -Encoding UTF8 | ConvertFrom-Json
+                if ([string]$lastDescriptor.instanceId -eq $verifiedInstanceId) {
+                    Remove-Item -LiteralPath $ownFile -Force
+                }
+            }
+        } catch { Write-Warning '検証用MCP接続ファイルの後片付けを確認できませんでした。ファイルのinstanceIdを確認してください。' }
     }
     if ($transcribing) { Stop-Transcript | Out-Null }
     if ((Get-Location).Path -eq $repo) { Pop-Location }
