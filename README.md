@@ -13,6 +13,21 @@ Roslyn、IL/PDB、JIT機械語、プロファイル、テスト・ベンチマ�
 > 機能の実装と動作検証は別です。最新のC#ビルド・Windows実機・実MCP接続の完了を保証するものではありません。
 > [今回の変更と検証範囲](docs/experiment-runtime-and-checks.md)を確認してください。
 
+## Gitから取得（共通基盤 Chan.Core）
+
+`Chan.Core` は独立した [chan-core](https://github.com/slringal2/chan-core) リポジトリに移りました。
+本体を初めて取得する場合は次のコマンドを推奨します。
+
+```powershell
+git clone --recurse-submodules https://github.com/slringal2/tenka-chan.git
+cd tenka-chan
+```
+
+既にclone済みの場合、`git pull` のあと `git submodule update --init --recursive` を実行してください。
+通常のcloneで未取得なら `setup.bat` が確認のうえ取得します（Git for Windowsと両リポジトリへのアクセス権が必要）。
+**GitHubのZIP単体にはサブモジュールが含まれないため、ZIPだけではビルドできません。**
+詳細は [Chan.Core分離手順](docs/chan-core-repository.md) を参照してください。
+
 ## 最初の起動
 
 Windowsでは本体フォルダーの **`setup.bat`** を実行してください。

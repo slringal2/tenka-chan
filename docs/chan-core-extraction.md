@@ -1,5 +1,10 @@
 # Chan.Core: first extraction from Tenka
 
+> Historical design note for the initial in-repository extraction.
+> The code is now maintained in a standalone repository and consumed as a pinned Git submodule.
+> See [chan-core-repository.md](chan-core-repository.md) for the current layout.
+
+
 This change starts the shared foundation for Tenka (C#) and the future Na-chan
 (C++). It does **not** add a C++ analyzer, split repositories, change the launcher,
 re-enable CI, or change the existing dependency package versions.

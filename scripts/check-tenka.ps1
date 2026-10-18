@@ -75,6 +75,9 @@ try {
     if ($version -notmatch '^10\.0\.\d+$') { throw 'このチェックアウトには.NET 10 SDKが必要です。global.jsonとsetup.batを確認してください。' }
     Invoke-Checked -Name 'runtimes' -Exe $dotnet.Source -Arguments @('--list-runtimes')
     if ($Mode -eq 'Build') {
+        if (-not (Test-Path -LiteralPath (Join-Path $repo 'shared\chan-core\src\Chan.Core\Chan.Core.csproj') -PathType Leaf)) {
+            throw 'Chan.Coreがありません。git submodule update --init --recursive を実行してからビルドしてください。'
+        }
         if (-not $ApproveBuild) {
             Write-Host '本体のMSBuild処理とテストコードを現在のユーザー権限で実行します。信頼するソースでのみ実行してください。'
             if ((Read-Host 'ビルドと回帰テストを実行しますか？ [Y / Enter = 中止]') -notmatch '^(y|yes)$') {

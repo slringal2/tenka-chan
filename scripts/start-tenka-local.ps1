@@ -5,6 +5,10 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $repository = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$coreProject = Join-Path $repository 'shared\chan-core\src\Chan.Core\Chan.Core.csproj'
+if (-not (Test-Path -LiteralPath $coreProject -PathType Leaf)) {
+    throw 'Chan.Coreがありません。リポジトリで git submodule update --init --recursive を実行するか setup.bat を使用してください。'
+}
 if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) { $WorkspaceRoot = $repository }
 if (-not (Test-Path $WorkspaceRoot -PathType Container)) {
     throw "指定フォルダーがありません: $WorkspaceRoot"

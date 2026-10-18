@@ -1,0 +1,3 @@
+[submodule "shared/chan-core"]
+	path = shared/chan-core
+	url = https://github.com/slringal2/chan-core.git
