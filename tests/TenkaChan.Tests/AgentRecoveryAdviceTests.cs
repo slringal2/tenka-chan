@@ -109,7 +109,7 @@ public sealed class AgentRecoveryAdviceTests
         Assert.Equal("selection_expired", advice.Code);
         Assert.Contains("tenka_list_types", advice.NextAction);
         Assert.Contains("tenka_review_context", advice.NextAction);
-        Assert.Contains("persistent", advice.NextAction, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("durable", advice.NextAction, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
