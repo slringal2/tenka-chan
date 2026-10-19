@@ -94,7 +94,8 @@ public sealed class AllocationStackAccumulator
             if (!_bySimpleName.TryGetValue(SimpleName(frame), out var options))
                 continue;
             var candidates = options.Where(m =>
-                SpeedscopeHotspotParser.FrameMatches(frame.Replace('+', '.'),
+                SpeedscopeHotspotParser.FrameMatches(
+                    frame.Replace('+', '.').Replace(':', '.'),
                     m.QualifiedMember.Replace('+', '.')))
                 .GroupBy(m => m.MethodId, StringComparer.Ordinal).Take(2).ToArray();
             if (candidates.Length == 0) continue;

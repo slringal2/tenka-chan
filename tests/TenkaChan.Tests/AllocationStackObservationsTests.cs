@@ -41,6 +41,21 @@ public sealed class AllocationStackObservationsTests
     }
 
     [Fact]
+    public void TraceLogColonMethodSeparatorCanMatchOnlyFullyQualifiedName()
+    {
+        var a = new AllocationStackAccumulator(SourceMethods);
+        a.Add(new(3, 1, "T", 16,
+            ["module.dll!App.Engine:Work(System.Int32)"]));
+        a.Add(new(3, 1, "T", 16,
+            ["module.dll!NotApp.Engine:Work(System.Int32)"]));
+        var result = a.Build("c", "hash", 2, 0, false);
+        var row = Assert.Single(result.Hotspots);
+        Assert.Equal("work", row.MethodId);
+        Assert.Equal(1, result.SourceLinkedTicks);
+        Assert.Equal(1, result.UnmatchedTicks);
+    }
+
+    [Fact]
     public void AmbiguousOverloadNeverFallsBackToOuterCaller()
     {
         var a = new AllocationStackAccumulator(SourceMethods);
