@@ -91,6 +91,20 @@ public sealed partial class RoslynReviewService : IDisposable
                     {
                         excluded.Add(document.Id);
                     }
+                    catch (FileNotFoundException ex)
+                    {
+                        // The project file already passed its separate .csproj
+                        // validation. A missing Compile item is often emitted
+                        // by an MSBuild target which has not run yet. Do NOT
+                        // silently turn it into an empty document or hide it.
+                        var missingSource = ex.FileName ?? document.FilePath;
+                        throw new FileNotFoundException(
+                            "C# Compile source document is missing in project '" + project.Name +
+                            "': " + missingSource + ". This is NOT a missing .csproj; " +
+                            "MSBuild may generate the .cs only after restore/build. " +
+                            "Build the trusted project with explicit approval, then reopen the solution. " +
+                            "No generated source was synthesized or skipped.", missingSource, ex);
+                    }
                 }
             }
             foreach (var id in excluded) _solution = _solution.RemoveDocument(id);

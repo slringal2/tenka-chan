@@ -106,6 +106,9 @@ public sealed class AgentJournalTests
         Assert.True(result.ResultAvailable);
         Assert.Contains("pointer=/items", result.NextAction);
         Assert.Contains("limit=10", result.NextAction);
+        Assert.Contains("SAME LIVE MCP transport session", result.NextAction);
+        Assert.Contains("NOT the large paged data", result.NextAction);
+        Assert.DoesNotContain("resume to retrieve", result.NextAction, StringComparison.OrdinalIgnoreCase);
         var page = JsonSerializer.SerializeToElement(j.ReadResult(s.Id, c.CallId, "/items", 0, 10));
         Assert.Equal(200, page.GetProperty("total").GetInt32());
         Assert.Equal(10, page.GetProperty("items").GetArrayLength());

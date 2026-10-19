@@ -17,7 +17,8 @@ public sealed class NuGetSdkGeneratedDocumentTests : IDisposable
     private string Injected => Path.Combine(Packages, "tunnelvisionlabs.referenceassemblyannotator",
         "1.0.0-alpha.160", "build", "NullableAttributes.cs");
 
-    private string Fixture(string? additionalExternal = null, string? additionalPackageInjected = null)
+    private string Fixture(string? additionalExternal = null, string? additionalPackageInjected = null,
+        string? missingGenerated = null)
     {
         Directory.CreateDirectory(Workspace);
         Directory.CreateDirectory(Path.GetDirectoryName(Synthetic)!);
@@ -39,6 +40,8 @@ public sealed class NuGetSdkGeneratedDocumentTests : IDisposable
                 "namespace TunnelVisionLabs; internal static class NullableAttributes { }");
             injected = "<Compile Include=\"" + SecurityElement.Escape(additionalPackageInjected) + "\" Link=\"Injected.cs\" />";
         }
+        var generated = missingGenerated is null ? "" :
+            "<Compile Include=\"" + SecurityElement.Escape(missingGenerated) + "\" />";
         File.WriteAllText(Path.Combine(tests, "Tests.csproj"), $"""
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
@@ -47,6 +50,7 @@ public sealed class NuGetSdkGeneratedDocumentTests : IDisposable
                 <Compile Include="{SecurityElement.Escape(Synthetic)}" Link="Sdk.Program.cs" />
                 {extra}
                 {injected}
+                {generated}
               </ItemGroup>
             </Project>
             """);
@@ -146,6 +150,24 @@ public sealed class NuGetSdkGeneratedDocumentTests : IDisposable
         Assert.Contains(result.WorkspaceWarnings, w => w.Contains("package-injected source document"));
         Assert.NotEmpty(service.FindMethods("Check.Go"));
         Assert.DoesNotContain(service.GetReviewTargets(), t => t.Method.File == Injected);
+    }
+
+    [Fact]
+    public async Task MissingBuildGeneratedSourceIsNotMisreportedAsMissingCsproj()
+    {
+        if (!MSBuildLocator.IsRegistered) MSBuildLocator.RegisterDefaults();
+        var missing = Path.Combine(Workspace, "Tests", "Properties", "DecompilerVersionInfo.cs");
+        var solution = Fixture(missingGenerated: missing);
+        var guard = new WorkspaceGuard([Workspace], true, false);
+        using var service = new RoslynReviewService(guard,
+            new NuGetSdkGeneratedDocumentPolicy(Packages));
+        var error = await Assert.ThrowsAsync<FileNotFoundException>(
+            () => service.OpenAsync(solution));
+        Assert.Contains("C# Compile source document is missing", error.Message);
+        Assert.Contains("DecompilerVersionInfo.cs", error.Message);
+        Assert.Contains("NOT a missing .csproj", error.Message);
+        Assert.Contains("Build the trusted project", error.Message);
+        Assert.Equal(Path.GetFullPath(missing), error.FileName);
     }
 
     [Fact]

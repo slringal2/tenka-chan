@@ -202,12 +202,12 @@ public sealed class AgentJournal
     private static string LargeResultNextAction(JsonElement data, bool retained, string callId)
     {
         if (!retained)
-            return "The result exceeded local retention limits. Do not replay builds, tests or measurements to retrieve output. For read-only queries, narrow the filter and limit in a new call.";
+            return "The result exceeded local retention limits. There is no paged copy available in any session. Do not replay builds, tests or measurements to retrieve output. For read-only queries, narrow the filter and limit in a new call.";
         if (data.ValueKind == JsonValueKind.Object)
             foreach (var field in new[] { "items", "findings", "methods", "targets", "results" })
                 if (data.TryGetProperty(field, out var value) && value.ValueKind == JsonValueKind.Array)
-                    return $"The large result is retained but omitted from inline data. Call tenka_read_result with callId={callId}, pointer=/{field}, offset=0, limit=10; page by offset until total is reached. Do not repeat the original operation.";
-        return $"The large result is retained but omitted from inline data. Call tenka_read_result with callId={callId} and a JSON pointer for one of availableFields. Do not repeat the original operation.";
+                    return $"The large result is retained but omitted from inline data. Use tenka_read_result in the SAME LIVE MCP transport session/connection (15-minute idle expiry) before disconnect or server restart. Large results over 60 KB are stored only in this session's memory; a saved investigation may preserve the small receipt but NOT the large paged data. Call tenka_read_result with callId={callId}, pointer=/{field}, offset=0, limit=10; page by offset until total is reached. Do not repeat the original operation.";
+        return $"The large result is retained but omitted from inline data. Use tenka_read_result in the SAME LIVE MCP transport session/connection (15-minute idle expiry) before disconnect or server restart. Large results over 60 KB are stored only in this session's memory; a saved investigation may preserve the small receipt but NOT the large paged data. Call tenka_read_result with callId={callId} and a JSON pointer for one of availableFields. Do not repeat the original operation.";
     }
 
     private static string DescribeResult(JsonElement value)

@@ -126,12 +126,12 @@ public sealed class DashboardAgentTools
         client.CallAsync("run_companion", new { snapshotId, companionId, approved, allowRestore }, cancellationToken);
 
     [McpServerTool(Name = "tenka_prepare_experiment")]
-    [Description("Stage agent-authored C# test/benchmark code using a current project ID. Returns experimentId (id) AND durable investigationId: retain both; use the same MCP investigation for measure_target, or explicitly tenka_investigation resume in another adapter before measuring. No source edits or execution. targetFramework selects the library target; runtimeFramework selects the runtime for netstandard2.0/2.1. Use a justified independent oracle.")]
+    [Description("Stage agent-authored C# test/benchmark code using a current project ID. Returns experimentId (id) AND durable investigationId. For measured benchmark evidence use prepare_experiment(kind=benchmark) -> tenka_measure_target on the UNEXECUTED experiment; measure_target executes and binds in one approved call. Do NOT call tenka_run_experiment before measure_target (already executed IDs cannot be measured). Use the owning investigationId when crossing adapters, or explicitly resume. No source edits/execution at prepare time. targetFramework selects the library; runtimeFramework selects the runtime for netstandard2.0/2.1. Justify test oracles.")]
     public static Task<string> PrepareExperiment(DashboardAgentClient client, string snapshotId, string projectId, string kind, string generatedCode, string? targetFramework = null, string? runtimeFramework = null, CancellationToken cancellationToken = default) =>
         client.CallAsync("prepare_experiment", new { snapshotId, projectId, kind, generatedCode, targetFramework, runtimeFramework }, cancellationToken);
 
     [McpServerTool(Name = "tenka_run_experiment")]
-    [Description("Execute a generated experiment owned by the current or explicitly resumed investigation. Use tenka_measure_target instead to bind benchmark results to a review target. UNSANDBOXED code. Requires host allow-build, allow-execution, generated-host-experiments enabled and external-client approval.")]
+    [Description("Execute a generated experiment WITHOUT associating its run with a review target. A completed experiment ID can never be run or measured again. For before/after benchmark evidence do NOT call this first: use prepare_experiment(kind=benchmark) -> tenka_measure_target on the still-unexecuted ID. UNSANDBOXED; host switches and per-call approval required.")]
     public static Task<string> RunExperiment(DashboardAgentClient client, string experimentId, bool approved = false, CancellationToken cancellationToken = default) =>
         client.CallAsync("run_experiment", new { experimentId, approved }, cancellationToken);
 
@@ -151,7 +151,7 @@ public sealed class DashboardAgentTools
         client.CallAsync("note", new { kind, message, evidenceCallIds }, cancellationToken);
 
     [McpServerTool(Name = "tenka_read_result")]
-    [Description("Read a prior tool result using its callId and JSON pointer (e.g. /findings); arrays are paged. Live large results use the current session. Small retained data can also be read after explicitly resuming its investigation. Large live-only results may not survive restart. Do not rerun expensive tools merely to retrieve output.")]
+    [Description("Read a prior tool result using callId and JSON pointer. Results >60KB (data=null) are paged ONLY in the SAME live MCP transport session and lost on disconnect/server restart; do not use an ID from another adapter session. Small retained receipts can be read after explicitly resuming the owning investigation; the large paged data itself is not durable. Do not rerun execution merely to retrieve output.")]
     public static Task<string> ReadResult(DashboardAgentClient client, string callId, string pointer = "", int offset = 0, int limit = 30, CancellationToken cancellationToken = default) =>
         client.CallAsync("read_result", new { callId, pointer, offset, limit }, cancellationToken);
 

@@ -22,6 +22,14 @@ public static class AgentRecoveryAdvice
             return new("investigation_resume_approval_required", "Obtain approval to access the saved investigation, then call tenka_investigation with action=resume, investigationId and approved=true. This does not restore execution approval; refresh context and authorize only intended operations.");
         if (text.Contains("experiment_investigation_mismatch:", StringComparison.Ordinal))
             return new("experiment_investigation_mismatch", "Keep tenka_prepare_experiment and tenka_measure_target in the same connected MCP investigation when possible. If using a fresh adapter/session, use investigationId returned by prepare_experiment: tenka_investigation action=resume, investigationId=<saved ID>, approved=true. If you lost the ID, list investigations and identify the owner before explicit resume. Then refresh tenka_context and authorize execution again. Never replay an experiment merely to transfer ownership.");
+        if (tool == "measure_target" &&
+            text.Contains("Experiment has already been executed", StringComparison.Ordinal))
+            return new("experiment_already_executed",
+                "A prepared benchmark must be UNEXECUTED when passed to tenka_measure_target. " +
+                "Use prepare_experiment(kind=benchmark) -> tenka_measure_target(approved=true) directly. " +
+                "tenka_measure_target runs the prepared experiment and records the target observation in one approved operation. " +
+                "Do NOT insert tenka_run_experiment between them; never replay an already executed experiment. " +
+                "Read the saved experiment result to inspect its previous outcome, then prepare a fresh experiment only if another measurement is intended.");
         if (text.Contains("measurement_", StringComparison.Ordinal))
             return new("measurement_rejected", "Check the named measurement failure. Prepare two generated experiments with tenka_measure_target, or run the same existing BenchmarkDotNet companion twice using tenka_measure_companion with the selected target. Do not mix measurement origins. The candidate source/context and companion workload must still match. Inspect saved results; never replay an executed experiment or fabricate missing binding evidence.");
         if (text.Contains("investigation_not_found:", StringComparison.Ordinal))
@@ -68,7 +76,10 @@ public static class AgentRecoveryAdvice
         if (tool is "review_context" or "review_target" or "review_history" or "review_diff")
             return new("review_target_unavailable", "Refresh tenka_context and tenka_review_queue, kind=all, to obtain the current snapshotId and intended targetId. If source changed, reload only with approval. Use exact saved revision numbers for history/diff; do not substitute another target.");
         if (tool == "read_result")
-            return new("result_unavailable", "Use a completed callId from this session or its explicitly resumed investigation, and an available JSON pointer. Only retained data can be paged; large live-only results may be unavailable after restart. Do not rerun execution just to retrieve output; inspect the activity and saved artifacts first.");
+            return new("result_unavailable",
+                "For any >60KB result, call tenka_read_result in the SAME live MCP transport session before disconnect/restart; large paged results are NOT persisted across sessions. " +
+                "A resumed investigation may expose only small retained receipts, not the original large data. " +
+                "Use an available callId/pointer and do not replay execution merely to retrieve output.");
         return new("tool_failed", "Inspect the error and callId for this specific operation. Refresh tenka_context only when workspace selection changed. Do not retry automatically or treat an operational failure as a target-code defect.");
     }
     public static string NextAction(string tool, AgentReply reply)

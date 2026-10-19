@@ -70,6 +70,27 @@ public sealed class AgentRecoveryAdviceTests
         Assert.Contains("approved=true", hint.NextAction);
     }
     [Fact]
+    public void AlreadyExecutedBenchmarkExplainsPrepareDirectlyToMeasure()
+    {
+        var advice = AgentRecoveryAdvice.ForFailure("measure_target",
+            "InvalidOperationException: Experiment has already been executed. Prepare a new one.");
+        Assert.Equal("experiment_already_executed", advice.Code);
+        Assert.Contains("prepare_experiment(kind=benchmark) -> tenka_measure_target", advice.NextAction);
+        Assert.Contains("Do NOT insert tenka_run_experiment", advice.NextAction);
+        Assert.Contains("never replay", advice.NextAction);
+    }
+
+    [Fact]
+    public void OversizedCrossSessionResultCannotBeRecoveredByResumingReceipt()
+    {
+        var advice = AgentRecoveryAdvice.ForFailure("read_result",
+            "KeyNotFoundException: evidence_unavailable: No completed receipt in this investigation.");
+        Assert.Equal("result_unavailable", advice.Code);
+        Assert.Contains("SAME live MCP transport session", advice.NextAction);
+        Assert.Contains("NOT persisted across sessions", advice.NextAction);
+    }
+
+    [Fact]
     public void CancellationDoesNotImplyExecutionWasRolledBack()
     {
         var hint = AgentRecoveryAdvice.ForFailure("build", null, cancelled: true);
