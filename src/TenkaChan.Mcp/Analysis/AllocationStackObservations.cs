@@ -1,5 +1,3 @@
-using System.Collections.ObjectModel;
-
 namespace TenkaChan.Mcp.Analysis;
 
 /// <summary>
@@ -56,7 +54,7 @@ public sealed class AllocationStackAccumulator
     }
 
     public const int MaxGroups = 2048;
-    private readonly ProfileMethodIdentity[] _members;
+    private readonly IReadOnlyDictionary<string, ProfileMethodIdentity[]> _bySimpleName;
     private readonly Dictionary<(string MethodId, int Pid, int Clr), Entry> _groups = new();
     private int _ticks, _stacks, _linked, _ambiguous, _unmatched, _missing, _limited;
     private readonly int _maxRows;
@@ -65,9 +63,13 @@ public sealed class AllocationStackAccumulator
     {
         ArgumentNullException.ThrowIfNull(methods);
         _maxRows = Math.Clamp(maxRows, 1, 100);
-        _members = methods.Where(m => !string.IsNullOrWhiteSpace(m.MethodId) &&
+        // Index the last member-name component once. A large solution may
+        // contain 20k methods; scanning all of them for every allocation tick
+        // would make an otherwise bounded trace unexpectedly expensive.
+        _bySimpleName = methods.Where(m => !string.IsNullOrWhiteSpace(m.MethodId) &&
                 !string.IsNullOrWhiteSpace(m.QualifiedMember))
-            .Distinct().Take(20000).ToArray();
+            .Distinct().Take(20000).GroupBy(m => SimpleName(m.QualifiedMember))
+            .ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.Ordinal);
     }
 
     public void Add(AllocationStackObservation observation)
@@ -85,7 +87,9 @@ public sealed class AllocationStackAccumulator
         {
             var frame = Normalize(raw, 400);
             if (frame.Length == 0) continue;
-            var candidates = _members.Where(m =>
+            if (!_bySimpleName.TryGetValue(SimpleName(frame), out var options))
+                continue;
+            var candidates = options.Where(m =>
                 SpeedscopeHotspotParser.FrameMatches(frame.Replace('+', '.'),
                     m.QualifiedMember.Replace('+', '.')))
                 .GroupBy(m => m.MethodId, StringComparer.Ordinal).Take(2).ToArray();
@@ -118,6 +122,13 @@ public sealed class AllocationStackAccumulator
         if (group.ExampleStacks.Count < 3)
             group.ExampleStacks.Add(string.Join(" <- ", observation.Frames
                 .Take(6).Select(x => Normalize(x, 180))));
+    }
+
+    private static string SimpleName(string qualified)
+    {
+        var withoutArgs = qualified.Split('(')[0];
+        var last = Math.Max(withoutArgs.LastIndexOf('.'), withoutArgs.LastIndexOf(':'));
+        return withoutArgs[(last + 1)..];
     }
 
     private static string Normalize(string? text, int max)
