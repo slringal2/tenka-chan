@@ -74,6 +74,7 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
         ["jit"] = "jit", ["trace"] = "trace", ["artifact"] = "result",
         ["native"] = "native", ["compare_native"] = "compare-native",
         ["runtime_costs"] = "runtime-costs", ["import_thread"] = "import-thread",
+        ["dynamic_diagnose"] = "dynamic-diagnose",
         ["run_companion"] = "run-companion"
     };
     private static readonly HashSet<string> OtherTools = new(["investigation", "measure_target", "measure_companion", "approve_session", "revoke_approval", "session_status", "attach_workspace", "context", "sample", "open_project", "list_types", "rules", "note", "read_result",
@@ -134,7 +135,7 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
                 BaselineId: Optional(a, "baselineId"), NativeIndex: Number(a, "nativeIndex"), BaselineIndex: Number(a, "baselineIndex"),
                 ProfileIndex: NullableNumber(a, "profileIndex"), MetadataToken: NullableNumber(a, "metadataToken"),
                 AssemblySha256: Optional(a, "assemblySha256"), Approved: approved, AllowRestore: Bool(a, "allowRestore"),
-                Arguments: Strings(a, "arguments"));
+                Arguments: Strings(a, "arguments"), Limit: Number(a, "limit", 30));
             return await ExplorerEndpoints.ExecuteAsync(request, dashboard, guard, discovery, Get<TrustedLocalJitRunner>(),
                 Get<ExperimentStore>(), Get<AutonomousReviewRunner>(), ct);
         }
