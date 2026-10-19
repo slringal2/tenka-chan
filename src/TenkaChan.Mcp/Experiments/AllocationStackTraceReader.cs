@@ -70,6 +70,10 @@ public sealed class AllocationStackTraceReader(WorkspaceGuard guard)
             {
                 lost = log.EventsLost;
                 using var source = log.Events.GetSource();
+                // Register CLR templates before the generic dispatcher so
+                // GCAllocationTick's TypeName/ObjectSize/ClrInstanceID payload
+                // can be decoded instead of being seen as untyped raw bytes.
+                source.Clr.All += _ => { };
                 source.AllEvents += e =>
                 {
                     ct.ThrowIfCancellationRequested();
