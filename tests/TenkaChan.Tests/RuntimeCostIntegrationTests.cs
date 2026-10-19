@@ -37,6 +37,18 @@ public sealed class RuntimeCostIntegrationTests
                 JsonSerializer.Serialize(report));
             Assert.All(report.Runtimes, r => { Assert.Null(r.CpuMilliseconds); Assert.Null(r.OtherWaitMilliseconds); });
             Assert.Equal(capture.NetTrace!.Sha256, report.TraceSha256);
+            var selectedProfile = Assert.Single(capture.Profiles,
+                p => p.Observations > 0);
+            var profilePath = new TrustedTraceCapture(guard).RequireProfile(capture, selectedProfile.Index);
+            var parsedProfile = SpeedscopeHotspotParser.Read(profilePath, [], selectedProfile.Index, 100);
+            var fused = DynamicTraceDiagnosisBuilder.Build("trace-fixture", "fixture-artifact",
+                capture, selectedProfile.Index, parsedProfile, report,
+                new Dictionary<string, MethodSummary>(StringComparer.Ordinal));
+            Assert.Equal("dynamic_observation_unverified", fused.Status);
+            Assert.True(fused.TotalExceptionThrows >= 6);
+            Assert.Contains(fused.ExceptionHotspots,
+                e => e.TypeName == "System.InvalidOperationException" && e.ObservedThrows >= 6);
+            Assert.Empty(fused.Methods); // No source identity was supplied; never guess.
             var selected = await new RuntimeCostReader(guard).ReadAsync(capture.ReportPath, report.Runtimes[0].ProcessId);
             Assert.All(selected.Runtimes, r => Assert.Equal(report.Runtimes[0].ProcessId, r.ProcessId));
             var bounded = await new RuntimeCostReader(guard).ReadAsync(capture.ReportPath, options: new(MaxEvents: 100, MaxRows: 1));

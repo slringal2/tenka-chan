@@ -13,6 +13,11 @@
   静的スコアと実測重みを混ぜてランキングしない
 - 同じNettraceのGC停止窓、割り当てtick、Monitor競合待ち時間を
   PID/CLR単位の別枠に表示
+- 追加で`ExceptionThrown_V1`（イベントID80）を読み、**first-chance例外**の
+  型別発生回数・再スローフラグ・時系列の最初/最後をPID/CLR別に集計。
+  最大256種類まで保持し、表示は上位だけとする。
+  `ExceptionMessage`などの文字列や例外発生アドレスは読み取り結果に保存しない。
+  **catch済みの例外も数えるため、不具合や未処理例外とは断定しない**
 - 不明フレーム、同名メソッドのオーバーロード、レポート切り詰め、
   EventPipeイベント欠損、提供情報不足を明示
 - トレースと元の保存マニフェストのSHA-256を前後で確認し、
@@ -30,7 +35,7 @@
      "approved":true
    }
    → 実際にアプリを動かしてnettrace / Speedscope /
-     GC・allocation・Monitorイベントを収集
+     GC・allocation・Monitor・first-chance例外イベントを収集
    → 応答のtrace artifactIdとprofiles[]を確認
 
 3. tenka_dynamic_diagnose {
@@ -39,7 +44,7 @@
      "profileIndex":0,
      "limit":30
    }
-   → 動的メソッド観測と、別枠のGC/割り当て/競合の診断
+   → 動的メソッド観測と、別枠のGC/割り当て/競合/例外発生回数の診断
    → このステップはコードを実行しない
 ```
 
@@ -66,7 +71,18 @@
 - `runtime[].overlappingMonitorWaitMs`:
   観測されたMonitor待ち時間の合計。複数スレッドの待ちが重複し得る
 - `runtime[].sourceAttribution="process_clr_only__not_per_method"`:
-  GC/alloc/Monitorの値を**どのメソッドにも勝手に割り当てていない**
+  GC/alloc/Monitor/例外発生回数を**どのメソッドにも勝手に割り当てていない**
+- `runtime[].exceptionThrows`、`runtime[].exceptionTypes`:
+  そのPID/CLRに観測されたfirst-chanceの総スロー数と型別頻度。
+  `exceptionKindsRetained`は最大256種類に**保持された**分類数で、
+  全種類の数とは限らない。
+- `exceptionHotspots[]` / `totalExceptionThrows`:
+  GC時間順の表示から漏れたプロセスも含め、例外型別の発生回数上位20件と
+  トレース全体のfirst-chanceスロー数を独立表示。CPU時間ではない。
+  `exceptionHotspotsTruncated`なら一覧は部分的で、総数を示すものではない。
+- `exceptionHotspots[].rethrowFlagsObserved`:
+  ExceptionFlagsの再スローbit(0x04)が付いた観測数。
+  **catch済みか未処理か、同一例外インスタンスかは判断できない**
 - `binariesVerified=false`:
   現在のRoslynソースと実行時DLLが一致する根拠はまだない
 - `frameListTruncated` / `methodListTruncated` / `runtimeListTruncated`:
@@ -79,10 +95,18 @@
 - EventPipe SampleProfilerは**スレッド時間**をサンプリングする。オンCPU時間とは限らない
 - Speedscopeスタックのソース対応は**名前ベース**。非同期ステートマシン・
   ジェネリック・同名オーバーロード・動的コードで対応できない場合がある
-- 純粋なCPUサンプリング、割り当てスタックに基づく**メソッド単位のバイト数**、
-  ヒープリーク解析、デッドロック証明、例外スタック診断は未実装
+- **Windowsの通常EventPipeプロファイルはスレッド時間サンプリング**。
+  ネイティブを含む真のon-CPUサンプルを得るには、ETWなどOS側の別の観測基盤が必要。
+  純粋なCPUサンプリング、割り当てスタックに基づく**メソッド単位のバイト数**、
+  ヒープリーク解析、デッドロック証明、例外スタック/throw-siteの自動照合は未実装
+- CLRの例外イベントは発生時点（first-chance）を示すだけで、
+  アプリケーション失敗や未処理例外を意味しない。
+  **生の`.nettrace`には例外メッセージ等の機密情報が含まれる可能性がある**。
+  集計結果でメッセージを省略しても元トレースを安全な公開物に変換したことにはならない。
 - runtime-costs は元トレース最大128MB・イベント数最大500,000・
-  解析時間約45秒・返すprocess行12の上限がある
+  解析時間約45秒・返すprocess行12の上限がある。
+  例外型の分類はPID/CLRあたり最大256種類、メソッド診断は
+  別途最大20個の例外タイプを表示し、超過・欠損を明示する
 - トレース採取はユーザー承認が必要で、対象コードはOSユーザー権限で動く。
   読み取り専用の診断自体はアプリの再実行・ビルドをしない
 
