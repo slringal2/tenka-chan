@@ -37,8 +37,8 @@ public sealed class RuntimeCostIntegrationTests
                 JsonSerializer.Serialize(report));
             Assert.All(report.Runtimes, r => { Assert.Null(r.CpuMilliseconds); Assert.Null(r.OtherWaitMilliseconds); });
             Assert.Equal(capture.NetTrace!.Sha256, report.TraceSha256);
-            var selectedProfile = Assert.Single(capture.Profiles,
-                p => p.Observations > 0);
+            // A trace can contain multiple active thread profiles.
+            var selectedProfile = capture.Profiles.First(p => p.Observations > 0);
             var profilePath = new TrustedTraceCapture(guard).RequireProfile(capture, selectedProfile.Index);
             var parsedProfile = SpeedscopeHotspotParser.Read(profilePath, [], selectedProfile.Index, 100);
             var fused = DynamicTraceDiagnosisBuilder.Build("trace-fixture", "fixture-artifact",
