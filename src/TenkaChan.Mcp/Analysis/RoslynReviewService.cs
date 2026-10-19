@@ -562,6 +562,22 @@ public sealed partial class RoslynReviewService : IDisposable
         finally { _openLock.Release(); }
     }
 
+    /// <summary>
+    /// Return names from the current Roslyn snapshot for conservative
+    /// profile/stack matching. No raw source text or process operation.
+    /// </summary>
+    public async Task<IReadOnlyList<ProfileMethodIdentity>> GetProfileMethodIdentitiesAsync(
+        CancellationToken ct = default)
+    {
+        await _openLock.WaitAsync(ct);
+        try
+        {
+            EnsureOpen();
+            return ProfileMethodIdentities();
+        }
+        finally { _openLock.Release(); }
+    }
+
     private ProfileMethodIdentity[] ProfileMethodIdentities() =>
         _methods.Values.Where(m => CallableSyntax.CanCorrelateByMetadataName(m.Symbol))
             .Select(m => new ProfileMethodIdentity(m.Summary.Id,

@@ -127,6 +127,28 @@ public static class ExplorerEndpoints
                             new(LocalJitCaptureId: left.Id, MethodIndex: request.BaselineIndex),
                             new(LocalJitCaptureId: right.Id, MethodIndex: request.NativeIndex));
                     }
+                    case "allocation-stacks":
+                    {
+                        // Explicitly choose an existing trace artifact from this
+                        // source snapshot; no arbitrary executable or path input.
+                        var selected = dashboard.ExplorerResult(index, request.ArtifactId, "trace");
+                        var capture = (TraceCaptureReport)selected.Data;
+                        var identities = await roslyn.GetProfileMethodIdentitiesAsync(ct);
+                        var grouped = await new AllocationStackTraceReader(guard)
+                            .ReadAsync(capture.ReportPath, identities, request.Limit, ct);
+                        return grouped with
+                        {
+                            Hotspots = grouped.Hotspots.Select(row =>
+                            {
+                                try
+                                {
+                                    var method = index.Method(row.MethodId);
+                                    return row with { SourceFile = method.File, SourceLine = method.Line };
+                                }
+                                catch (KeyNotFoundException) { return row; }
+                            }).ToArray()
+                        };
+                    }
                     case "dynamic-diagnose":
                     {
                         // Entire workflow runs under the current source-snapshot

@@ -75,6 +75,7 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
         ["native"] = "native", ["compare_native"] = "compare-native",
         ["runtime_costs"] = "runtime-costs", ["import_thread"] = "import-thread",
         ["dynamic_diagnose"] = "dynamic-diagnose",
+        ["allocation_stacks"] = "allocation-stacks",
         ["run_companion"] = "run-companion"
     };
     private static readonly HashSet<string> OtherTools = new(["investigation", "measure_target", "measure_companion", "approve_session", "revoke_approval", "session_status", "attach_workspace", "context", "sample", "open_project", "list_types", "rules", "note", "read_result",
