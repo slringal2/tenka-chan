@@ -19,6 +19,15 @@ public sealed record DynamicObservedMethod(
 public sealed record DynamicUnlinkedFrame(
     string Name, string MatchStatus, double ExclusiveWeight, double ExclusivePercent);
 
+/// <summary>Exception type frequencies cannot verify throw sites or crashes.</summary>
+public sealed record DynamicExceptionHotspot(
+    int ProcessId, int ClrInstanceId, string TypeName, int ObservedThrows,
+    int RethrowFlagsObserved, double FirstThrownMs, double LastThrownMs)
+{
+    public string SourceAttribution => "pid_clr_exception_type_only__throw_site_unresolved";
+    public bool CrashConfirmed => false;
+}
+
 /// <summary>
 /// Runtime events are process/CLR observations only. They cannot be attributed
 /// to any source method without reliable event-to-stack/assembly linkage.
@@ -56,6 +65,9 @@ public sealed record DynamicTraceDiagnosis(
     public bool PerMethodCpuVerified => false;
     public string Status => "dynamic_observation_unverified";
     public string EvidenceBasis => "sampled_or_evented_speedscope_plus_separate_process_runtime_events";
+    public int TotalExceptionThrows { get; init; }
+    public bool ExceptionHotspotsTruncated { get; init; }
+    public IReadOnlyList<DynamicExceptionHotspot> ExceptionHotspots { get; init; } = [];
 }
 
 /// <summary>
@@ -153,6 +165,20 @@ public static class DynamicTraceDiagnosisBuilder
             ExceptionTypeListTruncated = r.ExceptionTypeListTruncated || r.ExceptionTypes.Count > 5
         }).ToArray();
 
+        // Keep throw frequencies separately visible even if a process falls
+        // outside the GC-suspension-ranked 12 process context rows. Frequencies
+        // are not added to any sampled-method weight.
+        var exceptionRows = runtime.Runtimes.SelectMany(r => r.ExceptionTypes.Select(e =>
+            new DynamicExceptionHotspot(r.ProcessId, r.ClrInstanceId, e.TypeName,
+                e.ObservedThrows, e.RethrowFlagsObserved,
+                e.FirstThrownMs, e.LastThrownMs)))
+            .OrderByDescending(e => e.ObservedThrows)
+            .ThenBy(e => e.TypeName, StringComparer.Ordinal)
+            .ThenBy(e => e.ProcessId).ThenBy(e => e.ClrInstanceId).ToArray();
+        var totalExceptionThrows = runtime.Runtimes.Sum(r => r.ExceptionThrows);
+        var exceptionTruncated = exceptionRows.Length > 20 ||
+            runtime.Runtimes.Any(r => r.ExceptionTypeListTruncated);
+
         var limitations = new List<string>
         {
             "Sampled frame exclusive weights are observed thread-time or other declared units, NOT independently measured per-method on-CPU time.",
@@ -188,6 +214,11 @@ public static class DynamicTraceDiagnosisBuilder
                         ? "roslyn_method_not_in_current_type_index" : x.MatchStatus,
                     x.ExclusiveWeight, x.ExclusivePercent)).ToArray(),
             runtime.Status, runtime.EventsRead, runtime.ReportedEventsLost,
-            runtime.EventLimitReached, processRows, limitations);
+            runtime.EventLimitReached, processRows, limitations)
+        {
+            TotalExceptionThrows = totalExceptionThrows,
+            ExceptionHotspotsTruncated = exceptionTruncated,
+            ExceptionHotspots = exceptionRows.Take(20).ToArray()
+        };
     }
 }

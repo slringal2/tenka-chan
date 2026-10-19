@@ -98,6 +98,15 @@ public sealed class DynamicTraceDiagnosisTests
         Assert.Contains("App.Work", runtime.AllocationTriggerTypes);
         Assert.Equal("process_clr_only__not_per_method", runtime.SourceAttribution);
         Assert.Equal(2, runtime.ExceptionThrows);
+        Assert.Equal(2, report.TotalExceptionThrows);
+        Assert.False(report.ExceptionHotspotsTruncated);
+        var hotspot = Assert.Single(report.ExceptionHotspots);
+        Assert.Equal("System.InvalidOperationException", hotspot.TypeName);
+        Assert.Equal(123, hotspot.ProcessId);
+        Assert.Equal(1, hotspot.ClrInstanceId);
+        Assert.Equal(2, hotspot.ObservedThrows);
+        Assert.False(hotspot.CrashConfirmed);
+        Assert.Equal("pid_clr_exception_type_only__throw_site_unresolved", hotspot.SourceAttribution);
         Assert.False(runtime.ExceptionTypeListTruncated);
         var exception = Assert.Single(runtime.ExceptionTypes);
         Assert.Equal("System.InvalidOperationException", exception.TypeName);
