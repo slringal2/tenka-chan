@@ -28,10 +28,18 @@ public sealed class RuntimeCostAccumulator
         public int Thread = thread, Starts, Stops, Durations;
         public double Wait, Max;
     }
+    private sealed class Thrown(string typeName, double firstMs)
+    {
+        public string TypeName = typeName;
+        public int Count, RethrowFlags;
+        public double First = firstMs, Last = firstMs;
+    }
     private sealed class State
     {
         public int Events, GcStarts, GcStops, PauseCount, FullyCount, Allocations, MissingAmounts;
         public int ContentionStarts, ContentionStops, ContentionDurations;
+        public int ExceptionsThrown;
+        public readonly Dictionary<string, Thrown> ExceptionsByType = new(StringComparer.Ordinal);
         public double? First, Last;
         public double PauseTotal, PauseMax, FullyTotal, WaitTotal, WaitMax;
         public ulong AllocationBytes;
@@ -140,6 +148,36 @@ public sealed class RuntimeCostAccumulator
                 a.Count++;
                 if (e.ObjectSize is ulong size) { a.Bytes = AddBytes(a.Bytes, size); a.Sizes++; }
                 break;
+            case "exception_thrown":
+                // The CLR records every throw, including expected exceptions
+                // that are caught. Do not report these as unhandled failures.
+                // This event has an ExceptionMessage payload; we intentionally
+                // do not read or persist that potentially sensitive text.
+                s.ExceptionsThrown++;
+                var exceptionType = string.IsNullOrWhiteSpace(e.ExceptionType)
+                    ? "(exception type unavailable)" : new string(e.ExceptionType
+                        .Where(ch => !char.IsControl(ch)).ToArray()).Trim();
+                if (exceptionType.Length == 0) exceptionType = "(exception type unavailable)";
+                if (exceptionType.Length > 256)
+                {
+                    exceptionType = exceptionType[..256];
+                    s.Issue("exception_type_name_truncated");
+                }
+                if (!s.ExceptionsByType.TryGetValue(exceptionType, out var observedException))
+                {
+                    if (s.ExceptionsByType.Count >= 256)
+                    {
+                        s.Issue("exception_type_group_limit");
+                        break;
+                    }
+                    s.ExceptionsByType.Add(exceptionType,
+                        observedException = new(exceptionType, e.TimeMs));
+                }
+                observedException.Count++;
+                observedException.Last = e.TimeMs;
+                if ((e.ExceptionFlags.GetValueOrDefault() & 0x04) != 0)
+                    observedException.RethrowFlags++;
+                break;
             case "contention_start":
                 if (e.Flags != 0) { s.Issue("non_managed_or_unknown_contention"); break; }
                 s.ContentionStarts++;
@@ -200,6 +238,10 @@ public sealed class RuntimeCostAccumulator
             if (s.Allocations > 0)
                 hints.Add(new("allocation_sampling", "P3", $"{s.Allocations} allocation ticks observed.",
                     "Ticks are sampled allocation-volume evidence, not all objects or exact per-type totals. Use allocation stacks/benchmarks before blaming a method."));
+            if (s.ExceptionsThrown > 0)
+                hints.Add(new("managed_exceptions", "P3",
+                    $"{s.ExceptionsThrown} first-chance ExceptionThrown events across {s.ExceptionsByType.Count} retained types.",
+                    "Repeated exception throws can merit investigation in hot paths, but throws may be caught and expected. This does not identify a throw site or prove an unhandled exception."));
             return new RuntimeCostSummary(pair.Key.Pid, pair.Key.Clr, s.Events, s.First, s.Last,
                 s.GcStarts, s.GcStops, new Dictionary<int,int>(s.Generations), s.PauseCount, s.PauseTotal,
                 s.PauseMax, s.FullyCount, s.FullyTotal, s.Allocations, s.AllocationBytes, s.MissingAmounts,
@@ -214,9 +256,20 @@ public sealed class RuntimeCostAccumulator
                     ["gc"] = s.GcStarts > 0 ? "events_observed" : "not_observed__not_proof_of_zero",
                     ["allocation"] = s.Allocations > 0 ? "sampled_ticks_observed" : "not_observed__may_require_verbose_capture",
                     ["monitorContention"] = s.ContentionStops > 0 ? "stop_events_observed" : "not_observed__not_proof_of_zero",
+                    ["managedExceptions"] = s.ExceptionsThrown > 0 ? "first_chance_throws_observed" : "not_observed__not_proof_of_zero",
                     ["onCpu"] = "not_collected_by_this_analysis", ["otherWaits"] = "not_collected_by_this_analysis"
                 }, s.GcStops > s.Cycles.Count || s.PauseCount > s.Pauses.Count || s.Types.Count > _options.MaxRows ||
                     s.Threads.Count > _options.MaxRows || s.Issues.Keys.Any(k => k.EndsWith("_limit", StringComparison.Ordinal)), hints)
-            { ExcludedSuspensionStartsByReason = new Dictionary<int,int>(s.ExcludedSuspensions) };
+            {
+                ExcludedSuspensionStartsByReason = new Dictionary<int,int>(s.ExcludedSuspensions),
+                ExceptionThrows = s.ExceptionsThrown,
+                ExceptionKindsObserved = s.ExceptionsByType.Count,
+                ExceptionTypeListTruncated = s.ExceptionsByType.Count > _options.MaxRows ||
+                    s.Issues.ContainsKey("exception_type_group_limit"),
+                ExceptionTypes = s.ExceptionsByType.Values.OrderByDescending(x => x.Count)
+                    .ThenBy(x => x.TypeName, StringComparer.Ordinal).Take(_options.MaxRows)
+                    .Select(x => new RuntimeExceptionType(x.TypeName, x.Count,
+                        x.RethrowFlags, x.First, x.Last)).ToArray()
+            };
         }).ToArray();
 }

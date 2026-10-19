@@ -34,6 +34,9 @@ public sealed record DynamicRuntimeContext(
     IReadOnlyDictionary<string, int> IncompleteEvidence)
 {
     public string SourceAttribution => "process_clr_only__not_per_method";
+    public int ExceptionThrows { get; init; }
+    public IReadOnlyList<RuntimeExceptionType> ExceptionTypes { get; init; } = [];
+    public bool ExceptionTypeListTruncated { get; init; }
 }
 
 public sealed record DynamicTraceDiagnosis(
@@ -143,7 +146,12 @@ public static class DynamicTraceDiagnosisBuilder
                 .ThenBy(t => t.TriggerType, StringComparer.Ordinal)
                 .Take(5).Select(t => t.TriggerType).ToArray(),
             r.InvestigationHints.Take(6).Select(h => h.Kind + ": " + h.Evidence).ToArray(),
-            r.IncompleteEvidence)).ToArray();
+            r.IncompleteEvidence)
+        {
+            ExceptionThrows = r.ExceptionThrows,
+            ExceptionTypes = r.ExceptionTypes.Take(5).ToArray(),
+            ExceptionTypeListTruncated = r.ExceptionTypeListTruncated || r.ExceptionTypes.Count > 5
+        }).ToArray();
 
         var limitations = new List<string>
         {
@@ -152,7 +160,8 @@ public static class DynamicTraceDiagnosisBuilder
             "GC suspension, allocation ticks and Monitor contention are PID/CLR-level context only. They are NOT added to method weights or assigned as the cause of any method.",
             "Summed allocation tick bytes are approximate allocation-volume observations, NOT byte allocations of the named trigger type. Monitor waiter durations can overlap.",
             "Frame observation counts across frame labels may include duplicate samples; only exclusive weights are safely summed. Inclusive weights are intentionally not summed.",
-            "No exception, deadlock, heap-leak, full CPU sampling or per-method allocation-stack diagnosis is inferred from this report."
+            "ExceptionThrown events count first-chance throws by type, including expected/caught exceptions. They are not proof of crashes, unhandled exceptions, throw-site methods, or CPU cost; exception messages are not retained.",
+            "No deadlock, heap-leak, true on-CPU time or per-method allocation-stack diagnosis is inferred from this report."
         };
         if (profile.TotalFrames > profile.Frames.Count)
             limitations.Add("The frame list was truncated by its 500-frame parser limit; missing methods and their weight are not considered zero.");
@@ -161,7 +170,7 @@ public static class DynamicTraceDiagnosisBuilder
         if (runtime.EventLimitReached || runtime.ReportedEventsLost > 0)
             limitations.Add("The original event trace is partial or reports dropped events; runtime counters are lower-bound observations, not totals.");
         if (runtime.Status == "no_supported_events_observed")
-            limitations.Add("No supported GC/allocation/contention events were observed. Providers or workload coverage may be insufficient; do not interpret missing events as zero.");
+            limitations.Add("No supported GC/allocation/contention/exception events were observed. Providers or workload coverage may be insufficient; do not interpret missing events as zero.");
         if (runtime.RuntimeProviderConfiguration != TrustedTraceCapture.RuntimeCostProviders)
             limitations.Add("Verbose CLR runtime-cost providers were not confirmed in this capture; allocation/contention observations may be absent.");
 
