@@ -106,7 +106,21 @@ public sealed class AllocationStackObservationsTests
         Assert.Equal(AllocationStackAccumulator.MaxGroups + 3, r.SourceLinkedTicks);
         Assert.Equal(3, r.TriggerGroupLimitHits);
         Assert.True(r.HotspotsTruncated);
+        Assert.Equal("partial_group_limit", r.Status);
         Assert.Equal(AllocationStackAccumulator.MaxGroups + 3, r.AllocationTicksObserved);
+    }
+
+    [Fact]
+    public void OverflowingTriggerObjectSizeSumIsExplicitlySaturated()
+    {
+        var a = new AllocationStackAccumulator(SourceMethods);
+        a.Add(new(1, 1, "X", ulong.MaxValue, ["App.Engine.Caller()"]));
+        a.Add(new(1, 1, "X", 100, ["App.Engine.Caller()"]));
+        var result = a.Build("c", "hash", 2, 0, false);
+        var row = Assert.Single(result.Hotspots);
+        Assert.True(row.TriggerSizeSumSaturated);
+        Assert.Equal(ulong.MaxValue, row.TriggerObjectBytesObserved);
+        Assert.Contains(result.Limitations, s => s.Contains("saturated", StringComparison.Ordinal));
     }
 
     [Fact]

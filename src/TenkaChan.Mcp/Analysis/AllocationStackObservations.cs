@@ -18,6 +18,7 @@ public sealed record AllocationStackHotspot(
     public string SourceAssociation => "nearest_unambiguous_managed_stack_frame__build_unverified";
     public bool AllocatedBytesVerified => false;
     public bool BinariesVerified => false;
+    public bool TriggerSizeSumSaturated { get; init; }
     public string? SourceFile { get; init; }
     public int? SourceLine { get; init; }
     public double? StaticSuspicionScore { get; init; }
@@ -51,6 +52,7 @@ public sealed class AllocationStackAccumulator
         public int ProcessId = pid, ClrInstanceId = clr;
         public int Count, Sizes;
         public ulong ObjectBytes;
+        public bool SizeSumSaturated;
         public readonly HashSet<string> Types = new(StringComparer.Ordinal);
         public readonly HashSet<string> ExampleStacks = new(StringComparer.Ordinal);
     }
@@ -116,11 +118,18 @@ public sealed class AllocationStackAccumulator
         {
             group.Sizes++;
             // Avoid arithmetic wrap when a corrupted trace supplies huge sizes.
-            group.ObjectBytes = ulong.MaxValue - group.ObjectBytes < objectSize
-                ? ulong.MaxValue : group.ObjectBytes + objectSize;
+            if (ulong.MaxValue - group.ObjectBytes < objectSize)
+            {
+                group.SizeSumSaturated = true;
+                group.ObjectBytes = ulong.MaxValue;
+            }
+            else group.ObjectBytes += objectSize;
         }
         if (group.Types.Count < 12)
-            group.Types.Add(Normalize(observation.TriggerType, 160));
+        {
+            var type = Normalize(observation.TriggerType, 160);
+            group.Types.Add(type.Length == 0 ? "(unknown trigger type)" : type);
+        }
         if (group.ExampleStacks.Count < 3)
             group.ExampleStacks.Add(string.Join(" <- ", observation.Frames
                 .Take(6).Select(x => Normalize(x, 180))));
@@ -158,9 +167,12 @@ public sealed class AllocationStackAccumulator
             notes.Add("Event loss or a read limit makes all sample counts partial; absent methods cannot be considered cheap.");
         if (_limited > 0 || rows.Length > _maxRows)
             notes.Add("Some aggregated groups were omitted by bounds; this report is not exhaustive.");
+        if (rows.Any(r => r.SizeSumSaturated))
+            notes.Add("Sampled trigger-object size sum overflowed and was saturated; do not use that number for any allocation-volume comparison.");
         return new AllocationStackSummary(captureId, traceSha,
             eventLimitReached ? "partial_event_limit" :
             eventsLost > 0 ? "partial_event_loss" :
+            _limited > 0 ? "partial_group_limit" :
             _stacks == 0 ? "no_stacks_available" :
             _linked == 0 ? "stacks_without_unique_source_links" : "observed_stack_samples",
             eventsRead, eventsLost, _ticks, _stacks, _linked, _ambiguous,
@@ -170,6 +182,7 @@ public sealed class AllocationStackAccumulator
                 g.MethodId, g.QualifiedMember, g.ProcessId, g.ClrInstanceId,
                 g.Count, g.ObjectBytes, g.Sizes,
                 g.Types.OrderBy(x => x, StringComparer.Ordinal).ToArray(),
-                g.ExampleStacks.OrderBy(x => x, StringComparer.Ordinal).ToArray())).ToArray(), notes);
+                g.ExampleStacks.OrderBy(x => x, StringComparer.Ordinal).ToArray())
+            { TriggerSizeSumSaturated = g.SizeSumSaturated }).ToArray(), notes);
     }
 }
