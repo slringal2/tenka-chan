@@ -71,10 +71,11 @@ public sealed partial class RoslynReviewService : IDisposable
                 ? (await _workspace.OpenProjectAsync(safePath, cancellationToken: ct)).Solution
                 : await _workspace.OpenSolutionAsync(safePath, cancellationToken: ct);
             // Reject documents outside configured allowed roots (including arbitrary
-            // linked files). MSBuildWorkspace may expose Microsoft.NET.Test.Sdk's
-            // synthetic Program.cs from the NuGet cache. Remove only that narrowly
-            // identified, non-user source from the ANALYSIS snapshot; do not grant
-            // the cache a broad allowlist or index external source as trusted code.
+            // linked files). MSBuildWorkspace may expose reviewed package-injected
+            // sources from the NuGet cache (for example Microsoft.NET.Test.Sdk's
+            // synthetic Program.cs). Remove only those narrowly identified, non-user
+            // sources from the ANALYSIS snapshot; do not grant the cache a broad
+            // allowlist or index external source as trusted code.
             var excluded = new List<DocumentId>();
             foreach (var project in _solution.Projects.Where(p => p.Language == LanguageNames.CSharp))
             {
@@ -94,8 +95,8 @@ public sealed partial class RoslynReviewService : IDisposable
             }
             foreach (var id in excluded) _solution = _solution.RemoveDocument(id);
             if (excluded.Count > 0)
-                _warnings.Add($"Excluded {excluded.Count} known Microsoft.NET.Test.Sdk synthetic source document(s) outside the workspace allowlist. " +
-                    "Their methods are not reviewed and Roslyn-only compilation diagnostics may differ from the built test assembly. " +
+                _warnings.Add($"Excluded {excluded.Count} known package-injected source document(s) outside the workspace allowlist. " +
+                    "Their methods are not reviewed and Roslyn-only compilation diagnostics may differ from the built assembly. " +
                     "No NuGet directory was added to TENKA_ALLOWED_ROOTS.");
             _snapshotId = Guid.NewGuid().ToString("N");
 
