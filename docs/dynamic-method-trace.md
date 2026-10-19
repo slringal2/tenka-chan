@@ -167,7 +167,7 @@ Windowsで.NET 10 SDKと事前復元済み依存関係がある場合:
 
 ```powershell
 dotnet build src/TenkaChan.Web/TenkaChan.Web.csproj -c Debug --no-restore
-dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj -c Debug --no-restore --filter "FullyQualifiedName~AllocationStackObservationsTests|FullyQualifiedName~DynamicTraceDiagnosisTests|FullyQualifiedName~SpeedscopeHotspotParserTests|FullyQualifiedName~RoslynIntegrationTests|FullyQualifiedName~RuntimeCostTests|FullyQualifiedName~RuntimeCostIntegrationTests"
+dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj -c Debug --no-restore --filter "FullyQualifiedName~AllocationStackObservationsTests|FullyQualifiedName~AllocationStackTraceReaderTests|FullyQualifiedName~DynamicTraceDiagnosisTests|FullyQualifiedName~SpeedscopeHotspotParserTests|FullyQualifiedName~RoslynIntegrationTests|FullyQualifiedName~RuntimeCostTests|FullyQualifiedName~RuntimeCostIntegrationTests"
 ```
 
 EventPipe統合実測は独立した**オプトイン**検証（`TENKA_RUNTIME_INTEGRATION=1`）で、
