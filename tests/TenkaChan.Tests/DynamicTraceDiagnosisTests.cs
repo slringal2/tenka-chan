@@ -72,13 +72,15 @@ public sealed class DynamicTraceDiagnosisTests
         Assert.False(hot.BinariesVerified);
         Assert.False(report.BinariesVerified);
         Assert.Equal("profile_frame_name_to_loaded_roslyn_method__build_unverified", hot.Association);
+        Assert.False(report.PerMethodCpuVerified);
+        Assert.Equal("dynamic_observation_unverified", report.Status);
         Assert.Equal(60, report.LinkedExclusiveWeight);
         Assert.Equal(35, report.UnlinkedExclusiveWeight);
         Assert.Equal(5, report.HiddenOrUnassignedExclusiveWeight);
         Assert.Contains(report.UnlinkedExamples, u =>
             u.MatchStatus == "ambiguous_overload_or_type");
         Assert.Contains(report.UnlinkedExamples, u =>
-            u.Name == "App.Work.Other()" && u.MatchStatus == "matched_exact_qualified_name");
+            u.Name == "App.Work.Other()" && u.MatchStatus == "roslyn_method_not_in_current_type_index");
 
         var runtime = Assert.Single(report.Runtime);
         Assert.Equal(123, runtime.ProcessId);

@@ -50,6 +50,8 @@ public sealed record DynamicTraceDiagnosis(
     IReadOnlyList<string> Limitations)
 {
     public bool BinariesVerified => false;
+    public bool PerMethodCpuVerified => false;
+    public string Status => "dynamic_observation_unverified";
     public string EvidenceBasis => "sampled_or_evented_speedscope_plus_separate_process_runtime_events";
 }
 
@@ -172,7 +174,9 @@ public static class DynamicTraceDiagnosisBuilder
             groups.Take(maxMethods).ToArray(),
             unlinked.OrderByDescending(x => x.ExclusiveWeight)
                 .ThenBy(x => x.FrameName, StringComparer.Ordinal).Take(10)
-                .Select(x => new DynamicUnlinkedFrame(x.FrameName, x.MatchStatus,
+                .Select(x => new DynamicUnlinkedFrame(x.FrameName,
+                    x.MatchedMethodId is not null && !methods.ContainsKey(x.MatchedMethodId)
+                        ? "roslyn_method_not_in_current_type_index" : x.MatchStatus,
                     x.ExclusiveWeight, x.ExclusivePercent)).ToArray(),
             runtime.Status, runtime.EventsRead, runtime.ReportedEventsLost,
             runtime.EventLimitReached, processRows, limitations);
