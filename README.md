@@ -76,7 +76,7 @@ ILSpyは固定コミットから取得し、ソースを甜花ちゃん向けに
 
 ## 外部エージェントのツール
 
-現在の公開ツールは36個です。旧`workspace_open`や内蔵レビュー起動ツールではなく、次の`tenka_*`を使います。
+現在のMCP公開ツールは45個です。旧`workspace_open`や内蔵レビュー起動ツールではなく、次の`tenka_*`を使います。
 
 | 領域 | 公開ツール |
 |---|---|
@@ -84,7 +84,7 @@ ILSpyは固定コミットから取得し、ソースを甜花ちゃん向けに
 | コード | `tenka_list_types` / `tenka_inspect_type` / `tenka_type_references` / `tenka_inspect_method` / `tenka_method_references` |
 | 静的解析 | `tenka_scan` / `tenka_rules` / `tenka_priorities` / `tenka_test_inputs` |
 | IL・JIT | `tenka_binary_methods` / `tenka_il` / `tenka_jit` / `tenka_artifact` / `tenka_native` / `tenka_compare_native` |
-| ビルド・計測 | `tenka_build` / `tenka_trace` / `tenka_import_thread` / `tenka_runtime_costs` / `tenka_run_companion` |
+| ビルド・計測 | `tenka_build` / `tenka_trace` / `tenka_import_thread` / `tenka_runtime_costs` / `tenka_run_companion` / `tenka_dynamic_diagnose` |
 | 生成実験 | `tenka_prepare_experiment` / `tenka_run_experiment` / `tenka_experiment_result` / `tenka_compare_benchmarks` |
 | 確認・差分 | `tenka_review_queue` / `tenka_review_target` / `tenka_mark_review` / `tenka_review_diff` / `tenka_review_history` |
 | 報告・結果 | `tenka_note` / `tenka_read_result` |
@@ -115,6 +115,15 @@ ILSpyは固定コミットから取得し、ソースを甜花ちゃん向けに
 対応するSDK/ランタイム、ビルド済みDLL、キャッシュ済みパッケージが必要です。
 複雑な推移依存・ネイティブDLL・外部サービスまで自動解決する機能は未完です。
 .NET Standardの生成JITハーネス・旧コンテナー経路は対象外で、JITは呼び出し元の実行アプリを指定します。
+
+## 動的解析（EventPipeとRoslynの連携）
+
+`tenka_trace` で承認済みの.NETアプリを実行・収集した後、
+保存済みartifactを `tenka_dynamic_diagnose` に渡すと、
+観測されたメソッドの重いスタックとGC/割り当て/ロック競合のプロセス概要を
+**別々の根拠として**まとめて確認できます。後者を個々のメソッドのCPUや
+割り当て量として推測することはありません。
+操作例と制限: [動的トレース診断](docs/dynamic-method-trace.md)。
 
 ## チェック済みと最適化済み
 
