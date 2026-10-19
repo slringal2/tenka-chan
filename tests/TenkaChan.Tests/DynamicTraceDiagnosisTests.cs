@@ -43,9 +43,13 @@ public sealed class DynamicTraceDiagnosisTests
         events.Add(new("contention_start", 9, 123, 1, ThreadId: 11, Flags: 0));
         events.Add(new("contention_stop", 11, 123, 1, ThreadId: 11,
             Flags: 0, DurationNs: 5_000_000));
+        events.Add(new("exception_thrown", 12, 123, 1)
+        { ExceptionType = "System.InvalidOperationException", ExceptionFlags = 0 });
+        events.Add(new("exception_thrown", 13, 123, 1)
+        { ExceptionType = "System.InvalidOperationException", ExceptionFlags = 0x04 });
         return new(captureId, "/test/capture.json", sha, "fixture-parser",
             lost ? "partial_reported_event_loss" : "observed_events",
-            9, lost ? 3 : 0, false, null,
+            11, lost ? 3 : 0, false, null,
             [new("Host.dll", TraceSha, 1234)], events.Build(), [])
         { RuntimeProviderConfiguration = TrustedTraceCapture.RuntimeCostProviders };
     }
@@ -93,6 +97,13 @@ public sealed class DynamicTraceDiagnosisTests
         Assert.Equal(5, runtime.OverlappingMonitorWaitMs);
         Assert.Contains("App.Work", runtime.AllocationTriggerTypes);
         Assert.Equal("process_clr_only__not_per_method", runtime.SourceAttribution);
+        Assert.Equal(2, runtime.ExceptionThrows);
+        Assert.False(runtime.ExceptionTypeListTruncated);
+        var exception = Assert.Single(runtime.ExceptionTypes);
+        Assert.Equal("System.InvalidOperationException", exception.TypeName);
+        Assert.Equal(2, exception.ObservedThrows);
+        Assert.Equal(1, exception.RethrowFlagsObserved);
+        Assert.Contains(report.Limitations, text => text.Contains("including expected/caught exceptions", StringComparison.Ordinal));
         Assert.Contains(report.Limitations, text =>
             text.Contains("NOT added to method weights", StringComparison.Ordinal));
     }

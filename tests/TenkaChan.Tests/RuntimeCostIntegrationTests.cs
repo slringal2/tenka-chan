@@ -30,6 +30,11 @@ public sealed class RuntimeCostIntegrationTests
             Assert.Contains(report.Runtimes, r => r.CollectionsCompleted >= 4 && r.GcSuspensionWindows >= 4);
             Assert.Contains(report.Runtimes, r => r.AllocationTicks > 0 && r.TickReportedAllocationBytes > 0);
             Assert.Contains(report.Runtimes, r => r.ContentionDurationsReported > 0 && r.ContentionWaitMilliseconds > 0);
+            Assert.Contains(report.Runtimes, r => r.ExceptionThrows >= 6 &&
+                r.ExceptionTypes.Any(t => t.TypeName == "System.InvalidOperationException" &&
+                    t.ObservedThrows >= 6));
+            Assert.DoesNotContain("PRIVATE-FIXTURE-MESSAGE-DO-NOT-EXPOSE",
+                JsonSerializer.Serialize(report));
             Assert.All(report.Runtimes, r => { Assert.Null(r.CpuMilliseconds); Assert.Null(r.OtherWaitMilliseconds); });
             Assert.Equal(capture.NetTrace!.Sha256, report.TraceSha256);
             var selected = await new RuntimeCostReader(guard).ReadAsync(capture.ReportPath, report.Runtimes[0].ProcessId);

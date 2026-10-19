@@ -259,7 +259,8 @@ public sealed class RuntimeCostAccumulator
                     ["managedExceptions"] = s.ExceptionsThrown > 0 ? "first_chance_throws_observed" : "not_observed__not_proof_of_zero",
                     ["onCpu"] = "not_collected_by_this_analysis", ["otherWaits"] = "not_collected_by_this_analysis"
                 }, s.GcStops > s.Cycles.Count || s.PauseCount > s.Pauses.Count || s.Types.Count > _options.MaxRows ||
-                    s.Threads.Count > _options.MaxRows || s.Issues.Keys.Any(k => k.EndsWith("_limit", StringComparison.Ordinal)), hints)
+                     s.Threads.Count > _options.MaxRows || s.ExceptionsByType.Count > _options.MaxRows ||
+                    s.Issues.Keys.Any(k => k.EndsWith("_limit", StringComparison.Ordinal)), hints)
             {
                 ExcludedSuspensionStartsByReason = new Dictionary<int,int>(s.ExcludedSuspensions),
                 ExceptionThrows = s.ExceptionsThrown,
