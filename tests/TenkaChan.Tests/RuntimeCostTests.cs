@@ -53,7 +53,7 @@ public sealed class RuntimeCostTests
         a.Add(E("exception_thrown", 3) with { ExceptionType = "System.InvalidOperationException" });
         var summary = Assert.Single(a.Build());
         Assert.Equal(3, summary.ExceptionThrows);
-        Assert.Equal(2, summary.ExceptionKindsObserved);
+        Assert.Equal(2, summary.ExceptionKindsRetained);
         Assert.True(summary.ExceptionTypeListTruncated);
         Assert.True(summary.DetailsTruncated);
         var common = Assert.Single(summary.ExceptionTypes);
@@ -69,7 +69,7 @@ public sealed class RuntimeCostTests
             a.Add(E("exception_thrown", i) with { ExceptionType = "A.Exception" + i });
         var report = Assert.Single(a.Build());
         Assert.Equal(260, report.ExceptionThrows);
-        Assert.Equal(256, report.ExceptionKindsObserved);
+        Assert.Equal(256, report.ExceptionKindsRetained);
         Assert.True(report.ExceptionTypeListTruncated);
         Assert.Contains("exception_type_group_limit", report.IncompleteEvidence.Keys);
         Assert.True(report.DetailsTruncated);

@@ -68,7 +68,7 @@ public sealed record RuntimeCostSummary(int ProcessId, int ClrInstanceId, int Ob
     public string DurationAggregation => "sum_of_observed_windows_and_waiters_not_disjoint_wall_time";
     public IReadOnlyDictionary<int,int> ExcludedSuspensionStartsByReason { get; init; } = new Dictionary<int,int>();
     public int ExceptionThrows { get; init; }
-    public int ExceptionKindsObserved { get; init; }
+    public int ExceptionKindsRetained { get; init; }
     public bool ExceptionTypeListTruncated { get; init; }
     public IReadOnlyList<RuntimeExceptionType> ExceptionTypes { get; init; } = [];
 }

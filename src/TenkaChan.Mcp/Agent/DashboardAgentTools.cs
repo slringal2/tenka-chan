@@ -124,7 +124,7 @@ public sealed class DashboardAgentTools
             new { snapshotId, artifactId, profileIndex, limit }, cancellationToken);
 
     [McpServerTool(Name = "tenka_runtime_costs")]
-    [Description("Read saved GC/allocation/Monitor events from a trace. No program launch. Missing events mean not observed, not zero cost.")]
+    [Description("Read saved GC/allocation/Monitor and first-chance exception events from a trace. Returns bounded exception type counts, no messages or throw-site attribution. Caught exceptions are not confirmed bugs. No program launch. Missing events mean not observed, not zero cost.")]
     public static Task<string> RuntimeCosts(DashboardAgentClient client, string snapshotId, string artifactId, CancellationToken cancellationToken = default) =>
         client.CallAsync("runtime_costs", new { snapshotId, artifactId }, cancellationToken);
 

@@ -264,7 +264,7 @@ public sealed class RuntimeCostAccumulator
             {
                 ExcludedSuspensionStartsByReason = new Dictionary<int,int>(s.ExcludedSuspensions),
                 ExceptionThrows = s.ExceptionsThrown,
-                ExceptionKindsObserved = s.ExceptionsByType.Count,
+                ExceptionKindsRetained = s.ExceptionsByType.Count,
                 ExceptionTypeListTruncated = s.ExceptionsByType.Count > _options.MaxRows ||
                     s.Issues.ContainsKey("exception_type_group_limit"),
                 ExceptionTypes = s.ExceptionsByType.Values.OrderByDescending(x => x.Count)
