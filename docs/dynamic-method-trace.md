@@ -90,6 +90,57 @@
 - `runtimeEventStatus="partial_*"`:
   ログ欠損・読み取り上限があるため完全なイベント数を断定しない
 
+## サンプリングされた割り当てのスタック（追加）
+
+`tenka_trace` が返した `artifactId` を使用し、同じ`snapshotId`で
+`tenka_allocation_stacks` を呼び出すと、CLR `GCAllocationTick` のイベントに紐づく
+マネージドスタックを**読み取り専用で**解析できます。
+
+```json
+{
+  "snapshotId": "tenka_contextで確認した現在のID",
+  "artifactId": "tenka_traceで得たartifactId",
+  "limit": 30
+}
+```
+
+`/api/explorer/action` では `action="allocation-stacks"`。
+対象アプリやビルドは実行せず、外部のシンボルサーバーにも接続しません。
+既存のTraceEventパッケージを使って、元`.nettrace`（最大16 MB）を
+**同じ保存フォルダーに一時的にETLX変換し、終了時に削除**します。
+変換途中でアプリが強制終了した場合には一時ファイルが残る可能性があるため、
+ローカルの機密ファイルとして管理してください。変換は同期的な前処理を伴い、
+最大の処理時間は保証していません。
+
+応答の重要な区別:
+
+- `allocationTicksObserved`: 解析した`GCAllocationTick`数。
+  **オブジェクトの全割り当て回数ではない**
+- `sourceLinkedTicks`: スタック上の**最も近い一意な**Roslynメソッド名に関連付けたtick数。
+  正確な割り当て命令・実行バイナリの一致は未検証
+- `hotspots[].sampledTriggers`: その候補に関連付いたサンプリングtick数
+- `hotspots[].triggerObjectBytesObserved`: tickを発火させた**個々のオブジェクトのサイズだけ**を合計した数。
+  対象メソッドの総割り当てバイト数や同種オブジェクトの全量ではない
+- `ambiguousTicks` / `unmatchedTicks` / `missingStackTicks`:
+  名前衝突・認識できないソース・スタック欠落を勝手に補完しない
+- `reportedEventsLost` / `eventLimitReached` / `hotspotsTruncated`:
+  サンプリングや表示の範囲を過小評価しないための情報
+
+`binariesVerified=false`、`totalAllocatedBytesVerified=false`は常に維持します。
+別のプロジェクトを読み込むとartifactIdは無効です。
+開いたワークスペース外の任意の`.nettrace`パスをMCPから指定する経路は追加していません。
+
+### 技術上の注意
+
+`EventPipeEventSource` にはそのままでは解決済みの`CallStack()`を得られない制限があり、
+`TraceLog.CreateFromEventPipeDataFile`のETLX変換を使用します。
+TraceLogがマネージドメソッド名を解決できない場合は未解決として返すため、
+メソッド名の有無・サンプル数は、ランタイムのトレース/rundown内容で変わります。
+ETW/kernelsのオンCPUサンプリングは今回も未実装です。
+
+出典: [TraceEvent APIとETLX](https://github.com/microsoft/dotnet-samples/blob/master/Microsoft.Diagnostics.Tracing/TraceEvent/docs/TraceEvent.md)、
+[MicrosoftのEventPipe概要](https://learn.microsoft.com/dotnet/core/diagnostics/eventpipe)。
+
 ## 現状の制限
 
 - EventPipe SampleProfilerは**スレッド時間**をサンプリングする。オンCPU時間とは限らない
@@ -116,7 +167,7 @@ Windowsで.NET 10 SDKと事前復元済み依存関係がある場合:
 
 ```powershell
 dotnet build src/TenkaChan.Web/TenkaChan.Web.csproj -c Debug --no-restore
-dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj -c Debug --no-restore --filter "FullyQualifiedName~DynamicTraceDiagnosisTests|FullyQualifiedName~SpeedscopeHotspotParserTests|FullyQualifiedName~RoslynIntegrationTests|FullyQualifiedName~RuntimeCostTests|FullyQualifiedName~RuntimeCostIntegrationTests"
+dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj -c Debug --no-restore --filter "FullyQualifiedName~AllocationStackObservationsTests|FullyQualifiedName~DynamicTraceDiagnosisTests|FullyQualifiedName~SpeedscopeHotspotParserTests|FullyQualifiedName~RoslynIntegrationTests|FullyQualifiedName~RuntimeCostTests|FullyQualifiedName~RuntimeCostIntegrationTests"
 ```
 
 EventPipe統合実測は独立した**オプトイン**検証（`TENKA_RUNTIME_INTEGRATION=1`）で、
