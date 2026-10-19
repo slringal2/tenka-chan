@@ -31,6 +31,14 @@
 - `tenka_scan` の hotspots: **300 methods / 1,500 sites**（`/hotspots/methods` 等の具体ポインタ指定が必要）。
 - `tenka_review_context`: selection / target / state / source / markBasis / binary を取得 OK。
 
+## 実測（生成ベンチマーク, measure_target）
+- companion が無い（解析は 3 プロジェクトのみ）ため生成実験で計測。`tenka_prepare_experiment`（kind=benchmark, subject=netstandard2.0, runtimeFramework=net8.0）
+  → `tenka_measure_target` → `tenka_mark_review` の順で実施。
+- 対象 `CSharpDecompiler.DecompileTypeAsString(FullTypeName)`（targetId `D2DC0104…68C0`）:
+  **mean ≈ 109.3 ms / median ≈ 109.3 ms / 53.5 MB per op**、n=40（Windows 11 / Ryzen 9 9900X / .NET 8.0.32）。
+- `tenka_mark_review` → **revision 4 / status `checked`**。最適化は未実施のため `optimized` にはしていない（baseline のみ＝速度改善の主張なし）。
+- experiment `3a8d5ded…` / investigation `45f9c88a…`。
+
 ## 良くなった点
 - 大きな結果のページング手順（`nextAction`）が大規模OSSでもそのまま機能し、`data:null` の空振りが無い。
 - 除外・診断が警告として表面化し、無言の欠落が無い。
@@ -40,16 +48,19 @@
 1. **未ビルド時の Compile 欠落で誤誘導メッセージ** — ILSpy はビルド時に `ILSpyUpdateAssemblyInfo` ターゲットが `ICSharpCode.Decompiler/Properties/DecompilerVersionInfo.cs` を生成する。未ビルドで開くと、MSBuildWorkspace がこの未生成ファイルを Compile 項目に載せ、`RoslynReviewService` の実在チェックが `FileNotFoundException: Project file not found` を投げる。実際は「未生成の .cs ドキュメント欠落」であり、パスも出ないため原因究明が難しい。実パスを出す / 欠落ドキュメントは空扱いで継続する、のいずれかを検討してほしい（少なくとも本メッセージは避けたい）。
 2. **大規模結果は同一セッション限定** — `nextAction` の `read_result` レシピを別セッションで実行すると `evidence_unavailable: No completed receipt in this investigation` になる。「同一セッション内で読む必要がある／大きい結果は restart を跨ぐと失われる」ことを文面で明示してほしい（`read_result` の説明文には弱く書かれているが、`nextAction` からは読み取れない）。
 3. **部分解析ソリューションの compiler error 件数** — 元は 16 csproj のリポジトリを 3 プロジェクトだけ解析するため、`compilerErrors 430` は参照不足によるアーティファクトで「対象コードの欠陥」ではない。summary の注記は妥当だが、エラー件数（430）とその内訳・限界の対応関係をもう少し明示すると誤読を避けやすい。
+4. **選択ID（typeId/methodId）はセッション限定** — 別セッションで `tenka_inspect_type` を呼ぶと `Type selection is no longer available`。durable な targetId（`review_queue` が返す 64 hex）とは別物で混同しやすい。`list_types`/`inspect_type` は同一セッションで連結する必要がある旨と、durable ID への導線を明示してほしい。
+5. **`tenka_measure_target` は未実行の実験専用** — `tenka_run_experiment` 済みの実験を渡すと `Experiment has already been executed. Prepare a new one.`。自然な「prepare → run → measure」順が失敗するため、`prepare_experiment` の説明かエラー文で「measure_target は未実行の実験に対して呼ぶ（実行は measure_target が行う）」ことを明示してほしい。
+6. **大規模OSSでは既定で companion 不在** — 解析対象が 3 プロジェクトのみのため `run_companion`/`measure_companion` は使えず、生成実験（`measure_target`）が唯一の計測手段だった。設計どおりだが、`tenka_sample`/`context` から `measure_target` へ誘導する案内があると導線が良い。
 
 ## 限界
 - 単一マシンでの検証。ILSpy は部分解析構成（Decompiler / ILSpyX / CLI の 3 プロジェクトのみ）。
-- 今回は **実測（measure_companion / mark_review）まで未実施**。性能証跡は無い。
+- 実測は **baseline のみ**（生成ベンチマーク、n=40）。候補（最適化後）計測は未実施で、速度改善の証跡は無い。上流ソースは改変していない。
 - CI 停止中・Docker 未使用。
 
 ## スコア（ツール体験, 100点満点）
-- 総合 **84 / 100**。
-  - 機能・ワークフロー 26/30（大規模OSSで追加の障壁が2つ発生）。
+- 総合 **85 / 100**。
+  - 機能・ワークフロー 27/30（大規模OSSで追加の障壁が2つ、うち1つはローカル修正で解消）。
   - 多プロジェクト対応 20/20。
-  - 実測・証跡 13/15（今回は未実測）。
-  - エラー診断・回復 13/15（誤誘導メッセージとセッション制約）。
+  - 実測・証跡 14/15（生成ベンチマークで baseline を実測。候補は未実施）。
+  - エラー診断・回復 12/15（誤誘導メッセージ・セッション制約・実行順の摩擦）。
   - 納品品質（ビルド/テスト）12/20（同梱のままでは実在の大規模OSSサンプルを開けず、ローカル修正を要した）。
