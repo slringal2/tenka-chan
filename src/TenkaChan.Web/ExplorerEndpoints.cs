@@ -136,16 +136,40 @@ public static class ExplorerEndpoints
                         var identities = await roslyn.GetProfileMethodIdentitiesAsync(ct);
                         var grouped = await new AllocationStackTraceReader(guard)
                             .ReadAsync(capture.ReportPath, identities, request.Limit, ct);
+                        var staticScreen = await roslyn.AnalyzePerformanceHotspotsAsync(
+                            maxMethods: 500, maxSites: 1500, ct: ct);
+                        if (staticScreen.SnapshotId != index.SnapshotId)
+                            throw new WorkspaceBuildConflictException("Source snapshot changed during allocation analysis.");
+                        var scored = staticScreen.Methods.ToDictionary(
+                            m => m.Method.Id, StringComparer.Ordinal);
+                        var sites = staticScreen.Sites.GroupBy(
+                            site => site.MethodId, StringComparer.Ordinal)
+                            .ToDictionary(group => group.Key,
+                                group => group.OrderByDescending(site => site.Weight)
+                                    .Take(4).Select(site =>
+                                        site.Category + " at line " + site.Line).ToArray(),
+                                StringComparer.Ordinal);
                         return grouped with
                         {
                             Hotspots = grouped.Hotspots.Select(row =>
                             {
+                                scored.TryGetValue(row.MethodId, out var screen);
+                                var candidates = sites.GetValueOrDefault(row.MethodId) ?? [];
                                 try
                                 {
                                     var method = index.Method(row.MethodId);
-                                    return row with { SourceFile = method.File, SourceLine = method.Line };
+                                    return row with
+                                    {
+                                        SourceFile = method.File, SourceLine = method.Line,
+                                        StaticSuspicionScore = screen?.SuspicionScore,
+                                        StaticCandidates = candidates
+                                    };
                                 }
-                                catch (KeyNotFoundException) { return row; }
+                                catch (KeyNotFoundException)
+                                {
+                                    return row with { StaticSuspicionScore = screen?.SuspicionScore,
+                                        StaticCandidates = candidates };
+                                }
                             }).ToArray()
                         };
                     }

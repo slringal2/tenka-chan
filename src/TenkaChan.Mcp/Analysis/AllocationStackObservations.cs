@@ -20,6 +20,8 @@ public sealed record AllocationStackHotspot(
     public bool BinariesVerified => false;
     public string? SourceFile { get; init; }
     public int? SourceLine { get; init; }
+    public double? StaticSuspicionScore { get; init; }
+    public IReadOnlyList<string> StaticCandidates { get; init; } = [];
 }
 
 public sealed record AllocationStackSummary(
