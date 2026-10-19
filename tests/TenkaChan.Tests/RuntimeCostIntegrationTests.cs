@@ -49,6 +49,22 @@ public sealed class RuntimeCostIntegrationTests
             Assert.Contains(fused.ExceptionHotspots,
                 e => e.TypeName == "System.InvalidOperationException" && e.ObservedThrows >= 6);
             Assert.Empty(fused.Methods); // No source identity was supplied; never guess.
+
+            // An additional offline ETLX conversion must leave neither a
+            // derived sensitive file nor an invented source association.
+            if (capture.NetTrace.Length <= AllocationStackTraceReader.MaxInputBytes)
+            {
+                var allocation = await new AllocationStackTraceReader(guard)
+                    .ReadAsync(capture.ReportPath, []);
+                Assert.Equal(capture.Id, allocation.CaptureId);
+                Assert.Equal(capture.NetTrace.Sha256, allocation.TraceSha256);
+                Assert.Empty(allocation.Hotspots);
+                Assert.False(allocation.BinariesVerified);
+                Assert.False(allocation.TotalAllocatedBytesVerified);
+                Assert.Empty(Directory.EnumerateFiles(
+                    Path.GetDirectoryName(capture.ReportPath)!, "tenka-allocation-*.etlx"));
+            }
+
             var selected = await new RuntimeCostReader(guard).ReadAsync(capture.ReportPath, report.Runtimes[0].ProcessId);
             Assert.All(selected.Runtimes, r => Assert.Equal(report.Runtimes[0].ProcessId, r.ProcessId));
             var bounded = await new RuntimeCostReader(guard).ReadAsync(capture.ReportPath, options: new(MaxEvents: 100, MaxRows: 1));
