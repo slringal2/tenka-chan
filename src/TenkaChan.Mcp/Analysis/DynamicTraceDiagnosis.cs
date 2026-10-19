@@ -44,6 +44,7 @@ public sealed record DynamicRuntimeContext(
 {
     public string SourceAttribution => "process_clr_only__not_per_method";
     public int ExceptionThrows { get; init; }
+    public int ExceptionKindsRetained { get; init; }
     public IReadOnlyList<RuntimeExceptionType> ExceptionTypes { get; init; } = [];
     public bool ExceptionTypeListTruncated { get; init; }
 }
@@ -161,6 +162,7 @@ public static class DynamicTraceDiagnosisBuilder
             r.IncompleteEvidence)
         {
             ExceptionThrows = r.ExceptionThrows,
+            ExceptionKindsRetained = r.ExceptionKindsRetained,
             ExceptionTypes = r.ExceptionTypes.Take(5).ToArray(),
             ExceptionTypeListTruncated = r.ExceptionTypeListTruncated || r.ExceptionTypes.Count > 5
         }).ToArray();

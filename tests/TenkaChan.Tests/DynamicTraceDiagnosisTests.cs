@@ -98,6 +98,7 @@ public sealed class DynamicTraceDiagnosisTests
         Assert.Contains("App.Work", runtime.AllocationTriggerTypes);
         Assert.Equal("process_clr_only__not_per_method", runtime.SourceAttribution);
         Assert.Equal(2, runtime.ExceptionThrows);
+        Assert.Equal(1, runtime.ExceptionKindsRetained);
         Assert.Equal(2, report.TotalExceptionThrows);
         Assert.False(report.ExceptionHotspotsTruncated);
         var hotspot = Assert.Single(report.ExceptionHotspots);
