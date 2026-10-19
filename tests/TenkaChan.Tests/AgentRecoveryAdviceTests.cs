@@ -70,6 +70,17 @@ public sealed class AgentRecoveryAdviceTests
         Assert.Contains("approved=true", hint.NextAction);
     }
     [Fact]
+    public void MissingCompileSourceHasDistinctRecoveryFromMissingProjectFile()
+    {
+        var hint = AgentRecoveryAdvice.ForFailure("open_project",
+            "FileNotFoundException: C# Compile source document is missing in project ILSpy");
+        Assert.Equal("missing_compile_document", hint.Code);
+        Assert.Contains("missing .cs source document", hint.NextAction);
+        Assert.Contains("explicit consent", hint.NextAction);
+        Assert.Contains("Do not silently ignore", hint.NextAction);
+    }
+
+    [Fact]
     public void AlreadyExecutedBenchmarkExplainsPrepareDirectlyToMeasure()
     {
         var advice = AgentRecoveryAdvice.ForFailure("measure_target",
