@@ -13,7 +13,7 @@ public sealed class ReviewProgressTools
         client.CallAsync("review_queue", new {snapshotId,state,kind,projectId,query,offset,limit,cursor,trackableOnly},cancellationToken);
 
     [McpServerTool(Name = "tenka_review_context")]
-    [Description("Resolve a persistent targetId to source details, snapshot/project/type/method IDs, review hashes/revision and bounded binary candidates in one snapshot-gated read. includeBinary=true inspects at most 8 discovered assemblies and returns at most 50 exact type/name candidates per assembly. Choose the intended signature/configuration and pass a candidate's arguments to tenka_il; no overload is chosen automatically and source/build identity is not proven. No build, reload or execution. Large results are available through tenka_read_result with the returned callId.")]
+    [Description("Resolve a durable targetId to source details, and fresh snapshot-specific typeId/methodId/projectId selection IDs, review hashes/revision and bounded binary candidates in one snapshot-gated read. includeBinary=true inspects at most 8 discovered assemblies and returns at most 50 exact type/name candidates per assembly. Choose the intended signature/configuration and pass a candidate's arguments to tenka_il; no overload is chosen automatically and source/build identity is not proven. No build, reload or execution. Large results are available through tenka_read_result with the returned callId.")]
     public static Task<string> ReviewContext(DashboardAgentClient client, string snapshotId, string targetId,
         bool includeBinary = true, CancellationToken cancellationToken = default) =>
         client.CallAsync("review_context", new {snapshotId,targetId,includeBinary},cancellationToken);

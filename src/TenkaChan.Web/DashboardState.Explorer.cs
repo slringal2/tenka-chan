@@ -42,6 +42,13 @@ public sealed partial class DashboardState
             snapshotId = index.SnapshotId, path = _path, projects = index.Projects,
             assemblies = ExplorerProjectActions.Assemblies(index, discovery),
             companions = ExplorerProjectActions.Companions(index, guard),
+            measurementWorkflow =
+                "Check companions[] for a benchmark whose ProjectReference reaches the chosen target. " +
+                "If none is present (common for ILSpy's 3-project analysis subset), " +
+                "use tenka_review_queue(kind=all) -> tenka_review_context(targetId) -> " +
+                "tenka_prepare_experiment(kind=benchmark) -> tenka_measure_target on the UNEXECUTED experiment. " +
+                "Do not call tenka_run_experiment first. All execution still requires explicit approval.",
+            selectionScope = "typeId/methodId/projectId are current-snapshot-only. Durable targetId is separately resolved by tenka_review_context.",
             capabilities = new
             {
                 build = guard.TrustMsBuild && Environment.GetEnvironmentVariable("TENKA_ENABLE_LOCAL_EXEC") == "1",

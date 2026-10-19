@@ -53,6 +53,16 @@ public static class AgentRecoveryAdvice
                 return new("experiment_session_mismatch", "Use an experimentId created in this session, or return to its original live session. Reconnecting does not transfer experiment ownership. Do not re-create or re-run generated code automatically to bypass this boundary.");
             return new("operation_not_authorized", "Check the specific permission or allowed workspace path named in the error. Do not weaken path restrictions or enable all execution switches. Ask the user to authorize only the intended operation.");
         }
+        if (tool is "inspect_type" or "inspect_method" or "type_references" or
+            "method_references" or "list_types" &&
+            text.Contains("selection is no longer available", StringComparison.OrdinalIgnoreCase))
+            return new("selection_expired",
+                "Source selection IDs (typeId/methodId/projectId) belong to the current loaded Roslyn snapshot, " +
+                "not to a durable review checkpoint. Call tenka_context to confirm server and snapshotId, " +
+                "then tenka_list_types for a fresh typeId and tenka_inspect_type for its methodIds. " +
+                "If you have a durable 64-hex targetId from tenka_review_queue, " +
+                "use tenka_review_context(targetId, current snapshotId) to retrieve new selection IDs. " +
+                "Never reuse IDs after a workspace reload or guess another type.");
         if (tool == "review_queue")
         {
             if (text.Contains("cursor", StringComparison.OrdinalIgnoreCase) || text.Contains("続き", StringComparison.Ordinal))

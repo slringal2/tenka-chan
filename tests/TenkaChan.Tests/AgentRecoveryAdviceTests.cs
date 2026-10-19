@@ -91,6 +91,17 @@ public sealed class AgentRecoveryAdviceTests
     }
 
     [Fact]
+    public void EphemeralTypeSelectionGivesExactReselectionRoute()
+    {
+        var advice = AgentRecoveryAdvice.ForFailure("inspect_type",
+            "KeyNotFoundException: Type selection is no longer available.");
+        Assert.Equal("selection_expired", advice.Code);
+        Assert.Contains("tenka_list_types", advice.NextAction);
+        Assert.Contains("tenka_review_context", advice.NextAction);
+        Assert.Contains("persistent", advice.NextAction, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void CancellationDoesNotImplyExecutionWasRolledBack()
     {
         var hint = AgentRecoveryAdvice.ForFailure("build", null, cancelled: true);

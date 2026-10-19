@@ -16,7 +16,7 @@ public sealed class DashboardAgentTools
         client.CallAsync("context", new { }, cancellationToken);
 
     [McpServerTool(Name = "tenka_sample")]
-    [Description("Locate a local sample: game-lab, raid-lab, or the acquired ILSpy OSS (ilspy). Returns paths only; no download, opening, building or execution.")]
+    [Description("Locate game-lab, raid-lab or ILSpy (ilspy) local samples; returns paths and workflow advice without execution. ILSpy.Analysis.slnx contains only three analysis projects and may have NO BenchmarkDotNet companion. When companions are absent, select target from review_queue, prepare a generated benchmark with tenka_prepare_experiment, then call tenka_measure_target DIRECTLY without run_experiment.")]
     public static Task<string> Sample(DashboardAgentClient client, string sample = "game-lab", CancellationToken cancellationToken = default) =>
         client.CallAsync("sample", new { sample }, cancellationToken);
 
@@ -26,12 +26,12 @@ public sealed class DashboardAgentTools
         client.CallAsync("open_project", new { path, expectedSnapshotId, approved }, cancellationToken);
 
     [McpServerTool(Name = "tenka_list_types")]
-    [Description("Browse/search semantic classes, partial/nested types, structs and interfaces in the current source snapshot. Use returned IDs.")]
+    [Description("Browse/search semantic classes, partial/nested types, structs and interfaces. Returned typeId/methodId/projectId are EPHEMERAL selection IDs for the currently loaded Roslyn snapshot and Web instance; pass the same snapshotId to the next inspection. After reload/reconnect check tenka_context and reselect. Durable review targetId (64 hex) comes from tenka_review_queue and is resolved with tenka_review_context.")]
     public static Task<string> ListTypes(DashboardAgentClient client, string snapshotId, string? projectId = null, string? query = null, int offset = 0, int limit = 80, CancellationToken cancellationToken = default) =>
         client.CallAsync("list_types", new { snapshotId, projectId, query, offset, limit }, cancellationToken);
 
     [McpServerTool(Name = "tenka_inspect_type")]
-    [Description("Read class structure, members, methods, source and existing findings. No target execution.")]
+    [Description("Read class structure, members, methods, source and findings. The typeId must come from tenka_list_types in the CURRENT loaded snapshot. If it is no longer available, refresh tenka_context/list_types; do not substitute a durable targetId here. No target execution.")]
     public static Task<string> InspectType(DashboardAgentClient client, string snapshotId, string typeId, CancellationToken cancellationToken = default) =>
         client.CallAsync("inspect_type", new { snapshotId, typeId }, cancellationToken);
 
@@ -41,7 +41,7 @@ public sealed class DashboardAgentTools
         client.CallAsync("type_references", new { snapshotId, typeId }, cancellationToken);
 
     [McpServerTool(Name = "tenka_inspect_method")]
-    [Description("Read method source, direct calls/callers, control flow, dataflow and compiler diagnostics.")]
+    [Description("Read method source, calls/callers, flow/dataflow and compiler diagnostics. The methodId is from the CURRENT loaded snapshot (tenka_inspect_type or review_context), not a persistent targetId. Refresh IDs after a reload or server restart.")]
     public static Task<string> InspectMethod(DashboardAgentClient client, string snapshotId, string methodId, CancellationToken cancellationToken = default) =>
         client.CallAsync("inspect_method", new { snapshotId, methodId }, cancellationToken);
 

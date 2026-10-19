@@ -2,7 +2,15 @@ namespace TenkaChan.Mcp.Security;
 
 public sealed record LargeOssSampleInfo(bool Available, string Message, string? ProjectPath = null,
     string? EntryProjectPath = null, string? FullSolutionPath = null, string? AssemblyPath = null,
-    bool AssemblyExists = false, int ProjectCount = 3);
+    bool AssemblyExists = false, int ProjectCount = 3)
+{
+    public string MeasurementGuidance =>
+        "ILSpy.Analysis.slnx loads 3 analysis projects only; it may have no BenchmarkDotNet companion. " +
+        "Inspect tenka_context.companions. If none match, use tenka_review_queue -> tenka_review_context " +
+        "to select a target, then tenka_prepare_experiment(kind=benchmark) -> " +
+        "tenka_measure_target on the UNEXECUTED experiment. Do not run_experiment first. " +
+        "Target execution requires explicit host permission and user approval.";
+}
 
 /// <summary>Fixed local paths only. Does not download, start Git/MSBuild, or expand allowed roots.</summary>
 public sealed class LargeOssSampleCatalog(WorkspaceGuard guard)

@@ -172,6 +172,8 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
                 return new { instanceId = journal.InstanceId, workspace, overview,
                     permissions = new { build = policy.AllowBuild, execution = policy.AllowExecution },
                     session = SessionStatus(session),
+                    selectionIds = "typeId/methodId/projectId are ephemeral to the current loaded snapshot. Requery tenka_context/list_types after reload; durable review targetId comes from tenka_review_queue and is resolved by tenka_review_context.",
+                    measurementWorkflow = "If workspace.companions has no matching BenchmarkDotNet companion (e.g. partial ILSpy solution), use prepare_experiment(kind=benchmark) -> measure_target directly on an unexecuted experiment. Explicit approval is always required.",
                     workflow = "Inspect context -> tenka_review_queue (kind=all; inspect coverage) -> tenka_review_context by targetId -> inspect references and choose the exact IL candidate -> request authorized execution -> read actual results -> report a qualified conclusion. Use tenka_approve_session only for user-agreed repeated project operations, and tenka_attach_workspace to reuse the loaded workspace without reopening it. Always refresh context after a build. Record checked/optimized checkpoints only after completing the work; these are agent reports, not verified speedups. No model endpoint is configured in Tenka." };
             }
             case "sample":
