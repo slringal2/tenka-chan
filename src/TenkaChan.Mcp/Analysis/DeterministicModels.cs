@@ -34,6 +34,9 @@ public sealed record DeterministicAnalysisSummary(
 {
     public int ProjectAnalyzerDiagnostics { get; init; }
     public int ProjectAnalyzersExecuted { get; init; }
+    public string CompilerDiagnosticsScope => CompilerDiagnosticContext.Scope;
+    public IReadOnlyList<CompilerDiagnosticCodeCount> TopCompilerErrorCodes { get; init; } = [];
+    public int PotentialReferenceResolutionErrors { get; init; }
 }
 
 public sealed record DeterministicAnalysisReport(

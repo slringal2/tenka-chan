@@ -86,7 +86,14 @@ public sealed partial class DashboardState
         _findings = findings; _diagnostics = diagnostics; _deterministic = deterministic; _hotspots = hotspots;
         _lastScanned = DateTimeOffset.UtcNow;
         return new { summary = deterministic.Summary, findings = deterministic.Findings,
-            methods = deterministic.MethodMetrics, hotspots, note = "静的な調査候補です。実測時間やバグの確定ではありません。表示上限はsummaryを確認してください。" };
+            methods = deterministic.MethodMetrics, hotspots,
+            compilation = new {
+                diagnostics.Scope, diagnostics.ErrorCount,
+                diagnostics.WarningCount, diagnostics.InformationCount,
+                diagnostics.PotentialReferenceResolutionErrors,
+                diagnostics.TopErrorCodes, diagnostics.Interpretation
+            },
+            note = "Compiler errors are from the loaded Roslyn graph, not a verified build. A partial .slnx may have missing references; see compilation.topErrorCodes and compilation.interpretation before treating errors as defects." };
     }
 
     public void InvalidateExplorerReports()

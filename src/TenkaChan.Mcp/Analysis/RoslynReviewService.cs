@@ -317,6 +317,7 @@ public sealed partial class RoslynReviewService : IDisposable
         var compilerErrors = 0;
         var compilerWarnings = 0;
         var compilerInfos = 0;
+        var compilerErrorsById = new Dictionary<string, int>(StringComparer.Ordinal);
         var projectAnalyzerDiagnostics = 0;
         var projectAnalyzersExecuted = 0;
         var additionalNotes = new List<string>();
@@ -413,7 +414,11 @@ public sealed partial class RoslynReviewService : IDisposable
             foreach (var diagnostic in compilation.GetDiagnostics(ct))
             {
                 ct.ThrowIfCancellationRequested();
-                if (diagnostic.Severity == DiagnosticSeverity.Error) compilerErrors++;
+                if (diagnostic.Severity == DiagnosticSeverity.Error)
+                {
+                    compilerErrors++;
+                    compilerErrorsById[diagnostic.Id] = compilerErrorsById.GetValueOrDefault(diagnostic.Id) + 1;
+                }
                 else if (diagnostic.Severity == DiagnosticSeverity.Warning) compilerWarnings++;
                 else compilerInfos++;
 
@@ -497,6 +502,7 @@ public sealed partial class RoslynReviewService : IDisposable
             incompleteRuleScanning,
             new string[]
             {
+                CompilerDiagnosticContext.Interpretation,
                 "Compiler diagnostics are compilation facts; rules describe candidates or language semantics, not proven application bugs.",
                 "Complexity scores are syntax heuristics; CFG metrics are optional and do not represent runtime hotness.",
                 "Findings use stable fingerprints for identical project-relative code and rule versions; snapshot IDs are session-specific.",
@@ -506,7 +512,9 @@ public sealed partial class RoslynReviewService : IDisposable
             }.Concat(additionalNotes).ToArray())
         {
             ProjectAnalyzerDiagnostics = projectAnalyzerDiagnostics,
-            ProjectAnalyzersExecuted = projectAnalyzersExecuted
+            ProjectAnalyzersExecuted = projectAnalyzersExecuted,
+            TopCompilerErrorCodes = CompilerDiagnosticContext.TopErrorCodes(compilerErrorsById),
+            PotentialReferenceResolutionErrors = CompilerDiagnosticContext.PotentialReferenceResolutionErrors(compilerErrorsById)
         };
         return new DeterministicAnalysisReport(
             summary, ordered.Take(findingLimit).ToArray(), metrics);
@@ -611,6 +619,7 @@ public sealed partial class RoslynReviewService : IDisposable
         EnsureOpen();
         var returned = new List<CompilationDiagnostic>();
         var errorCount = 0;
+        var errorsById = new Dictionary<string, int>(StringComparer.Ordinal);
         var warningCount = 0;
         var infoCount = 0;
         var take = Math.Clamp(limit, 1, 2000);
@@ -622,7 +631,11 @@ public sealed partial class RoslynReviewService : IDisposable
             if (compilation is null) continue;
             foreach (var diagnostic in compilation.GetDiagnostics(ct))
             {
-                if (diagnostic.Severity == DiagnosticSeverity.Error) errorCount++;
+                if (diagnostic.Severity == DiagnosticSeverity.Error)
+                {
+                    errorCount++;
+                    errorsById[diagnostic.Id] = errorsById.GetValueOrDefault(diagnostic.Id) + 1;
+                }
                 else if (diagnostic.Severity == DiagnosticSeverity.Warning) warningCount++;
                 else infoCount++;
 
@@ -637,7 +650,11 @@ public sealed partial class RoslynReviewService : IDisposable
             }
         }
         return new CompilationDiagnosticsReport(
-            errorCount, warningCount, infoCount, returned.Count, returned);
+            errorCount, warningCount, infoCount, returned.Count, returned)
+        {
+            TopErrorCodes = CompilerDiagnosticContext.TopErrorCodes(errorsById),
+            PotentialReferenceResolutionErrors = CompilerDiagnosticContext.PotentialReferenceResolutionErrors(errorsById)
+        };
     }
 
     public async Task<IReadOnlyList<ReferenceHit>> FindReferencesAsync(
