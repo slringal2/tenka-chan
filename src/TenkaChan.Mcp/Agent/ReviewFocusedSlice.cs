@@ -96,6 +96,8 @@ public static class ReviewFocusedSlices
             state.ContextChange?.ChangedComponents ?? [],
             state.RequiresReload
                 ? "Files changed since this Roslyn snapshot. Ask for explicit reload_workspace approval, then refresh snapshotId/targetId and re-inspect before recording a mark."
+                : state.ContextChange?.Status == "context_unavailable"
+                    ? "Reference/project context is incomplete. Resolve the intended references and explicitly reload before recording any mark. Do not trust missing diagnostic groups as clean."
                 : sourceOffset + length < text.Length
                     ? "Continue with tenka_review_focus using the SAME snapshotId/targetId and sourceOffset=" + (sourceOffset + length) +
                       ". No experiment, build or additional inspect_method call is required."

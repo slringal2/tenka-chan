@@ -115,6 +115,21 @@ public sealed class ReviewFocusedSliceTests
     }
 
     [Fact]
+    public void IncompleteReferenceContextNeverSuggestsMarkingAsChecked()
+    {
+        var (tracked, state, method, inspection) = Fixture("source");
+        var unavailable = state with
+        {
+            ContextChange = new ReviewContextChange("context_unavailable", 2, 2,
+                ["metadataReferences"], "Unresolved dependency")
+        };
+        var result = ReviewFocusedSlices.Build("snapshot", tracked,
+            unavailable, method, inspection);
+        Assert.Contains("context is incomplete", result.NextAction);
+        Assert.DoesNotContain("tenka_mark_review", result.NextAction);
+    }
+
+    [Fact]
     public void StaleSourceRequiresExplicitApprovedReloadBeforeMark()
     {
         var (tracked, state, method, inspection) = Fixture("source");
