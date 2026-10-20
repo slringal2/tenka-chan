@@ -18,6 +18,11 @@ Roslyn、IL/PDB、JIT機械語、プロファイル、テスト・ベンチマ�
 Windowsでは本体フォルダーの **`setup.bat`** を実行してください。
 .NET 10 SDK、本体の依存関係、計測ツール、解析を許可するフォルダーを案内します。
 次回からは **`start.bat`** です。通常利用にDocker・Node.js・Pythonは不要です。
+実際の起動経路（Releaseビルド・Web loopback・MCP接続）を確認するときは、
+**`verify-start.bat`** を実行してください。保存済み設定で一時起動して
+認証つきの接続テストを行い、検証用プロセスだけを終了します。
+初回設定とパッケージ復元は行いません。詳しくは
+[実起動検証手順](docs/windows-startup-smoke.md)を参照してください。
 
 セットアップが表示する **`mcp-config.json` を外部クライアント側に登録**します。
 実際のDLL・接続ファイルのパスは自動入力されます。
@@ -76,7 +81,8 @@ ILSpyは固定コミットから取得し、ソースを甜花ちゃん向けに
 
 ## 外部エージェントのツール
 
-現在の公開ツールは36個です。旧`workspace_open`や内蔵レビュー起動ツールではなく、次の`tenka_*`を使います。
+現行のMCP公開ツールは**44個**です（4クラスの`McpServerTool`宣言を確認）。
+旧`workspace_open`や内蔵レビュー起動ツールではなく、次の`tenka_*`を使います。
 
 | 領域 | 公開ツール |
 |---|---|
@@ -84,9 +90,10 @@ ILSpyは固定コミットから取得し、ソースを甜花ちゃん向けに
 | コード | `tenka_list_types` / `tenka_inspect_type` / `tenka_type_references` / `tenka_inspect_method` / `tenka_method_references` |
 | 静的解析 | `tenka_scan` / `tenka_rules` / `tenka_priorities` / `tenka_test_inputs` |
 | IL・JIT | `tenka_binary_methods` / `tenka_il` / `tenka_jit` / `tenka_artifact` / `tenka_native` / `tenka_compare_native` |
-| ビルド・計測 | `tenka_build` / `tenka_trace` / `tenka_import_thread` / `tenka_runtime_costs` / `tenka_run_companion` |
+| ビルド・計測 | `tenka_build` / `tenka_trace` / `tenka_import_thread` / `tenka_runtime_costs` / `tenka_run_companion` / `tenka_measure_companion` / `tenka_measure_target` |
 | 生成実験 | `tenka_prepare_experiment` / `tenka_run_experiment` / `tenka_experiment_result` / `tenka_compare_benchmarks` |
-| 確認・差分 | `tenka_review_queue` / `tenka_review_target` / `tenka_mark_review` / `tenka_review_diff` / `tenka_review_history` |
+| 確認・差分 | `tenka_review_queue` / `tenka_review_context` / `tenka_review_target` / `tenka_mark_review` / `tenka_review_diff` / `tenka_review_history` |
+| 調査セッション・承認 | `tenka_investigation` / `tenka_approve_session` / `tenka_revoke_approval` / `tenka_session_status` / `tenka_attach_workspace` |
 | 報告・結果 | `tenka_note` / `tenka_read_result` |
 
 複数のMCPアダプターも、起動中の同じWebプロセスの`DashboardState`を利用します。
