@@ -99,7 +99,9 @@ public static class ReviewFocusedSlices
                 : sourceOffset + length < text.Length
                     ? "Continue with tenka_review_focus using the SAME snapshotId/targetId and sourceOffset=" + (sourceOffset + length) +
                       ". No experiment, build or additional inspect_method call is required."
-                    : "Inspection content is complete for this tracked source. Review markBasis sourceHash/contextHash and expectedRevision again before tenka_mark_review; an agent-reported checked mark is not a proof of correctness.");
+                    : !target.Trackable
+                        ? "Tracked source inspection is complete but this target cannot be marked individually. Check the target's unavailableReason and coverage; do not force a review mark."
+                        : "Inspection source is complete. Use the returned sourceHash, contextHash and expectedRevision for tenka_mark_review only after checking content and current context; checked is an agent statement, not proof of correctness.");
     }
 
     private static ReviewFocusedAnalysis BoundedAnalysis(MethodInspection info)

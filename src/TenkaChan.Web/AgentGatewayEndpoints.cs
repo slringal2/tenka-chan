@@ -147,8 +147,16 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
             case "revoke_approval": return new { status = "session_approval_revoked", revoked = _approvals.Revoke(session) };
             case "session_status": return SessionStatus(session);
             case "attach_workspace": return await dashboard.ExplorerContextAsync(guard, discovery, ct, Str(a, "path"));
-            case "review_queue": return await Get<ReviewTrackingService>().Queue(Str(a,"snapshotId"), Optional(a,"projectId"),
-                Optional(a,"kind")??ReviewQueueViews.DefaultKind, Optional(a,"state")??"pending", Optional(a,"query"),Number(a,"offset"),Number(a,"limit",20),ct,Optional(a,"cursor"),Bool(a,"trackableOnly"));
+            case "review_queue":
+            {
+                var kind = Optional(a, "kind") ?? ReviewQueueViews.DefaultKind;
+                var state = Optional(a, "state") ?? "pending";
+                // Reject kind=pending before a 14k-method review-catalog scan.
+                ReviewQueueViews.ValidateFilters(kind, state);
+                return await Get<ReviewTrackingService>().Queue(Str(a,"snapshotId"), Optional(a,"projectId"),
+                    kind, state, Optional(a,"query"), Number(a,"offset"), Number(a,"limit",20), ct,
+                    Optional(a,"cursor"), Bool(a,"trackableOnly"));
+            }
             case "review_context": return await ReviewContextReader.ReadAsync(dashboard, guard, discovery,
                 Get<ReviewProgressStore>(), Str(a,"snapshotId"), Str(a,"targetId"), Bool(a,"includeBinary",true), ct);
             case "review_focus": return await ReviewFocusReader.ReadAsync(dashboard, guard,

@@ -25,6 +25,12 @@ public sealed record ReviewQueueView(string SnapshotId, int Total, int Offset,
 public static class ReviewQueueViews
 {
     public const string DefaultKind = "all";
+
+    public static void ValidateFilters(string kind, string state)
+    {
+        ValidateFilters(kind, state);
+    }
+
     public static ReviewQueueView Build(string snapshotId, IReadOnlyList<ReviewQueueItem> allRows,
         string? project = null, string? kind = null, string state = "pending", string? query = null,
         int offset = 0, int limit = 50, string? cursor = null, bool trackableOnly = false, bool limited = false)
