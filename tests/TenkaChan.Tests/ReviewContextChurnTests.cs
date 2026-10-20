@@ -156,6 +156,24 @@ public sealed class ReviewContextChurnTests : IDisposable
         Assert.Equal("generatedSources", Assert.Single(state.ContextChange!.ChangedComponents));
     }
     [Fact]
+    public async Task WhitespaceOnlyFileEditChangesContextWithoutPretendingBehaviorChanged()
+    {
+        const string before = "class C { public int M()=>1; public int N()=>1; }";
+        const string after = "class C { public int M()=>1; public int N()=>1; } ";
+        var a = await Catalog("original", code: before);
+        var b = await Catalog("whitespace-edit", code: after);
+        var state = ReviewProgress.State(b, Mark(a), false);
+        Assert.Equal(a.Id, b.Id);
+        Assert.Equal(a.SourceHash, b.SourceHash); // M itself did not change.
+        Assert.True(state.ContextChanged);
+        Assert.False(state.SourceChanged);
+        Assert.Equal("needs_review", state.Status);
+        Assert.Contains("sourceFiles", state.ContextChange!.ChangedComponents);
+        Assert.Contains("Whitespace-only", state.ContextChange.HashSemantics);
+        Assert.Contains("whitespace-only", state.ContextChange.Note);
+    }
+
+    [Fact]
     public async Task AnotherMethodChangeRemainsConservativeAndRemarkCanBecomeStable()
     {
         var a = await Catalog("one");
