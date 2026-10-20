@@ -7,7 +7,7 @@ namespace TenkaChan.Mcp.Agent;
 public sealed class ReviewProgressTools
 {
     [McpServerTool(Name = "tenka_review_queue")]
-    [Description("Find unreviewed or changed classes/methods before repeating work. Persistent checkpoints survive server restarts. state=pending|all|unreviewed|needs_review|checked|optimized; kind=all (default)|method|type. coverage always includes the entire loaded index; check pendingHiddenByFilters and pending type counts even when items is empty. Use tenka_review_context with a targetId to obtain source IDs and ready-to-use IL candidate arguments. Context changes conservatively require recheck; requiresReload means reopen the project first. Use returned nextCursor as cursor with offset=0 to continue while marking earlier targets; never increment offsets in a shrinking pending set. trackableOnly filters unsupported individual marks, not verified work. Check pending from the beginning after a pass; hasMore=false does not prove whole-codebase coverage.")]
+    [Description("Find unreviewed or changed classes/methods before repeating work. Persistent checkpoints survive server restarts. state=pending|all|unreviewed|needs_review|checked|optimized; kind=all (default)|method|type. coverage always includes the entire loaded index; check pendingHiddenByFilters and pending type counts even when items is empty. Use tenka_review_focus with durable targetId to read source and bounded inspection in one call; use tenka_review_context only for detailed binary/IL candidate discovery. Context changes conservatively require recheck; requiresReload means reopen the project first. Use returned nextCursor as cursor with offset=0 to continue while marking earlier targets; never increment offsets in a shrinking pending set. trackableOnly filters unsupported individual marks, not verified work. Check pending from the beginning after a pass; hasMore=false does not prove whole-codebase coverage.")]
     public static Task<string> ReviewQueue(DashboardAgentClient client, string snapshotId, string state = "pending", string kind = ReviewQueueViews.DefaultKind,
         string? projectId = null, string? query = null, int offset = 0, int limit = 20, string? cursor = null, bool trackableOnly = false, CancellationToken cancellationToken = default) =>
         client.CallAsync("review_queue", new {snapshotId,state,kind,projectId,query,offset,limit,cursor,trackableOnly},cancellationToken);
@@ -17,6 +17,13 @@ public sealed class ReviewProgressTools
     public static Task<string> ReviewContext(DashboardAgentClient client, string snapshotId, string targetId,
         bool includeBinary = true, CancellationToken cancellationToken = default) =>
         client.CallAsync("review_context", new {snapshotId,targetId,includeBinary},cancellationToken);
+
+    [McpServerTool(Name = "tenka_review_focus")]
+    [Description("ONE-call bounded review from a DURABLE 64-hex targetId and current snapshotId. Returns source text directly as data.source, tracked sourceHash/contextHash/expectedRevision, review state and bounded callers/callees/CFG/diagnostic summary WITHOUT requiring review_context -> selection -> inspect_method -> read_result. Default sourceLimit=12000 characters; if sourceHasMore, call again with next sourceOffset. Supports sourceLimit=1..16000. No binary lookup or target execution. typeId/methodId remain snapshot-specific; sourceHash and contextHash include whitespace (context covers source files). Existing marks and optimistic conflicts are unchanged.")]
+    public static Task<string> ReviewFocus(DashboardAgentClient client, string snapshotId, string targetId,
+        int sourceOffset = 0, int sourceLimit = ReviewFocusedSlices.DefaultSourceLimit,
+        CancellationToken cancellationToken = default) =>
+        client.CallAsync("review_focus", new {snapshotId,targetId,sourceOffset,sourceLimit}, cancellationToken);
 
     [McpServerTool(Name = "tenka_review_target")]
     [Description("Read a target's persistent review state, source/context hashes, latest revision and history. Use these exact hashes and revision for tenka_mark_review; source selection IDs remain snapshot-specific.")]

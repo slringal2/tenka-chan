@@ -90,7 +90,7 @@ public static class AgentRecoveryAdvice
             return new("review_mark_rejected", "Call tenka_review_target for the intended target and snapshot. Reinspect changed source/context before using its current hashes and revision; use only completed evidenceCallIds from this session or its explicitly resumed investigation. Do not copy an old checked/optimized claim onto new code.");
         if (tool is "il" or "binary_methods")
             return new("binary_selection_invalid", "Use tenka_review_context for the intended target, or tenka_binary_methods with current snapshotId/methodId/assemblyId. Choose the exact signature and pass its metadataToken and assemblySha256 to tenka_il. After a build, refresh snapshot IDs; never guess a token or reuse a stale hash.");
-        if (tool is "review_context" or "review_target" or "review_history" or "review_diff")
+        if (tool is "review_context" or "review_focus" or "review_target" or "review_history" or "review_diff")
             return new("review_target_unavailable", "Refresh tenka_context and tenka_review_queue, kind=all, to obtain the current snapshotId and intended targetId. If source changed, reload only with approval. Use exact saved revision numbers for history/diff; do not substitute another target.");
         if (tool == "read_result")
             return new("result_unavailable",
