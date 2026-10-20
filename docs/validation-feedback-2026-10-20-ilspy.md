@@ -64,3 +64,26 @@
   - 実測・証跡 14/15（生成ベンチマークで baseline を実測。候補は未実施）。
   - エラー診断・回復 12/15（誤誘導メッセージ・セッション制約・実行順の摩擦）。
   - 納品品質（ビルド/テスト）12/20（同梱のままでは実在の大規模OSSサンプルを開けず、ローカル修正を要した）。
+
+## 追記: 再起動を跨ぐ実地検証（ラウンド 4.1）
+
+対象を開き直して（snapshot `b180abfa…` → 空白変更後 `670c2317…` → 復元後 `f1be736d…`）、レビュー記録の永続性と無効化を実地確認した。
+
+- **マークは再起動・再オープンを跨いで永続**: サーバー再起動＋新スナップショットでも、durable な `targetId` で `tenka_review_history` が rev4（`DecompileTypeAsString`, checked）と rev5（`CollectNamespaces`, checked）を返した。
+- **状態フィルタ**: `review_queue` は all 14,667 / pending 14,665 / checked 2。マーク済みが pending から正しく除外される。
+- **楽観的同時実行**: 古い `expectedRevision` での `tenka_mark_review` は `ReviewConflictException`（「別のエージェントが記録を更新しました…上書きはしていません」）で拒否され、再取得の案内が返る。
+- **無効化**: サンプルの空白のみの変更 → 再オープンで `needs_review` / `reason=source_changed`（revision は 5 のまま）。元に戻して再オープンすると `checked` / `current` に復帰。変更は復元済み（作業ツリー clean）。
+- **実レビュー**: hotspot 2 位の `RequiredNamespaceCollector.CollectNamespaces(IEntity, MetadataModule, CodeMappingInfo)` を精査（callees 19 / callers 3 / blocks 101）し、rev5 で `checked` 記録。
+  - 候補として「partial method で `HasBody` 判定と parts の本文取得が不一致 → 名前空間欠落」を疑ったが、`CodeMappingInfo.GetMethodParts` はラムダ/状態機械の parts 用で、partial は別 MethodDef として個別に処理される。partial method を含むアセンブリを ILSpyCmd で逆コンパイルし、実装本体の `using System.Text;` が出ることを確認 → **偽陽性**（欠落なし）。
+  - 残る軽微点: `HasBody` は親 `IMethod` で判定し本文は各 `part` の `MethodDefinition` から取得する非対称。現状は RVA 0 を `BadImageFormatException` で握っており実害は無いが、意図をコメントで補うと読みやすい。
+- **2件目**: hotspot 1 位の `TranslatedExpression.ConvertTo(IType, ExpressionBuilder, bool, bool)`（388 行）を精査し rev6 で `checked`。末尾の `NormalizeTypeVisitor.IgnoreNullabilityAndTuples.EquivalentTypes` 再チェックは、冒頭で同条件なら必ず `this` を返すため**到達不能**（無害な重複）。ほかに IntPtr/UIntPtr 変換ブロックの重複、char↔pointer 条件の `&&`/`||` 混在を指摘（いずれも挙動変更なし）。
+
+### 追加のフィードバック
+7. **引数名の紛らわしさ**: キューの状態は `state=pending` で、`kind=pending` は `ArgumentException: Invalid review filter.`。エラー文の案内は的確だが「kind に pending を渡しがち」なので、`kind` の許容値（all|type|method）をエラー文の先頭に出すとより親切。
+8. **MCP に reload 導線が無い**: ソース変更後の再読込は `tenka_open_project` に現 `expectedSnapshotId` と `approved=true` を渡す必要がある。`tenka_reload_workspace`（承認必須）があると明確。
+9. **空白のみの変更で `contextChanged=true`**: `sourceChanged` と同時に context も変わった扱いになる。仕様なら「context はソース本文を含む」旨の注記を、そうでなければ fingerprint の正規化を検討。
+10. **結果エンベロープの形がツール毎に異なる**: `inspect_method` のソースは `data.inspection.source`、`review_context` は `data.source`。`mcpctl` の capture パスを書く際に試行錯誤が必要だった（自動判定できると良い）。
+11. **大結果時の `read_result` 連結が深い**: 対象メソッドが大きいと `review_context` / `inspect_method` / `read_result /inspection` がすべて `data=null` になり、同一セッション内で `selection` → `methodId` → `inspection` → `data/source` と 4〜5 段連結する必要がある。入れ子が `data.data` になる点も含め、`/source` や `/inspection/source` を直接指定できると短くなる。
+
+### スコア更新
+- 永続性・無効化・競合検出の実地確認を加点し、総合 **86 / 100**（エラー診断・回復 12→13。他は据え置き: 機能・ワークフロー 27、多プロジェクト 20、実測・証跡 14、納品品質 12）。
