@@ -65,7 +65,7 @@ public static class ReviewQueueViews
             total.Pending > 0, reload, status, new(snapshotId),
             reload ? "Reload the source workspace with approval, then use the NEW snapshotId with tenka_review_queue, kind=all, state=pending, no cursor or other filters. Do not mark stale work complete." :
             total.Pending > visiblePending ? "Pending targets are hidden by filters. Call tenka_review_queue with coverage.restart, clearing projectId, query and cursor; do not infer completion from this page." :
-            total.Pending > 0 ? "Continue with nextCursor and offset=0. After the pass, call tenka_review_queue with coverage.restart; type and method checkpoints are independent." :
+            total.Pending > 0 ? "For each item use tenka_review_focus(snapshotId,targetId) to read the bounded tracked source and analysis without intermediate typeId/methodId calls. Continue the queue with nextCursor and offset=0. After the pass, call tenka_review_queue with coverage.restart; type and method checkpoints are independent." :
             "There are no pending checkpoints in the loaded index only. Check index limits and unsupported coverage; checked/optimized are not proof of correctness or speedup.");
         return new(snapshotId, page.Total, page.Offset, page.Items.Select(ReviewContextFingerprints.CompactForQueue).ToArray(), page.NextCursor, page.HasMore,
             "stable_project_name_target_id", Count(scoped), scoped.Any(r => r.State.RequiresReload), limited,

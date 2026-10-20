@@ -86,6 +86,7 @@ public sealed class AgentWorkflowGatewayTests : IDisposable
         Assert.Equal(JsonValueKind.Null, reply.Data!.Value.GetProperty("workspace").ValueKind);
         Assert.False(reply.Data.Value.GetProperty("overview").GetProperty("loaded").GetBoolean());
         Assert.True(reply.Data.Value.TryGetProperty("session", out _));
+        Assert.Contains("tenka_review_focus", reply.Data.Value.GetProperty("workflow").GetString());
     }
     [Fact]
     public async Task RevocationIsIdempotentAndDuplicateRequestIsNotExecutedTwice()

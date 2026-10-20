@@ -42,6 +42,11 @@ public sealed partial class DashboardState
             snapshotId = index.SnapshotId, path = _path, projects = index.Projects,
             assemblies = ExplorerProjectActions.Assemblies(index, discovery),
             companions = ExplorerProjectActions.Companions(index, guard),
+            reviewWorkflow =
+                "Use tenka_review_queue(kind=all,state=pending) -> tenka_review_focus(snapshotId,durable targetId) " +
+                "for bounded source and analysis in one call. Add sourceOffset when sourceHasMore. " +
+                "Use review_context(includeBinary=true) only for IL candidates. " +
+                "After source changes, explicitly approve reload_workspace with current snapshotId.",
             measurementWorkflow =
                 "Check companions[] for a benchmark whose ProjectReference reaches the chosen target. " +
                 "If none is present (common for ILSpy's 3-project analysis subset), " +
