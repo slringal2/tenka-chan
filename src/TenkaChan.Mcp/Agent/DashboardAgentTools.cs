@@ -157,7 +157,7 @@ public sealed class DashboardAgentTools
         client.CallAsync("note", new { kind, message, evidenceCallIds }, cancellationToken);
 
     [McpServerTool(Name = "tenka_read_result")]
-    [Description("Read a prior tool result using callId and JSON pointer. Results >60KB (data=null) are paged ONLY in the SAME live MCP transport session and lost on disconnect/server restart; do not use an ID from another adapter session. Small retained receipts can be read after explicitly resuming the owning investigation; the large paged data itself is not durable. Do not rerun execution merely to retrieve output.")]
+    [Description("Read a prior tool result using callId and JSON pointer. For a retained review_context or inspect_method response, pointer=/source returns paged data.source directly (offset is character offset, limit is 200-character blocks, max 16000); the existing /inspection/source pointer also remains supported. Prefer tenka_review_focus with snapshotId+durable targetId for full tracked source and analysis in one call. Results >60KB (data=null) are paged ONLY in the SAME live MCP transport session and lost on disconnect/server restart; do not use an ID from another adapter session. Small retained receipts can be read after explicitly resuming the owning investigation; the large paged data itself is not durable. Do not rerun execution merely to retrieve output.")]
     public static Task<string> ReadResult(DashboardAgentClient client, string callId, string pointer = "", int offset = 0, int limit = 30, CancellationToken cancellationToken = default) =>
         client.CallAsync("read_result", new { callId, pointer, offset, limit }, cancellationToken);
 

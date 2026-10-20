@@ -104,7 +104,7 @@ public sealed class AgentJournal
             c.Reply = new(c.Id, cancelled ? "cancelled" : error is null ? "returned" : "failed",
                 observed, snapshot, error is null ? null : Text(error.Length <= 1200 ? error : error[..1200], 1200),
                 size <= 60000 ? json : null, c.Result.HasValue, fields)
-            { NextAction = size > 60000 ? LargeResultNextAction(json, c.Result.HasValue, c.Id) : null };
+            { NextAction = size > 60000 ? LargeResultNextAction(c.Tool, json, c.Result.HasValue, c.Id) : null };
             Event(s.Id, c.Id, c.Reply.Outcome == "returned" ? "tool_result" : c.Reply.Outcome,
                 c.Tool, error is not null ? Text(error.Length <= 1200 ? error : error[..1200], 1200) : size > MaxResultBytes
                     ? "結果が保存上限を超えました。表示範囲を絞って再調査してください。"
@@ -121,6 +121,24 @@ public sealed class AgentJournal
             if (!_calls.TryGetValue(callId, out var c) || c.SessionId != sessionId)
                 throw new KeyNotFoundException("Result does not belong to this agent session.");
             if (c.Result is not JsonElement value) throw new KeyNotFoundException("Result is running, expired, or exceeded the storage limit.");
+            // Short, direct read for common oversized method payloads:
+            // AgentReply.Data.source, not AgentReply.Data.data.source.
+            // Only existing saved result objects are inspected. For method
+            // source >20k, use review_focus to page full tracked source.
+            if (pointer == "/source" && TryMethodSource(c.Tool, value, out var sourceText))
+            {
+                if (offset > sourceText.Length)
+                    throw new ArgumentOutOfRangeException(nameof(offset), "source offset exceeds captured text.");
+                var take = Math.Min(16000, limit * 200);
+                var size = Math.Min(take, sourceText.Length - offset);
+                return new
+                {
+                    callId, pointer, source = sourceText.Substring(offset, size),
+                    sourceOffset = offset, sourceTotalChars = sourceText.Length,
+                    sourceHasMore = offset + size < sourceText.Length,
+                    note = "This is captured display source. For complete durable tracked source beyond inspector truncation, call tenka_review_focus with current snapshotId and durable targetId."
+                };
+            }
             if (pointer.Length > 0)
             {
                 if (!pointer.StartsWith('/')) throw new ArgumentException("Use a JSON pointer such as /findings.");
@@ -199,10 +217,47 @@ public sealed class AgentJournal
     /// Large results are retained separately from their small MCP reply. Return a
     /// concrete read-result recipe without replaying an executable operation.
     /// </summary>
-    private static string LargeResultNextAction(JsonElement data, bool retained, string callId)
+    private static bool TryMethodSource(string tool, JsonElement root, out string source)
+    {
+        source = "";
+        if (root.ValueKind != JsonValueKind.Object) return false;
+        JsonElement leaf;
+        if (tool == "review_context")
+        {
+            if (!root.TryGetProperty("source", out var wrapped) ||
+                wrapped.ValueKind != JsonValueKind.Object ||
+                !wrapped.TryGetProperty("inspection", out var inspection) ||
+                inspection.ValueKind != JsonValueKind.Object ||
+                !inspection.TryGetProperty("source", out leaf) ||
+                leaf.ValueKind != JsonValueKind.String) return false;
+        }
+        else if (tool == "inspect_method")
+        {
+            if (!root.TryGetProperty("inspection", out var inspection) ||
+                inspection.ValueKind != JsonValueKind.Object ||
+                !inspection.TryGetProperty("source", out leaf) ||
+                leaf.ValueKind != JsonValueKind.String) return false;
+        }
+        else if (tool == "review_focus")
+        {
+            if (!root.TryGetProperty("source", out leaf) ||
+                leaf.ValueKind != JsonValueKind.String) return false;
+        }
+        else return false;
+        source = leaf.GetString() ?? "";
+        return true;
+    }
+
+    private static string LargeResultNextAction(string tool, JsonElement data, bool retained, string callId)
     {
         if (!retained)
             return "The result exceeded local retention limits. There is no paged copy available in any session. Do not replay builds, tests or measurements to retrieve output. For read-only queries, narrow the filter and limit in a new call.";
+        if (tool is "review_context" or "inspect_method")
+            return $"Large inspection retained in this SAME live MCP transport session. " +
+                $"Call tenka_read_result with callId={callId}, pointer=/source, offset=0, limit=30 " +
+                "to get a short data.source chunk (not data.data.source); then increase offset. " +
+                "Prefer tenka_review_focus(snapshotId,targetId) for one-call tracked source, inspection summary and mark hashes. " +
+                "Large result memory is not carried across MCP disconnect/restart. Never rerun execution to retrieve this result.";
         if (data.ValueKind == JsonValueKind.Object)
             foreach (var field in new[] { "items", "findings", "methods", "targets", "results" })
                 if (data.TryGetProperty(field, out var value) && value.ValueKind == JsonValueKind.Array)

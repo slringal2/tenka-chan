@@ -113,6 +113,49 @@ public sealed class AgentJournalTests
         Assert.Equal(200, page.GetProperty("total").GetInt32());
         Assert.Equal(10, page.GetProperty("items").GetArrayLength());
     }
+    [Fact]
+    public void SourceAliasEliminatesDataDataNestingAndPagesWithoutReexecuting()
+    {
+        var j = new AgentJournal();
+        var session = j.Begin("agent", "long method");
+        var call = j.Start(Request(session.Id, tool: "review_context"));
+        var original = new string('S', 19500);
+        var reply = j.Complete(call.CallId, new
+        {
+            snapshotId = "snapshot",
+            source = new { method = new { id = "temporary" },
+                inspection = new { source = original, blocks = new string('x', 55000) } }
+        });
+        Assert.Null(reply.Data);
+        Assert.True(reply.ResultAvailable);
+        Assert.Contains("pointer=/source", reply.NextAction);
+        var page = JsonSerializer.SerializeToElement(
+            j.ReadResult(session.Id, call.CallId, "/source", 0, 30),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Equal(6000, page.GetProperty("source").GetString()!.Length);
+        Assert.Equal(19500, page.GetProperty("sourceTotalChars").GetInt32());
+        Assert.True(page.GetProperty("sourceHasMore").GetBoolean());
+        Assert.False(page.TryGetProperty("data", out _));
+        var last = JsonSerializer.SerializeToElement(
+            j.ReadResult(session.Id, call.CallId, "/source", 18000, 30),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Equal(1500, last.GetProperty("source").GetString()!.Length);
+        Assert.False(last.GetProperty("sourceHasMore").GetBoolean());
+    }
+
+    [Fact]
+    public void DirectMethodInspectionSourceAliasAndOldPointerRemainAvailable()
+    {
+        var j = new AgentJournal();
+        var s = j.Begin("agent", "");
+        var call = j.Start(Request(s.Id, tool: "inspect_method"));
+        j.Complete(call.CallId, new { inspection = new { source = "public void M(){}", diagnostics = new string('a', 70000) } });
+        var alias = JsonSerializer.SerializeToElement(j.ReadResult(s.Id, call.CallId, "/source", 0, 30));
+        Assert.Equal("public void M(){}", alias.GetProperty("source").GetString());
+        var old = JsonSerializer.SerializeToElement(j.ReadResult(s.Id, call.CallId, "/inspection/source", 0, 30));
+        Assert.Equal("public void M(){}", old.GetProperty("data").GetString());
+    }
+
     [Fact] public void SessionCountIsBounded()
     {
         var j = new AgentJournal();
