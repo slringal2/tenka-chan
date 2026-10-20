@@ -76,7 +76,7 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
         ["runtime_costs"] = "runtime-costs", ["import_thread"] = "import-thread",
         ["run_companion"] = "run-companion"
     };
-    private static readonly HashSet<string> OtherTools = new(["investigation", "measure_target", "measure_companion", "approve_session", "revoke_approval", "session_status", "attach_workspace", "context", "sample", "open_project", "list_types", "rules", "note", "read_result",
+    private static readonly HashSet<string> OtherTools = new(["investigation", "measure_target", "measure_companion", "approve_session", "revoke_approval", "session_status", "attach_workspace", "context", "sample", "open_project", "reload_workspace", "list_types", "rules", "note", "read_result",
         "prepare_experiment", "run_experiment", "experiment_result", "compare_benchmarks",
         "review_queue", "review_context", "review_focus", "review_target", "review_history", "review_diff", "review_mark"], StringComparer.Ordinal);
     private static readonly HashSet<string> Fields = new(["action", "investigationId", "tools", "minutes", "snapshotId", "projectId", "typeId", "methodId", "assemblyId", "companionId", "artifactId",
@@ -190,6 +190,11 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
             case "open_project":
                 BuildPermission(a);
                 return await dashboard.AgentOpenAsync(Str(a, "path"), Optional(a, "expectedSnapshotId"), ct);
+            case "reload_workspace":
+                // Same UNSANDBOXED MSBuild trust and per-call approval as open.
+                // The loaded path is chosen by the server, never the caller.
+                BuildPermission(a);
+                return await dashboard.AgentReloadAsync(Str(a, "snapshotId"), ct);
             case "list_types":
                 return await dashboard.ExploreAsync(Str(a, "snapshotId"), (index, _) => Task.FromResult((object)
                     index.Types(Optional(a, "projectId"), Optional(a, "query"), Number(a, "offset"), Number(a, "limit", 80))), ct, waitForRead: true);

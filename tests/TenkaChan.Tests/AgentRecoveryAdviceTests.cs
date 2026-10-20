@@ -43,6 +43,17 @@ public sealed class AgentRecoveryAdviceTests
         Assert.Contains("expectedSnapshotId=null", hint.NextAction);
     }
     [Fact]
+    public void ReloadConflictNamesOnlyExplicitAndCurrentWorkspace()
+    {
+        var hint = AgentRecoveryAdvice.ForFailure("reload_workspace",
+            "WorkspaceBuildConflictException: changed");
+        Assert.Equal("workspace_conflict", hint.Code);
+        Assert.Contains("tenka_reload_workspace", hint.NextAction);
+        Assert.Contains("CURRENT snapshotId", hint.NextAction);
+        Assert.Contains("explicit approval", hint.NextAction);
+    }
+
+    [Fact]
     public void BusyWorkspaceDoesNotClaimToHaveANewSnapshotId()
     {
         var hint = AgentRecoveryAdvice.ForFailure("open_project", "WorkspaceBuildConflictException: Another operation is active.");

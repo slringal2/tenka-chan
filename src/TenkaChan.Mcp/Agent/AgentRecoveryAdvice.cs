@@ -70,6 +70,11 @@ public static class AgentRecoveryAdvice
                 "If you have a durable 64-hex targetId from tenka_review_queue, " +
                 "use tenka_review_context(targetId, current snapshotId) to retrieve new selection IDs. " +
                 "Never reuse IDs after a workspace reload or guess another type.");
+        if (tool == "reload_workspace" && text.StartsWith("WorkspaceBuildConflictException:", StringComparison.Ordinal))
+            return new("workspace_conflict",
+                "Another agent may have loaded a new source snapshot or a build is active. " +
+                "Read tenka_context, verify the intended workspace, then call tenka_reload_workspace " +
+                "with CURRENT snapshotId and explicit approval. Do not automatically repeat MSBuild evaluation.");
         if (tool == "review_queue")
         {
             if (text.Contains("cursor", StringComparison.OrdinalIgnoreCase) || text.Contains("続き", StringComparison.Ordinal))

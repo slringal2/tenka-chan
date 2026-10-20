@@ -25,6 +25,12 @@ public sealed class DashboardAgentTools
     public static Task<string> OpenProject(DashboardAgentClient client, string path, string? expectedSnapshotId = null, bool approved = false, CancellationToken cancellationToken = default) =>
         client.CallAsync("open_project", new { path, expectedSnapshotId, approved }, cancellationToken);
 
+    [McpServerTool(Name = "tenka_reload_workspace")]
+    [Description("Explicitly reopen ONLY the currently loaded .sln/.slnx/.csproj after a source change. Requires current snapshotId and approved=true plus TENKA_AGENT_ALLOW_BUILD=1 and MSBuild trust: MSBuild evaluation is UNSANDBOXED and can execute targets. Rejects stale snapshot IDs and busy workspaces, never automatically restores/builds or switches paths. Re-fetch tenka_context, review_queue and target source IDs after reload. Durable marks remain untouched but may become needs_review.")]
+    public static Task<string> ReloadWorkspace(DashboardAgentClient client, string snapshotId,
+        bool approved = false, CancellationToken cancellationToken = default) =>
+        client.CallAsync("reload_workspace", new {snapshotId,approved}, cancellationToken);
+
     [McpServerTool(Name = "tenka_list_types")]
     [Description("Browse/search semantic classes, partial/nested types, structs and interfaces. Returned typeId/methodId/projectId are EPHEMERAL selection IDs for the currently loaded Roslyn snapshot and Web instance; pass the same snapshotId to the next inspection. After reload/reconnect check tenka_context and reselect. Durable review targetId (64 hex) comes from tenka_review_queue and is resolved with tenka_review_context.")]
     public static Task<string> ListTypes(DashboardAgentClient client, string snapshotId, string? projectId = null, string? query = null, int offset = 0, int limit = 80, CancellationToken cancellationToken = default) =>

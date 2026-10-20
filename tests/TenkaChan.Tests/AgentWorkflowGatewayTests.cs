@@ -54,6 +54,7 @@ public sealed class AgentWorkflowGatewayTests : IDisposable
     }
     [Theory]
     [InlineData("review_queue")]
+    [InlineData("review_focus")]
     [InlineData("review_target")]
     [InlineData("review_context")]
     [InlineData("list_types")]
@@ -67,6 +68,16 @@ public sealed class AgentWorkflowGatewayTests : IDisposable
         Assert.Equal("workspace_unloaded", reply.Data!.Value.GetProperty("code").GetString());
         Assert.Contains("tenka_open_project", reply.Data.Value.GetProperty("nextAction").GetString()!);
     }
+    [Fact]
+    public async Task ReloadDoesNotBypassBuildPermission()
+    {
+        var denied = await Call("reload_workspace",
+            new { snapshotId = "not-loaded", approved = false });
+        Assert.Equal("failed", denied.Outcome);
+        Assert.Equal("build_disabled", denied.Data!.Value.GetProperty("code").GetString());
+        Assert.Contains("TENKA_AGENT_ALLOW_BUILD", denied.Error);
+    }
+
     [Fact]
     public async Task ContextStillReturnsUnloadedStateInsteadOfReopening()
     {
