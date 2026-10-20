@@ -95,3 +95,64 @@ ILSpyソリューションについては、**ビルド前**の生成`.cs`が欠
 CIの新設・再開、Dockerの追加、ホスト実行権限の緩和は行っていない。
 別のDraft PR #32（動的解析）と`RoslynReviewService.cs`等の同一ファイルを変更しているので、
 双方を取り込む際は統合差分とローカル検証をやり直す。
+
+
+## ラウンド4.1：レビューの往復数と操作上の誤解を削減（2026-10-21）
+
+元のラウンド4.1は上流`main a0015f7`の
+`docs/validation-feedback-2026-10-20-ilspy.md` に追記済み。
+ローカル側の実レビュー rev4/5/6、SourceHash/ContextHashの無効化、
+楽観的更新競合の実地確認は上流の実測として保持する。
+
+**今回追加したDX変更:**
+
+- `tenka_review_focus`: 現在の`snapshotId`とdurableな64 hex`targetId`だけで
+  ソース、現在のレビュー状態・reason、sourceHash/contextHash/expectedRevision、
+  呼び出し関係・CFG・診断の**上限付き要約**を一度に返す。
+  外部`methodId`や`typeId`を事前に引き回す必要なし。
+  `data.source`はレビュー記録のハッシュ対象となる**追跡ソース**。
+  既存の`InspectAsync`の最大2万文字で切れたプレビューではなく、
+  `ReviewTarget.Source`の全体を`sourceOffset`・`sourceLimit`で分割する。
+  既定12,000文字、1回最大16,000文字。件数・省略フラグを返し、分割ページを
+  識別するためにsourceTotalChars/sourceHasMoreも返す。
+- 旧経路も互換維持: 同じセッションの保存済み`review_context`／
+  `inspect_method`に対する`tenka_read_result(pointer=/source)`は
+  元のソースだけを`data.source`へ短く返す（`limit*200`文字、最大16,000）。
+  `/inspection/source`など既存のJSON Pointerと旧レスポンスは変更しない。
+- `tenka_reload_workspace`: 既にロード済みのパスを、その**最新snapshotId**と
+  `approved=true`で明示的に再読み込み。呼び出し元はパスを変更できず、
+  別エージェントが更新したsnapshotには衝突で失敗。MSBuildの許可と
+  `TENKA_AGENT_ALLOW_BUILD`は必須で、自動ビルド/restoreはしない。
+  読み込み後は新snapshotで`review_queue`から再取得。既存markは書き換えない。
+- `review_queue(kind=pending)`は先頭から
+  `kind=all|type|method`、`state=pending|...` と用途を分けて説明するエラーに変更。
+- `contextChanged`は`sourceFiles`ハッシュも含むことを明示。
+  空白のみの変更で失効する**保守的な安全設計を維持**し、バージョン2 fingerprintと
+  source/checkpointハッシュは書き換えない。
+
+### 使用例
+
+```text
+tenka_context -> snapshotId
+tenka_review_queue(snapshotId, kind=all, state=pending) -> target.id (64-hex)
+tenka_review_focus(snapshotId, targetId=target.id)
+  -> data.source, data.analysis, data.sourceHash, data.contextHash,
+     data.expectedRevision, data.sourceHasMore
+必要なら tenka_review_focus(..., sourceOffset=12000) -> 続き
+さらにILが必要なら tenka_review_context(..., includeBinary=true) -> 候補と署名を確認
+ソースが変わった場合のみ、承認して tenka_reload_workspace(snapshotId, approved=true)
+```
+
+### 追加テスト（この編集環境では未実行）
+
+```powershell
+dotnet build src/TenkaChan.Web/TenkaChan.Web.csproj -c Debug --no-restore
+dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj -c Debug --no-restore --filter "FullyQualifiedName~ReviewFocusedSliceTests|FullyQualifiedName~ReviewFocusIntegrationTests|FullyQualifiedName~AgentJournalTests|FullyQualifiedName~AgentWorkflowGatewayTests|FullyQualifiedName~ReviewQueueViewTests|FullyQualifiedName~ReviewContextChurnTests|FullyQualifiedName~AgentRecoveryAdviceTests"
+```
+
+- C#ビルド・xUnit・実際のILSpy 14,149メソッドでの導線確認はローカル側未検証。
+  元mainの759/759は今回新設したテストの合格数ではない。
+- CI停止・Dockerなし・許可範囲の拡大なし。
+- 既存の競合検出（古いexpectedRevision/sourceHash/contextHashの拒否）、
+  sourceChanged/needs_reviewと復帰、永続的なレビュー履歴を維持する。
+- PR #32（動的解析）は別Draftであり、同時統合時にはRoslyn/Gatewayの差分確認が必要。

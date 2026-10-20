@@ -63,7 +63,7 @@ public static class ReviewQueueViews
             "There are no pending checkpoints in the loaded index only. Check index limits and unsupported coverage; checked/optimized are not proof of correctness or speedup.");
         return new(snapshotId, page.Total, page.Offset, page.Items.Select(ReviewContextFingerprints.CompactForQueue).ToArray(), page.NextCursor, page.HasMore,
             "stable_project_name_target_id", Count(scoped), scoped.Any(r => r.State.RequiresReload), limited,
-            ReviewProgress.Note,
+            ReviewProgress.Note + " ソースと解析概要はtenka_review_focus(snapshotId,targetId)で一度に取得できます。状態の絞り込みはstate=pending、種類はkind=all|type|methodです。",
             "nextCursorをcursorに渡すと、途中でチェック済みが増えても、先に返した対象の次から取得します。最後まで来たらcursorなしのpendingを再確認してください。空のページは索引外を含む確認完了を意味しません。",
             "読み込み済みの索引範囲のみです。記録不可の対象や索引上限は完了扱いにしません。状態・変更の検査は読み取り時点の情報で、複数エージェントへの排他割当てではありません。", coverage);
     }
