@@ -27,7 +27,12 @@ public static class ReviewFocusReader
             if (target.Kind == "method")
             {
                 method = index.Method(target.SelectionId);
-                inspected = await roslyn.InspectAsync(method.Id, true, cancellationToken);
+                // On the first page, include the bounded deterministic
+                // inspection. On continuation pages do NOT recompute CFG,
+                // cross-references and compiler diagnostics for the same
+                // large (possibly 14k-method) source snapshot.
+                if (sourceOffset == 0)
+                    inspected = await roslyn.InspectAsync(method.Id, true, cancellationToken);
             }
             return (object)ReviewFocusedSlices.Build(index.SnapshotId,
                 target, state, method, inspected, sourceOffset, sourceLimit);

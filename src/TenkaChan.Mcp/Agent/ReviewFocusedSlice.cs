@@ -1,3 +1,4 @@
+using System.Text.Json;
 using TenkaChan.Mcp.Analysis;
 using TenkaChan.Mcp.Tracking;
 using TrackedReviewTarget = global::TenkaChan.Mcp.Tracking.ReviewTarget;
@@ -38,6 +39,7 @@ public sealed record ReviewFocusedSlice(
         "plus generated sources and compilation/reference inputs. Whitespace-only changes can change " +
         "both sourceHash and contextHash. Only CRLF/CR line endings are normalized; no whitespace " +
         "edits are silently ignored. ContextChanged is independent of semantic behavior.";
+    public bool AnalysisIncluded => Analysis is not null;
     public bool SourceBinaryVerified => false;
     public string EvidenceStatus => "source_inspection_unverified";
 }
@@ -50,6 +52,10 @@ public static class ReviewFocusedSlices
 {
     public const int DefaultSourceLimit = 12000;
     public const int MaxSourceLimit = 16000;
+    // The journal inlines results up to 60 KB after Web JSON serialization.
+    // Leave headroom for the envelope/metadata and escaping of non-ASCII text.
+    public const int MaxInlineJsonBytes = 52000;
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public static ReviewFocusedSlice Build(string snapshotId, TrackedReviewTarget target,
         ReviewState state, ExplorerMethod? method, MethodInspection? inspection,
@@ -64,9 +70,10 @@ public static class ReviewFocusedSlices
                 "sourceOffset must be nonnegative and sourceLimit must be 1..16000 characters.");
         if (target.Kind == "method")
         {
-            if (method is null || inspection is null ||
-                target.SelectionId != method.Id || inspection.Method.Id != method.Id ||
-                target.ProjectId != method.ProjectId)
+            if (method is null ||
+                target.SelectionId != method.Id || target.ProjectId != method.ProjectId ||
+                (inspection is not null && inspection.Method.Id != method.Id) ||
+                (sourceOffset == 0 && inspection is null))
                 throw new InvalidOperationException("Method selection no longer matches the loaded review target. Refresh context; never guess methodId.");
         }
         else if (target.Kind != "type" || method is not null || inspection is not null)
@@ -82,28 +89,68 @@ public static class ReviewFocusedSlices
         if (sourceOffset > text.Length)
             throw new ArgumentOutOfRangeException(nameof(sourceOffset),
                 "sourceOffset exceeds the available tracked source characters.");
-        var length = Math.Min(sourceLimit, text.Length - sourceOffset);
+        var wanted = Math.Min(sourceLimit, text.Length - sourceOffset);
         var analysis = inspection is null ? null : BoundedAnalysis(inspection);
-        return new ReviewFocusedSlice(
-            snapshotId, target.Id, target.Kind, target.Name,
-            target.ProjectId, method?.TypeId ?? (target.Kind == "type" ? target.SelectionId : null),
-            method?.Id, state.Status, state.Reason, state.Revision,
-            state.SourceChanged, state.ContextChanged, state.RequiresReload,
-            target.SourceHash, target.ContextHash,
-            sourceOffset, length, text.Length, sourceOffset + length < text.Length,
-            text.Substring(sourceOffset, length),
-            analysis, state.ContextChange?.Status,
-            state.ContextChange?.ChangedComponents ?? [],
-            state.RequiresReload
-                ? "Files changed since this Roslyn snapshot. Ask for explicit reload_workspace approval, then refresh snapshotId/targetId and re-inspect before recording a mark."
-                : state.ContextChange?.Status == "context_unavailable"
-                    ? "Reference/project context is incomplete. Resolve the intended references and explicitly reload before recording any mark. Do not trust missing diagnostic groups as clean."
-                : sourceOffset + length < text.Length
-                    ? "Continue with tenka_review_focus using the SAME snapshotId/targetId and sourceOffset=" + (sourceOffset + length) +
-                      ". No experiment, build or additional inspect_method call is required."
-                    : !target.Trackable
-                        ? "Tracked source inspection is complete but this target cannot be marked individually. Check the target's unavailableReason and coverage; do not force a review mark."
-                        : "Inspection source is complete. Use the returned sourceHash, contextHash and expectedRevision for tenka_mark_review only after checking content and current context; checked is an agent statement, not proof of correctness.");
+
+        ReviewFocusedSlice Chunk(int requested)
+        {
+            // Do not split a UTF-16 surrogate pair in an arbitrary source
+            // comment or string literal: joining pages must reproduce the
+            // original source exactly.
+            var length = requested;
+            if (length > 0 && sourceOffset + length < text.Length &&
+                char.IsHighSurrogate(text[sourceOffset + length - 1]) &&
+                char.IsLowSurrogate(text[sourceOffset + length]))
+                length--;
+            var more = sourceOffset + length < text.Length;
+            return new ReviewFocusedSlice(
+                snapshotId, target.Id, target.Kind, target.Name,
+                target.ProjectId, method?.TypeId ?? (target.Kind == "type" ? target.SelectionId : null),
+                method?.Id, state.Status, state.Reason, state.Revision,
+                state.SourceChanged, state.ContextChanged, state.RequiresReload,
+                target.SourceHash, target.ContextHash,
+                sourceOffset, length, text.Length, more,
+                text.Substring(sourceOffset, length),
+                analysis, state.ContextChange?.Status,
+                state.ContextChange?.ChangedComponents ?? [],
+                state.RequiresReload
+                    ? "Files changed since this Roslyn snapshot. Ask for explicit reload_workspace approval, then refresh snapshotId/targetId and re-inspect before recording a mark."
+                    : state.ContextChange?.Status == "context_unavailable"
+                        ? "Reference/project context is incomplete. Resolve the intended references and explicitly reload before recording any mark. Do not trust missing diagnostic groups as clean."
+                    : more
+                        ? "Continue with tenka_review_focus using the SAME snapshotId/targetId and sourceOffset=" + (sourceOffset + length) +
+                          ". Continuation pages are source-only; no CFG analysis is repeated."
+                        : !target.Trackable
+                            ? "Tracked source inspection is complete but this target cannot be marked individually. Check the target's unavailableReason and coverage; do not force a review mark."
+                            : "Inspection source is complete. Use the returned sourceHash, contextHash and expectedRevision for tenka_mark_review only after checking content and current context; checked is an agent statement, not proof of correctness.");
+        }
+
+        // JSON's \uXXXX escaping can expand CJK characters and control
+        // characters far beyond their UTF-16 length. Size the actual encoded
+        // response, not just sourceLength, to avoid data=null and a new
+        // read_result hop for the very tool intended to remove that hop.
+        static int SerializedBytes(ReviewFocusedSlice result) =>
+            JsonSerializer.SerializeToUtf8Bytes(result, Json).Length;
+        var full = Chunk(wanted);
+        if (SerializedBytes(full) <= MaxInlineJsonBytes) return full;
+        var lo = 0; var hi = wanted;
+        ReviewFocusedSlice? best = null;
+        while (lo <= hi)
+        {
+            var mid = lo + (hi - lo) / 2;
+            var page = Chunk(mid);
+            if (SerializedBytes(page) <= MaxInlineJsonBytes)
+            {
+                if (page.SourceLength > 0 || sourceOffset == text.Length)
+                    best = page;
+                lo = mid + 1;
+            }
+            else hi = mid - 1;
+        }
+        if (best is null)
+            throw new InvalidOperationException(
+                "Review metadata exceeds the 52 KB inline budget; narrow the target or use review_context/read_result. No partial source was silently discarded.");
+        return best;
     }
 
     private static ReviewFocusedAnalysis BoundedAnalysis(MethodInspection info)
