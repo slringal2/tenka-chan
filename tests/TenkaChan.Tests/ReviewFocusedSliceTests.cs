@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using TenkaChan.Mcp.Agent;
 using TenkaChan.Mcp.Analysis;
@@ -83,6 +84,67 @@ public sealed class ReviewFocusedSliceTests
         Assert.False(last.SourceHasMore);
         Assert.Equal(source.Length, last.SourceTotalChars);
         Assert.Contains("review", last.NextAction, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void EscapedUnicodeSourceNeverOverflowsInlineJournalBudgetAndAllPagesReassemble()
+    {
+        // System.Text.Json escapes non-ASCII characters by default. A 12k-char
+        // page can exceed 60k serialized bytes even if the source itself fits.
+        var source = new string('日', 22000) + "\\r\\n" + new string('語', 10000);
+        var (tracked, state, method, inspection) = Fixture(source);
+        var assembled = new StringBuilder();
+        var offset = 0;
+        var count = 0;
+        while (offset < source.Length)
+        {
+            var result = ReviewFocusedSlices.Build("snapshot", tracked, state, method,
+                offset == 0 ? inspection : null, offset, 12000);
+            Assert.True(JsonSerializer.SerializeToUtf8Bytes(result,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)).Length
+                <= ReviewFocusedSlices.MaxInlineJsonBytes);
+            Assert.True(result.SourceLength > 0);
+            Assert.Equal(offset, result.SourceOffset);
+            Assert.Equal(offset == 0, result.AnalysisIncluded);
+            assembled.Append(result.Source);
+            offset += result.SourceLength;
+            Assert.Equal(offset < source.Length, result.SourceHasMore);
+            Assert.True(++count < 20, "Paging did not make progress.");
+        }
+        Assert.Equal(source, assembled.ToString());
+        Assert.True(count > 3);
+    }
+
+    [Fact]
+    public void SurrogatePairsAreNeverSplitAcrossSourcePageBoundaries()
+    {
+        var source = new string('a', 11999) + "😀" + new string('b', 6000);
+        var (tracked, state, method, inspection) = Fixture(source);
+        var first = ReviewFocusedSlices.Build("snapshot", tracked, state, method, inspection);
+        Assert.Equal(11999, first.SourceLength);
+        Assert.EndsWith("a", first.Source);
+        Assert.True(first.SourceHasMore);
+        var second = ReviewFocusedSlices.Build("snapshot", tracked, state, method,
+            inspection: null, sourceOffset: first.SourceLength);
+        Assert.StartsWith("😀", second.Source);
+        Assert.Equal(source, first.Source + second.Source);
+        Assert.Throws<ArgumentException>(() => ReviewFocusedSlices.Build(
+            "snapshot", tracked, state, method, inspection: null, sourceOffset: 12000));
+    }
+
+    [Fact]
+    public void ContinuationRequiresNoRepeatedMethodInspection()
+    {
+        var source = new string('x', 22000);
+        var (tracked, state, method, inspection) = Fixture(source);
+        var first = ReviewFocusedSlices.Build("snapshot", tracked, state, method, inspection);
+        var next = ReviewFocusedSlices.Build("snapshot", tracked, state, method, null,
+            sourceOffset: first.SourceLength);
+        Assert.NotNull(first.Analysis);
+        Assert.Null(next.Analysis);
+        Assert.False(next.AnalysisIncluded);
+        Assert.Equal(first.SourceHash, next.SourceHash);
+        Assert.Equal(first.ExpectedRevision, next.ExpectedRevision);
     }
 
     [Fact]

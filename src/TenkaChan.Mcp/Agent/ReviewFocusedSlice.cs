@@ -89,6 +89,12 @@ public static class ReviewFocusedSlices
         if (sourceOffset > text.Length)
             throw new ArgumentOutOfRangeException(nameof(sourceOffset),
                 "sourceOffset exceeds the available tracked source characters.");
+        if (sourceOffset > 0 && sourceOffset < text.Length &&
+            char.IsHighSurrogate(text[sourceOffset - 1]) &&
+            char.IsLowSurrogate(text[sourceOffset]))
+            throw new ArgumentException(
+                "sourceOffset splits a UTF-16 surrogate pair; use sourceOffset from the preceding source page.",
+                nameof(sourceOffset));
         var wanted = Math.Min(sourceLimit, text.Length - sourceOffset);
         var analysis = inspection is null ? null : BoundedAnalysis(inspection);
 
@@ -149,7 +155,9 @@ public static class ReviewFocusedSlices
         }
         if (best is null)
             throw new InvalidOperationException(
-                "Review metadata exceeds the 52 KB inline budget; narrow the target or use review_context/read_result. No partial source was silently discarded.");
+                "The requested source page cannot fit within the 52 KB inline budget (or sourceLimit splits a UTF-16 pair). " +
+                "Increase sourceLimit to 2 for an emoji boundary, or narrow the review target. " +
+                "No partial source was silently discarded.");
         return best;
     }
 

@@ -55,6 +55,8 @@ public sealed class ReviewFocusIntegrationTests
             var remaining = Assert.IsType<ReviewFocusedSlice>(await ReviewFocusReader.ReadAsync(
                 dashboard, guard, store, open.SnapshotId, target.Id, 12000, 16000, default));
             Assert.Equal(first.SourceTotalChars, remaining.SourceTotalChars);
+            Assert.Null(remaining.Analysis); // Continuation must skip CFG re-computation.
+            Assert.False(remaining.AnalysisIncluded);
             Assert.Equal(target.Source[..(12000 + remaining.SourceLength)],
                 first.Source + remaining.Source);
 
