@@ -19,7 +19,11 @@ Roslyn、IL/PDB、JIT機械語、プロファイル、テスト・ベンチマ�
 `targetId`と現在の`snapshotId`を`tenka_review_focus`へ渡すと、
 `data.source`にソース断片、`data.analysis`に呼び出し/CFGの件数とプレビュー、
 `data.sourceHash`・`data.contextHash`・`data.expectedRevision`にレビュー記録用情報が返ります。
-16,000文字を超えるソースは`sourceOffset`で続きのみ取得できます。
+ソースは既定12,000文字・上限16,000文字ですが、Unicode/エスケープ文字が多い場合は
+**JSON化した応答を52KB以下に収めるため自動で短くします**。
+続きは`sourceOffset`を推測せず、
+**前回の`sourceOffset + sourceLength`または`nextAction`に示された位置**から取得してください。
+続きのページはCFGや呼び出し関係を再計算せず、`analysisIncluded=false`になります。
 `review_context`は詳細なバイナリ候補・IL選択が必要な場合に使います。
 
 従来の大きな`inspect_method`/`review_context`結果は、同じライブMCPセッションで

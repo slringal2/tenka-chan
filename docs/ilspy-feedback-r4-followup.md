@@ -113,11 +113,19 @@ CIの新設・再開、Dockerの追加、ホスト実行権限の緩和は行っ
   `data.source`はレビュー記録のハッシュ対象となる**追跡ソース**。
   既存の`InspectAsync`の最大2万文字で切れたプレビューではなく、
   `ReviewTarget.Source`の全体を`sourceOffset`・`sourceLimit`で分割する。
-  既定12,000文字、1回最大16,000文字。件数・省略フラグを返し、分割ページを
-  識別するためにsourceTotalChars/sourceHasMoreも返す。
+  既定12,000文字、1回最大16,000文字。ただし`System.Text.Json`によるUnicode
+  エスケープの膨張も含めて、**JSON実バイト数52KB以下**を守るため、
+  必要なら1ページの文字数を自動で短縮する。
+  `sourceTotalChars`/`sourceLength`/`sourceHasMore`を返し、
+  次は**返却されたsourceOffset + sourceLength**で続ける。固定で12,000進めない。
+  絵文字等のUTF-16 surrogate pairは分割しない。2ページ目以降は`analysisIncluded=false`で
+  高価なCFG・callers/callees・コンパイル診断を再計算しない。
 - 旧経路も互換維持: 同じセッションの保存済み`review_context`／
   `inspect_method`に対する`tenka_read_result(pointer=/source)`は
   元のソースだけを`data.source`へ短く返す（`limit*200`文字、最大16,000）。
+  この経路もUTF-8 JSONシリアライズ後の52KBを実測して自動短縮し、
+  `sourceOffset`/`sourceTotalChars`/`sourceHasMore`を返す。
+  関係ない元トレースや実験の再実行は不要。
   `/inspection/source`など既存のJSON Pointerと旧レスポンスは変更しない。
 - `tenka_reload_workspace`: 既にロード済みのパスを、その**最新snapshotId**と
   `approved=true`で明示的に再読み込み。呼び出し元はパスを変更できず、
@@ -138,7 +146,7 @@ tenka_review_queue(snapshotId, kind=all, state=pending) -> target.id (64-hex)
 tenka_review_focus(snapshotId, targetId=target.id)
   -> data.source, data.analysis, data.sourceHash, data.contextHash,
      data.expectedRevision, data.sourceHasMore
-必要なら tenka_review_focus(..., sourceOffset=12000) -> 続き
+必要なら tenka_review_focus(..., sourceOffset=<直前のsourceOffset+sourceLength>) -> 続き（analysisIncluded=false）
 さらにILが必要なら tenka_review_context(..., includeBinary=true) -> 候補と署名を確認
 ソースが変わった場合のみ、承認して tenka_reload_workspace(snapshotId, approved=true)
 ```
@@ -150,6 +158,9 @@ dotnet build src/TenkaChan.Web/TenkaChan.Web.csproj -c Debug --no-restore
 dotnet test tests/TenkaChan.Tests/TenkaChan.Tests.csproj -c Debug --no-restore --filter "FullyQualifiedName~ReviewFocusedSliceTests|FullyQualifiedName~ReviewFocusIntegrationTests|FullyQualifiedName~AgentJournalTests|FullyQualifiedName~AgentWorkflowGatewayTests|FullyQualifiedName~ReviewQueueViewTests|FullyQualifiedName~ReviewContextChurnTests|FullyQualifiedName~AgentRecoveryAdviceTests"
 ```
 
+- UTF-16サロゲート境界、日本語（JSONエスケープ拡張）、複数ページ連結、
+  `read_result`の結果を再度`AgentJournal.Complete`で格納したときのinline維持を
+  自動回帰テストに追加。
 - C#ビルド・xUnit・実際のILSpy 14,149メソッドでの導線確認はローカル側未検証。
   元mainの759/759は今回新設したテストの合格数ではない。
 - CI停止・Dockerなし・許可範囲の拡大なし。
