@@ -126,19 +126,7 @@ public sealed class AgentJournal
             // Only existing saved result objects are inspected. For method
             // source >20k, use review_focus to page full tracked source.
             if (pointer == "/source" && TryMethodSource(c.Tool, value, out var sourceText))
-            {
-                if (offset > sourceText.Length)
-                    throw new ArgumentOutOfRangeException(nameof(offset), "source offset exceeds captured text.");
-                var take = Math.Min(16000, limit * 200);
-                var size = Math.Min(take, sourceText.Length - offset);
-                return new
-                {
-                    callId, pointer, source = sourceText.Substring(offset, size),
-                    sourceOffset = offset, sourceTotalChars = sourceText.Length,
-                    sourceHasMore = offset + size < sourceText.Length,
-                    note = "This is captured display source. For complete durable tracked source beyond inspector truncation, call tenka_review_focus with current snapshotId and durable targetId."
-                };
-            }
+                return ReadBoundedSource(callId, pointer, sourceText, offset, limit);
             if (pointer.Length > 0)
             {
                 if (!pointer.StartsWith('/')) throw new ArgumentException("Use a JSON pointer such as /findings.");
@@ -217,6 +205,61 @@ public sealed class AgentJournal
     /// Large results are retained separately from their small MCP reply. Return a
     /// concrete read-result recipe without replaying an executable operation.
     /// </summary>
+    private sealed record DirectSourcePage(string CallId, string Pointer, string Source,
+        int SourceOffset, int SourceTotalChars, bool SourceHasMore, string Note);
+
+    /// <summary>
+    /// One source-only read_result page. The returned JSON must stay below
+    /// the gateway's 60 KB inline threshold AFTER JSON escaping, or the
+    /// result would itself become data=null and recreate the same extra hop.
+    /// </summary>
+    private static DirectSourcePage ReadBoundedSource(string callId, string pointer,
+        string source, int offset, int limit)
+    {
+        if (offset > source.Length)
+            throw new ArgumentOutOfRangeException(nameof(offset), "source offset exceeds captured text.");
+        if (offset > 0 && offset < source.Length &&
+            char.IsHighSurrogate(source[offset - 1]) && char.IsLowSurrogate(source[offset]))
+            throw new ArgumentException(
+                "source offset splits a UTF-16 surrogate pair; use sourceOffset + returned page length.",
+                nameof(offset));
+
+        DirectSourcePage Slice(int requested)
+        {
+            var length = Math.Min(requested, source.Length - offset);
+            if (length > 0 && offset + length < source.Length &&
+                char.IsHighSurrogate(source[offset + length - 1]) &&
+                char.IsLowSurrogate(source[offset + length]))
+                length--;
+            return new(callId, pointer, source.Substring(offset, length), offset, source.Length,
+                offset + length < source.Length,
+                "Captured display source only. Use tenka_review_focus for complete tracked source; the inspection preview may be truncated.");
+        }
+
+        var maximum = Math.Min(16000, limit * 200);
+        var full = Slice(maximum);
+        static int EncodedSize(DirectSourcePage page) =>
+            JsonSerializer.SerializeToUtf8Bytes(page, new JsonSerializerOptions(JsonSerializerDefaults.Web)).Length;
+        if (EncodedSize(full) <= ReviewFocusedSlices.MaxInlineJsonBytes) return full;
+
+        var lo = 0; var hi = maximum;
+        DirectSourcePage? best = null;
+        while (lo <= hi)
+        {
+            var mid = lo + (hi - lo) / 2;
+            var page = Slice(mid);
+            if (EncodedSize(page) <= ReviewFocusedSlices.MaxInlineJsonBytes)
+            {
+                if (page.Source.Length > 0 || offset == source.Length)
+                    best = page;
+                lo = mid + 1;
+            }
+            else hi = mid - 1;
+        }
+        return best ?? throw new InvalidOperationException(
+            "The escaped source chunk cannot fit inline; increase limit to include a complete UTF-16 pair or narrow the result.");
+    }
+
     private static bool TryMethodSource(string tool, JsonElement root, out string source)
     {
         source = "";

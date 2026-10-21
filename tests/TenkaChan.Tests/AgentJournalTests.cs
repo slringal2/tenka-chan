@@ -144,6 +144,42 @@ public sealed class AgentJournalTests
     }
 
     [Fact]
+    public void UnicodeReadResultSourceAliasRemainsInlineAndDoesNotSplitEmoji()
+    {
+        var journal = new AgentJournal();
+        var session = journal.Begin("agent", "unicode source");
+        var call = journal.Start(Request(session.Id, tool: "review_context"));
+        var original = new string('日', 22000) + "😀" + new string('語', 15000);
+        journal.Complete(call.CallId, new
+        {
+            source = new { inspection = new { source = original, blocks = new string('x', 70000) } }
+        });
+        var rebuilt = new System.Text.StringBuilder();
+        var offset = 0;
+        var pages = 0;
+        while (offset < original.Length)
+        {
+            var page = JsonSerializer.SerializeToElement(
+                journal.ReadResult(session.Id, call.CallId, "/source", offset, 70),
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            var part = page.GetProperty("source").GetString()!;
+            Assert.True(part.Length > 0);
+            Assert.True(JsonSerializer.SerializeToUtf8Bytes(page,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)).Length <=
+                ReviewFocusedSlices.MaxInlineJsonBytes);
+            Assert.Equal(offset, page.GetProperty("sourceOffset").GetInt32());
+            rebuilt.Append(part);
+            offset += part.Length;
+            Assert.Equal(offset < original.Length, page.GetProperty("sourceHasMore").GetBoolean());
+            var request = journal.Start(Request(session.Id, tool: "read_result"));
+            var reply = journal.Complete(request.CallId, page);
+            Assert.NotNull(reply.Data); // Does not become data=null again.
+            Assert.True(++pages < 40, "Paging did not progress.");
+        }
+        Assert.Equal(original, rebuilt.ToString());
+    }
+
+    [Fact]
     public void DirectMethodInspectionSourceAliasAndOldPointerRemainAvailable()
     {
         var j = new AgentJournal();
