@@ -133,6 +133,16 @@ public sealed class ReviewFocusedSliceTests
     }
 
     [Fact]
+    public void OneCharacterPageCannotLoopForeverAtEmojiBoundary()
+    {
+        var (target, state, method, inspection) = Fixture("😀 next");
+        var error = Assert.Throws<ArgumentException>(() =>
+            ReviewFocusedSlices.Build("snapshot", target, state, method,
+                inspection, sourceLimit: 1));
+        Assert.Contains("surrogate pair", error.Message);
+    }
+
+    [Fact]
     public void ContinuationRequiresNoRepeatedMethodInspection()
     {
         var source = new string('x', 22000);

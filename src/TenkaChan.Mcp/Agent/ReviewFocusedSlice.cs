@@ -138,6 +138,10 @@ public static class ReviewFocusedSlices
         static int SerializedBytes(ReviewFocusedSlice result) =>
             JsonSerializer.SerializeToUtf8Bytes(result, Json).Length;
         var full = Chunk(wanted);
+        if (full.SourceLength == 0 && sourceOffset < text.Length)
+            throw new ArgumentException(
+                "sourceLimit would split a UTF-16 surrogate pair. Use sourceLimit >= 2 at this offset.",
+                nameof(sourceLimit));
         if (SerializedBytes(full) <= MaxInlineJsonBytes) return full;
         var lo = 0; var hi = wanted;
         ReviewFocusedSlice? best = null;
