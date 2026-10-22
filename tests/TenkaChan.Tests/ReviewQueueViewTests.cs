@@ -16,6 +16,39 @@ public sealed class ReviewQueueViewTests
     private static ReviewQueueItem[] SevenPendingTypes() =>
         [Row("Done", status: "checked"), ..Enumerable.Range(1, 7).Select(i => Row("Type" + i, "type"))];
 
+    public static IEnumerable<object[]> ValidFilterPairs()
+    {
+        foreach (var kind in new[] { "all", "type", "method" })
+        foreach (var state in new[] { "all", "pending", "unreviewed", "needs_review", "checked", "optimized" })
+            yield return [kind, state];
+    }
+
+    [Theory]
+    [MemberData(nameof(ValidFilterPairs))]
+    public void GatewayValidatorAcceptsEverySupportedPairAndReturns(string kind, string state)
+    {
+        // Call the gateway's entry point directly. Testing Build alone did not
+        // cover the accidental self-recursion formerly in ValidateFilters.
+        ReviewQueueViews.ValidateFilters(kind, state);
+        var result = ReviewQueueViews.Build("snapshot", [], kind: kind, state: state);
+        Assert.Empty(result.Items);
+    }
+
+    [Theory]
+    [InlineData("pending", "pending", "kind")]
+    [InlineData("all", "method", "state")]
+    [InlineData("", "pending", "kind")]
+    [InlineData("ALL", "pending", "kind")]
+    [InlineData("method", "", "state")]
+    public void GatewayAndBuilderRejectTheSameInvalidFilters(string kind, string state, string parameter)
+    {
+        var direct = Assert.Throws<ArgumentException>(() => ReviewQueueViews.ValidateFilters(kind, state));
+        var built = Assert.Throws<ArgumentException>(() =>
+            ReviewQueueViews.Build("snapshot", [], kind: kind, state: state));
+        Assert.Equal(parameter, direct.ParamName);
+        Assert.Equal(direct.Message, built.Message);
+    }
+
     [Fact]
     public void DefaultIncludesSevenTypesAfterAllMethodsWereChecked()
     {
@@ -121,7 +154,8 @@ public sealed class ReviewQueueViewTests
         var result = ReviewQueueViews.Build("snapshot", [], limited: true);
         Assert.Equal("index_limited", result.Coverage.Status);
         Assert.True(result.Limited);
-        Assert.Equal(ReviewProgress.Note, result.Note);
+        Assert.StartsWith(ReviewProgress.Note, result.Note);
+        Assert.Contains("tenka_review_focus", result.Note);
     }
     [Fact]
     public void KindPendingMistakeExplainsThatPendingBelongsToState()
@@ -148,6 +182,7 @@ public sealed class ReviewQueueViewTests
         Assert.Equal(1, result.GetProperty("summary").GetProperty("checkedCount").GetInt32());
         Assert.Equal(7, result.GetProperty("coverage").GetProperty("types").GetProperty("pending").GetInt32());
         Assert.Equal("snapshot", result.GetProperty("coverage").GetProperty("restart").GetProperty("snapshotId").GetString());
-        Assert.Equal(ReviewProgress.Note, result.GetProperty("note").GetString());
+        Assert.StartsWith(ReviewProgress.Note, result.GetProperty("note").GetString());
+        Assert.Contains("tenka_review_focus", result.GetProperty("note").GetString());
     }
 }

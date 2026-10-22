@@ -17,3 +17,29 @@ tenka-data/
 launchSettings.json
 %SystemDrive%/
 tenka-trace-*/
+
+# Private local configuration and credentials (not a substitute for history audit).
+.env
+.env.*
+!.env.example
+mcp-config.json
+settings.json
+*-connection.json
+*.pem
+*.pfx
+*.p12
+*.key
+
+# Diagnostic/runtime artifacts and local databases.
+*.nettrace
+*.etlx
+*.dmp
+*.heapdump
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-wal
+*.db-shm
+*.nupkg
