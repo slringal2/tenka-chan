@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "date": "2026-10-22",
+  "environment": {
+    "os": "Debian GNU/Linux 13",
+    "python": "3.13.5",
+    "git": "2.47.3",
+    "dotnetSdkAvailable": false,
+    "powershellAvailable": false
+  },
+  "executed": [
+    {
+      "command": "python scripts/test-public-readiness-git.py",
+      "passed": 11,
+      "failed": 0,
+      "scope": "Git argument lists extracted from PowerShell and exercised on disposable synthetic repositories; not a PowerShell execution",
+      "testGitBlob": "fd146607c72f5e9b72e25841b4ac644e8110f08b",
+      "powershellGitBlob": "20ee779efad4c36ee89076698dff7c3fafdbbb19"
+    },
+    {
+      "command": "python tests/test_public_release_preflight.py -v",
+      "passed": 15,
+      "failed": 0,
+      "scope": "Python preflight execution against disposable synthetic Git histories, not the real Tenka repository",
+      "testGitBlob": "8bc0ff44f5b5bd6ce6e4a66d6f99b33929116907",
+      "implementationGitBlob": "0a3ccf559db19daf192cd92230d9a2e099d714b1"
+    }
+  ],
+  "totalPassed": 26,
+  "totalFailed": 0,
+  "notExecuted": [
+    "C# build and full xUnit suite, including ReviewQueueViews filter regression",
+    "Windows PowerShell 5.1 parsing and full script execution",
+    "Real repository all-ref secret/history scan and GitHub Actions/PR artifact audit",
+    "Restored transitive dependency license and vulnerability audit"
+  ],
+  "publicReady": false,
+  "license": "MIT applies only to project-owned code; dependency and ownership checks remain separate",
+  "ciEnabledByThisChange": false,
+  "repositoryVisibilityChanged": false
+}
