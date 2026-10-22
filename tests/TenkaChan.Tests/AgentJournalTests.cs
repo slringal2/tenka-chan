@@ -106,10 +106,92 @@ public sealed class AgentJournalTests
         Assert.True(result.ResultAvailable);
         Assert.Contains("pointer=/items", result.NextAction);
         Assert.Contains("limit=10", result.NextAction);
+        Assert.Contains("SAME LIVE MCP transport session", result.NextAction);
+        Assert.Contains("NOT the large paged data", result.NextAction);
+        Assert.DoesNotContain("resume to retrieve", result.NextAction, StringComparison.OrdinalIgnoreCase);
         var page = JsonSerializer.SerializeToElement(j.ReadResult(s.Id, c.CallId, "/items", 0, 10));
         Assert.Equal(200, page.GetProperty("total").GetInt32());
         Assert.Equal(10, page.GetProperty("items").GetArrayLength());
     }
+    [Fact]
+    public void SourceAliasEliminatesDataDataNestingAndPagesWithoutReexecuting()
+    {
+        var j = new AgentJournal();
+        var session = j.Begin("agent", "long method");
+        var call = j.Start(Request(session.Id, tool: "review_context"));
+        var original = new string('S', 19500);
+        var reply = j.Complete(call.CallId, new
+        {
+            snapshotId = "snapshot",
+            source = new { method = new { id = "temporary" },
+                inspection = new { source = original, blocks = new string('x', 55000) } }
+        });
+        Assert.Null(reply.Data);
+        Assert.True(reply.ResultAvailable);
+        Assert.Contains("pointer=/source", reply.NextAction);
+        var page = JsonSerializer.SerializeToElement(
+            j.ReadResult(session.Id, call.CallId, "/source", 0, 30),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Equal(6000, page.GetProperty("source").GetString()!.Length);
+        Assert.Equal(19500, page.GetProperty("sourceTotalChars").GetInt32());
+        Assert.True(page.GetProperty("sourceHasMore").GetBoolean());
+        Assert.False(page.TryGetProperty("data", out _));
+        var last = JsonSerializer.SerializeToElement(
+            j.ReadResult(session.Id, call.CallId, "/source", 18000, 30),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Equal(1500, last.GetProperty("source").GetString()!.Length);
+        Assert.False(last.GetProperty("sourceHasMore").GetBoolean());
+    }
+
+    [Fact]
+    public void UnicodeReadResultSourceAliasRemainsInlineAndDoesNotSplitEmoji()
+    {
+        var journal = new AgentJournal();
+        var session = journal.Begin("agent", "unicode source");
+        var call = journal.Start(Request(session.Id, tool: "review_context"));
+        var original = new string('日', 22000) + "😀" + new string('語', 15000);
+        journal.Complete(call.CallId, new
+        {
+            source = new { inspection = new { source = original, blocks = new string('x', 70000) } }
+        });
+        var rebuilt = new System.Text.StringBuilder();
+        var offset = 0;
+        var pages = 0;
+        while (offset < original.Length)
+        {
+            var page = JsonSerializer.SerializeToElement(
+                journal.ReadResult(session.Id, call.CallId, "/source", offset, 70),
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            var part = page.GetProperty("source").GetString()!;
+            Assert.True(part.Length > 0);
+            Assert.True(JsonSerializer.SerializeToUtf8Bytes(page,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)).Length <=
+                ReviewFocusedSlices.MaxInlineJsonBytes);
+            Assert.Equal(offset, page.GetProperty("sourceOffset").GetInt32());
+            rebuilt.Append(part);
+            offset += part.Length;
+            Assert.Equal(offset < original.Length, page.GetProperty("sourceHasMore").GetBoolean());
+            var request = journal.Start(Request(session.Id, tool: "read_result"));
+            var reply = journal.Complete(request.CallId, page);
+            Assert.NotNull(reply.Data); // Does not become data=null again.
+            Assert.True(++pages < 40, "Paging did not progress.");
+        }
+        Assert.Equal(original, rebuilt.ToString());
+    }
+
+    [Fact]
+    public void DirectMethodInspectionSourceAliasAndOldPointerRemainAvailable()
+    {
+        var j = new AgentJournal();
+        var s = j.Begin("agent", "");
+        var call = j.Start(Request(s.Id, tool: "inspect_method"));
+        j.Complete(call.CallId, new { inspection = new { source = "public void M(){}", diagnostics = new string('a', 70000) } });
+        var alias = JsonSerializer.SerializeToElement(j.ReadResult(s.Id, call.CallId, "/source", 0, 30));
+        Assert.Equal("public void M(){}", alias.GetProperty("source").GetString());
+        var old = JsonSerializer.SerializeToElement(j.ReadResult(s.Id, call.CallId, "/inspection/source", 0, 30));
+        Assert.Equal("public void M(){}", old.GetProperty("data").GetString());
+    }
+
     [Fact] public void SessionCountIsBounded()
     {
         var j = new AgentJournal();

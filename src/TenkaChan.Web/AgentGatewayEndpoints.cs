@@ -76,14 +76,14 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
         ["runtime_costs"] = "runtime-costs", ["import_thread"] = "import-thread",
         ["run_companion"] = "run-companion"
     };
-    private static readonly HashSet<string> OtherTools = new(["investigation", "measure_target", "measure_companion", "approve_session", "revoke_approval", "session_status", "attach_workspace", "context", "sample", "open_project", "list_types", "rules", "note", "read_result",
+    private static readonly HashSet<string> OtherTools = new(["investigation", "measure_target", "measure_companion", "approve_session", "revoke_approval", "session_status", "attach_workspace", "context", "sample", "open_project", "reload_workspace", "list_types", "rules", "note", "read_result",
         "prepare_experiment", "run_experiment", "experiment_result", "compare_benchmarks",
-        "review_queue", "review_context", "review_target", "review_history", "review_diff", "review_mark"], StringComparer.Ordinal);
+        "review_queue", "review_context", "review_focus", "review_target", "review_history", "review_diff", "review_mark"], StringComparer.Ordinal);
     private static readonly HashSet<string> Fields = new(["action", "investigationId", "tools", "minutes", "snapshotId", "projectId", "typeId", "methodId", "assemblyId", "companionId", "artifactId",
         "baselineId", "nativeIndex", "baselineIndex", "profileIndex", "metadataToken", "assemblySha256", "approved", "allowRestore", "arguments",
         "sample", "path", "expectedSnapshotId", "query", "offset", "limit", "callId", "pointer", "kind", "message", "evidenceCallIds",
         "generatedCode", "targetFramework", "runtimeFramework", "benchmarkJob", "experimentId", "baselineExperimentId", "candidateExperimentId",
-        "cursor", "trackableOnly", "includeBinary", "state", "targetId", "sourceHash", "contextHash", "expectedRevision", "status", "summary", "fromRevision", "toRevision"], StringComparer.Ordinal);
+        "cursor", "trackableOnly", "includeBinary", "state", "targetId", "sourceOffset", "sourceLimit", "sourceHash", "contextHash", "expectedRevision", "status", "summary", "fromRevision", "toRevision"], StringComparer.Ordinal);
 
     public async Task<object> CallAsync(AgentCallRequest request, CancellationToken ct)
     {
@@ -147,10 +147,21 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
             case "revoke_approval": return new { status = "session_approval_revoked", revoked = _approvals.Revoke(session) };
             case "session_status": return SessionStatus(session);
             case "attach_workspace": return await dashboard.ExplorerContextAsync(guard, discovery, ct, Str(a, "path"));
-            case "review_queue": return await Get<ReviewTrackingService>().Queue(Str(a,"snapshotId"), Optional(a,"projectId"),
-                Optional(a,"kind")??ReviewQueueViews.DefaultKind, Optional(a,"state")??"pending", Optional(a,"query"),Number(a,"offset"),Number(a,"limit",20),ct,Optional(a,"cursor"),Bool(a,"trackableOnly"));
+            case "review_queue":
+            {
+                var kind = Optional(a, "kind") ?? ReviewQueueViews.DefaultKind;
+                var state = Optional(a, "state") ?? "pending";
+                // Reject kind=pending before a 14k-method review-catalog scan.
+                ReviewQueueViews.ValidateFilters(kind, state);
+                return await Get<ReviewTrackingService>().Queue(Str(a,"snapshotId"), Optional(a,"projectId"),
+                    kind, state, Optional(a,"query"), Number(a,"offset"), Number(a,"limit",20), ct,
+                    Optional(a,"cursor"), Bool(a,"trackableOnly"));
+            }
             case "review_context": return await ReviewContextReader.ReadAsync(dashboard, guard, discovery,
                 Get<ReviewProgressStore>(), Str(a,"snapshotId"), Str(a,"targetId"), Bool(a,"includeBinary",true), ct);
+            case "review_focus": return await ReviewFocusReader.ReadAsync(dashboard, guard,
+                Get<ReviewProgressStore>(), Str(a,"snapshotId"), Str(a,"targetId"),
+                Number(a,"sourceOffset"), Number(a,"sourceLimit", ReviewFocusedSlices.DefaultSourceLimit), ct);
             case "review_target": return await Get<ReviewTrackingService>().Target(Str(a,"snapshotId"),Str(a,"targetId"),ct);
             case "review_history": return await Get<ReviewTrackingService>().History(Str(a,"snapshotId"),Str(a,"targetId"),Number(a,"offset"),Number(a,"limit",50),ct);
             case "review_diff": return await Get<ReviewTrackingService>().Diff(Str(a,"snapshotId"),Str(a,"targetId"),Long(a,"fromRevision"),Long(a,"toRevision"),Number(a,"offset"),Number(a,"limit",150),ct);
@@ -172,7 +183,9 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
                 return new { instanceId = journal.InstanceId, workspace, overview,
                     permissions = new { build = policy.AllowBuild, execution = policy.AllowExecution },
                     session = SessionStatus(session),
-                    workflow = "Inspect context -> tenka_review_queue (kind=all; inspect coverage) -> tenka_review_context by targetId -> inspect references and choose the exact IL candidate -> request authorized execution -> read actual results -> report a qualified conclusion. Use tenka_approve_session only for user-agreed repeated project operations, and tenka_attach_workspace to reuse the loaded workspace without reopening it. Always refresh context after a build. Record checked/optimized checkpoints only after completing the work; these are agent reports, not verified speedups. No model endpoint is configured in Tenka." };
+                    selectionIds = "typeId/methodId/projectId are ephemeral to the current loaded snapshot. Requery tenka_context/list_types after reload; durable review targetId comes from tenka_review_queue and is resolved by tenka_review_context.",
+                    measurementWorkflow = "If workspace.companions has no matching BenchmarkDotNet companion (e.g. partial ILSpy solution), use prepare_experiment(kind=benchmark) -> measure_target directly on an unexecuted experiment. Explicit approval is always required.",
+                    workflow = "Inspect tenka_context -> tenka_review_queue(kind=all,state=pending) -> tenka_review_focus(current snapshotId, durable targetId) for tracked source, callers/callees, bounded CFG and mark hashes in ONE call. Continue sourceOffset only if sourceHasMore. Use tenka_review_context(includeBinary=true) only for IL/binary evidence and exact overload selection. If loaded files changed, explicitly approve tenka_reload_workspace and refresh snapshotId; never infer approvals. Use tenka_approve_session only for user-agreed repeated operations. Use tenka_attach_workspace to reuse the workspace without reopening. Keep checked/optimized as agent work records, NOT proven optimizations. For measured benchmarks use prepare_experiment -> measure_target directly. No model endpoint is configured in Tenka." };
             }
             case "sample":
                 return (Optional(a, "sample") ?? "game-lab") switch
@@ -185,6 +198,11 @@ public sealed partial class AgentGateway(IServiceProvider services, AgentJournal
             case "open_project":
                 BuildPermission(a);
                 return await dashboard.AgentOpenAsync(Str(a, "path"), Optional(a, "expectedSnapshotId"), ct);
+            case "reload_workspace":
+                // Same UNSANDBOXED MSBuild trust and per-call approval as open.
+                // The loaded path is chosen by the server, never the caller.
+                BuildPermission(a);
+                return await dashboard.AgentReloadAsync(Str(a, "snapshotId"), ct);
             case "list_types":
                 return await dashboard.ExploreAsync(Str(a, "snapshotId"), (index, _) => Task.FromResult((object)
                     index.Types(Optional(a, "projectId"), Optional(a, "query"), Number(a, "offset"), Number(a, "limit", 80))), ct, waitForRead: true);

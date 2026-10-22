@@ -104,7 +104,7 @@ public sealed class AgentJournal
             c.Reply = new(c.Id, cancelled ? "cancelled" : error is null ? "returned" : "failed",
                 observed, snapshot, error is null ? null : Text(error.Length <= 1200 ? error : error[..1200], 1200),
                 size <= 60000 ? json : null, c.Result.HasValue, fields)
-            { NextAction = size > 60000 ? LargeResultNextAction(json, c.Result.HasValue, c.Id) : null };
+            { NextAction = size > 60000 ? LargeResultNextAction(c.Tool, json, c.Result.HasValue, c.Id) : null };
             Event(s.Id, c.Id, c.Reply.Outcome == "returned" ? "tool_result" : c.Reply.Outcome,
                 c.Tool, error is not null ? Text(error.Length <= 1200 ? error : error[..1200], 1200) : size > MaxResultBytes
                     ? "結果が保存上限を超えました。表示範囲を絞って再調査してください。"
@@ -121,6 +121,12 @@ public sealed class AgentJournal
             if (!_calls.TryGetValue(callId, out var c) || c.SessionId != sessionId)
                 throw new KeyNotFoundException("Result does not belong to this agent session.");
             if (c.Result is not JsonElement value) throw new KeyNotFoundException("Result is running, expired, or exceeded the storage limit.");
+            // Short, direct read for common oversized method payloads:
+            // AgentReply.Data.source, not AgentReply.Data.data.source.
+            // Only existing saved result objects are inspected. For method
+            // source >20k, use review_focus to page full tracked source.
+            if (pointer == "/source" && TryMethodSource(c.Tool, value, out var sourceText))
+                return ReadBoundedSource(callId, pointer, sourceText, offset, limit);
             if (pointer.Length > 0)
             {
                 if (!pointer.StartsWith('/')) throw new ArgumentException("Use a JSON pointer such as /findings.");
@@ -199,15 +205,107 @@ public sealed class AgentJournal
     /// Large results are retained separately from their small MCP reply. Return a
     /// concrete read-result recipe without replaying an executable operation.
     /// </summary>
-    private static string LargeResultNextAction(JsonElement data, bool retained, string callId)
+    private sealed record DirectSourcePage(string CallId, string Pointer, string Source,
+        int SourceOffset, int SourceTotalChars, bool SourceHasMore, string Note);
+
+    /// <summary>
+    /// One source-only read_result page. The returned JSON must stay below
+    /// the gateway's 60 KB inline threshold AFTER JSON escaping, or the
+    /// result would itself become data=null and recreate the same extra hop.
+    /// </summary>
+    private static DirectSourcePage ReadBoundedSource(string callId, string pointer,
+        string source, int offset, int limit)
+    {
+        if (offset > source.Length)
+            throw new ArgumentOutOfRangeException(nameof(offset), "source offset exceeds captured text.");
+        if (offset > 0 && offset < source.Length &&
+            char.IsHighSurrogate(source[offset - 1]) && char.IsLowSurrogate(source[offset]))
+            throw new ArgumentException(
+                "source offset splits a UTF-16 surrogate pair; use sourceOffset + returned page length.",
+                nameof(offset));
+
+        DirectSourcePage Slice(int requested)
+        {
+            var length = Math.Min(requested, source.Length - offset);
+            if (length > 0 && offset + length < source.Length &&
+                char.IsHighSurrogate(source[offset + length - 1]) &&
+                char.IsLowSurrogate(source[offset + length]))
+                length--;
+            return new(callId, pointer, source.Substring(offset, length), offset, source.Length,
+                offset + length < source.Length,
+                "Captured display source only. Use tenka_review_focus for complete tracked source; the inspection preview may be truncated.");
+        }
+
+        var maximum = Math.Min(16000, limit * 200);
+        var full = Slice(maximum);
+        static int EncodedSize(DirectSourcePage page) =>
+            JsonSerializer.SerializeToUtf8Bytes(page, new JsonSerializerOptions(JsonSerializerDefaults.Web)).Length;
+        if (EncodedSize(full) <= ReviewFocusedSlices.MaxInlineJsonBytes) return full;
+
+        var lo = 0; var hi = maximum;
+        DirectSourcePage? best = null;
+        while (lo <= hi)
+        {
+            var mid = lo + (hi - lo) / 2;
+            var page = Slice(mid);
+            if (EncodedSize(page) <= ReviewFocusedSlices.MaxInlineJsonBytes)
+            {
+                if (page.Source.Length > 0 || offset == source.Length)
+                    best = page;
+                lo = mid + 1;
+            }
+            else hi = mid - 1;
+        }
+        return best ?? throw new InvalidOperationException(
+            "The escaped source chunk cannot fit inline; increase limit to include a complete UTF-16 pair or narrow the result.");
+    }
+
+    private static bool TryMethodSource(string tool, JsonElement root, out string source)
+    {
+        source = "";
+        if (root.ValueKind != JsonValueKind.Object) return false;
+        JsonElement leaf;
+        if (tool == "review_context")
+        {
+            if (!root.TryGetProperty("source", out var wrapped) ||
+                wrapped.ValueKind != JsonValueKind.Object ||
+                !wrapped.TryGetProperty("inspection", out var inspection) ||
+                inspection.ValueKind != JsonValueKind.Object ||
+                !inspection.TryGetProperty("source", out leaf) ||
+                leaf.ValueKind != JsonValueKind.String) return false;
+        }
+        else if (tool == "inspect_method")
+        {
+            if (!root.TryGetProperty("inspection", out var inspection) ||
+                inspection.ValueKind != JsonValueKind.Object ||
+                !inspection.TryGetProperty("source", out leaf) ||
+                leaf.ValueKind != JsonValueKind.String) return false;
+        }
+        else if (tool == "review_focus")
+        {
+            if (!root.TryGetProperty("source", out leaf) ||
+                leaf.ValueKind != JsonValueKind.String) return false;
+        }
+        else return false;
+        source = leaf.GetString() ?? "";
+        return true;
+    }
+
+    private static string LargeResultNextAction(string tool, JsonElement data, bool retained, string callId)
     {
         if (!retained)
-            return "The result exceeded local retention limits. Do not replay builds, tests or measurements to retrieve output. For read-only queries, narrow the filter and limit in a new call.";
+            return "The result exceeded local retention limits. There is no paged copy available in any session. Do not replay builds, tests or measurements to retrieve output. For read-only queries, narrow the filter and limit in a new call.";
+        if (tool is "review_context" or "inspect_method")
+            return $"Large inspection retained in this SAME live MCP transport session. " +
+                $"Call tenka_read_result with callId={callId}, pointer=/source, offset=0, limit=30 " +
+                "to get a short data.source chunk (not data.data.source); then increase offset. " +
+                "Prefer tenka_review_focus(snapshotId,targetId) for one-call tracked source, inspection summary and mark hashes. " +
+                "Large result memory is not carried across MCP disconnect/restart. Never rerun execution to retrieve this result.";
         if (data.ValueKind == JsonValueKind.Object)
             foreach (var field in new[] { "items", "findings", "methods", "targets", "results" })
                 if (data.TryGetProperty(field, out var value) && value.ValueKind == JsonValueKind.Array)
-                    return $"The large result is retained but omitted from inline data. Call tenka_read_result with callId={callId}, pointer=/{field}, offset=0, limit=10; page by offset until total is reached. Do not repeat the original operation.";
-        return $"The large result is retained but omitted from inline data. Call tenka_read_result with callId={callId} and a JSON pointer for one of availableFields. Do not repeat the original operation.";
+                    return $"The large result is retained but omitted from inline data. Use tenka_read_result in the SAME LIVE MCP transport session/connection (15-minute idle expiry) before disconnect or server restart. Large results over 60 KB are stored only in this session's memory; a saved investigation may preserve the small receipt but NOT the large paged data. Call tenka_read_result with callId={callId}, pointer=/{field}, offset=0, limit=10; page by offset until total is reached. Do not repeat the original operation.";
+        return $"The large result is retained but omitted from inline data. Use tenka_read_result in the SAME LIVE MCP transport session/connection (15-minute idle expiry) before disconnect or server restart. Large results over 60 KB are stored only in this session's memory; a saved investigation may preserve the small receipt but NOT the large paged data. Call tenka_read_result with callId={callId} and a JSON pointer for one of availableFields. Do not repeat the original operation.";
     }
 
     private static string DescribeResult(JsonElement value)

@@ -59,6 +59,7 @@ public static class ReviewContextReader
                     limited = assemblyCount > ReviewContextPlan.MaximumAssemblies || candidates.Any(c => c.Limited),
                     assemblies = candidates, failures,
                     note = "Candidates match metadata type/name only. Choose the exact overload and build configuration; even a single candidate is NOT proof of source/build identity. Pass a candidate's arguments unchanged to tenka_il, which rechecks snapshot and assembly SHA-256. For omitted assemblies/candidates, use tenka_context and tenka_binary_methods. No build or target execution was performed." },
+                contextHashSemantics = "Context fingerprint includes raw sourceFiles in the project/dependency closure, including whitespace-only edits (only line endings are normalized). sourceChanged and contextChanged may both be true; the original hash is not rewritten.",
                 note = ReviewProgress.Note
             };
         }, ct, waitForRead: true);

@@ -47,6 +47,10 @@ public sealed partial class DashboardState(RoslynReviewService roslyn) : IReview
                 .Select(x => new { category = x.Key, count = x.Count() }).ToArray(),
             diagnosticErrors = _diagnostics?.ErrorCount ?? 0,
             diagnosticWarnings = _diagnostics?.WarningCount ?? 0,
+            diagnosticScope = _diagnostics?.Scope,
+            referenceResolutionErrorCandidates = _diagnostics?.PotentialReferenceResolutionErrors ?? 0,
+            topCompilerErrorCodes = _diagnostics?.TopErrorCodes ?? [],
+            diagnosticInterpretation = _diagnostics?.Interpretation,
             deterministicFindingCount = _deterministic?.Summary.TotalFindings ?? 0,
             deterministicComplete = _deterministic is not null,
             hotspotCandidates = _hotspots?.TotalSites ?? 0,
@@ -110,6 +114,10 @@ public sealed partial class DashboardState(RoslynReviewService roslyn) : IReview
             return new { findingCount = findings.Length,
                 diagnosticErrors = diagnostics.ErrorCount,
                 diagnosticWarnings = diagnostics.WarningCount,
+                diagnosticScope = diagnostics.Scope,
+                potentialReferenceResolutionErrors = diagnostics.PotentialReferenceResolutionErrors,
+                topCompilerErrorCodes = diagnostics.TopErrorCodes,
+                diagnosticInterpretation = diagnostics.Interpretation,
                 scannedAt = _lastScanned };
         }
         finally { _gate.Release(); }

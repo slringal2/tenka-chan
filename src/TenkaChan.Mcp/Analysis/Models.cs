@@ -29,7 +29,13 @@ public sealed record CompilationDiagnostic(
 
 public sealed record CompilationDiagnosticsReport(
     int ErrorCount, int WarningCount, int InformationCount,
-    int ReturnedCount, IReadOnlyList<CompilationDiagnostic> Diagnostics);
+    int ReturnedCount, IReadOnlyList<CompilationDiagnostic> Diagnostics)
+{
+    public string Scope => CompilerDiagnosticContext.Scope;
+    public string Interpretation => CompilerDiagnosticContext.Interpretation;
+    public IReadOnlyList<CompilerDiagnosticCodeCount> TopErrorCodes { get; init; } = [];
+    public int PotentialReferenceResolutionErrors { get; init; }
+}
 
 public sealed record ReferenceHit(
     string Project, string File, int Line, int Column, string Preview);

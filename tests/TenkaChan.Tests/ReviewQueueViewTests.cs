@@ -123,6 +123,18 @@ public sealed class ReviewQueueViewTests
         Assert.True(result.Limited);
         Assert.Equal(ReviewProgress.Note, result.Note);
     }
+    [Fact]
+    public void KindPendingMistakeExplainsThatPendingBelongsToState()
+    {
+        var error = Assert.Throws<ArgumentException>(() =>
+            ReviewQueueViews.Build("snapshot", [Row("m")], kind: "pending"));
+        Assert.Contains("kind=all|type|method", error.Message);
+        Assert.Contains("state=pending", error.Message);
+        var invalidState = Assert.Throws<ArgumentException>(() =>
+            ReviewQueueViews.Build("snapshot", [Row("m")], state: "method"));
+        Assert.Contains("kind is separately all|type|method", invalidState.Message);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(201)]

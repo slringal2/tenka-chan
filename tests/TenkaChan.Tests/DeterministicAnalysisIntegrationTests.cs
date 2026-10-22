@@ -77,6 +77,11 @@ public sealed class DeterministicAnalysisIntegrationTests
             Assert.Equal(first.Findings.Select(x => x.Fingerprint),
                 reloaded.Findings.Select(x => x.Fingerprint));
 
+            Assert.Equal(CompilerDiagnosticContext.Scope, first.Summary.CompilerDiagnosticsScope);
+            Assert.True(first.Summary.TopCompilerErrorCodes.Sum(x => x.Count)
+                <= first.Summary.CompilerErrors);
+            Assert.Contains(first.Summary.Notes,
+                note => note.Contains("partial .slnx", StringComparison.Ordinal));
             Assert.True(first.Summary.DocumentsAnalyzed >= 1);
             Assert.Equal(2, first.Summary.MethodsIndexed);
             Assert.Contains(first.Findings, x => x.RuleId == "PERF1001");

@@ -15,7 +15,15 @@ public sealed record ExplorerProject(string Id, string Name, string Path, int Do
 public sealed record ExplorerType(string Id, string ProjectId, string Project, string Name,
     string Kind, int MethodCount, int DeclarationCount);
 public sealed record ExplorerTypePage(string SnapshotId, int Total, int Offset,
-    IReadOnlyList<ExplorerType> Items, bool IndexLimited);
+    IReadOnlyList<ExplorerType> Items, bool IndexLimited)
+{
+    public string SelectionScope => "current_loaded_roslyn_snapshot_only";
+    public string NextAction =>
+        "Use items[].id as typeId for tenka_inspect_type only with this exact snapshotId " +
+        "on the same running Web instance. A new process, reload or changed source invalidates it. " +
+        "For durable review tracking, use tenka_review_queue(kind=all) to get targetId, " +
+        "then tenka_review_context with the CURRENT snapshotId to resolve fresh selection IDs.";
+}
 public sealed record ExplorerMethod(string Id, string TypeId, string ProjectId, string Signature,
     string File, int Line, string Kind, string MetadataType, string MetadataName,
     string? JitFilter, string? JitUnavailableReason);
@@ -127,7 +135,11 @@ public sealed partial class SourceExplorerIndex
 
     public async Task<ExplorerTypeDetails> TypeAsync(string id, CancellationToken ct = default)
     {
-        if (!_types.TryGetValue(id, out var type)) throw new KeyNotFoundException("Type selection is no longer available.");
+        if (!_types.TryGetValue(id, out var type))
+            throw new KeyNotFoundException(
+                "Type selection is no longer available in this Roslyn snapshot. " +
+                "Call tenka_context and tenka_list_types again for fresh typeId; " +
+                "persistent targetId from tenka_review_queue is a different ID.");
         var sources = new List<ExplorerSource>();
         var remaining = 80000;
         foreach (var reference in type.Symbol.DeclaringSyntaxReferences.Take(16))
@@ -152,7 +164,7 @@ public sealed partial class SourceExplorerIndex
             .Take(1000).ToArray();
         return new(type.Row, type.Symbol.BaseType?.ToDisplayString(),
             type.Symbol.Interfaces.Select(i => i.ToDisplayString()).Take(100).ToArray(), members, methods, sources,
-            ["ソースは読み込み時のRoslynスナップショットです。変更後は再読み込みしてください。",
+            ["ソースは読み込み時のRoslynスナップショットです。変更後は再読み込みしてください。typeId/methodIdはこのスナップショット限定です。永続targetIdはtenka_review_queueとtenka_review_contextで扱ってください。",
              "partial型はまとめて表示します。入れ子型は別項目、メソッドのオーバーロードは別の選択肢です。",
              "表示上限: 宣言16個・ソース計80,000文字・メンバー500個・メソッド1,000個。暗黙の生成メンバーとトップレベル文は型一覧の対象外です。"]);
     }

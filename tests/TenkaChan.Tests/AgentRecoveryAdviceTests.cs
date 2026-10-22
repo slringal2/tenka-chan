@@ -43,6 +43,17 @@ public sealed class AgentRecoveryAdviceTests
         Assert.Contains("expectedSnapshotId=null", hint.NextAction);
     }
     [Fact]
+    public void ReloadConflictNamesOnlyExplicitAndCurrentWorkspace()
+    {
+        var hint = AgentRecoveryAdvice.ForFailure("reload_workspace",
+            "WorkspaceBuildConflictException: changed");
+        Assert.Equal("workspace_conflict", hint.Code);
+        Assert.Contains("tenka_reload_workspace", hint.NextAction);
+        Assert.Contains("CURRENT snapshotId", hint.NextAction);
+        Assert.Contains("explicit approval", hint.NextAction);
+    }
+
+    [Fact]
     public void BusyWorkspaceDoesNotClaimToHaveANewSnapshotId()
     {
         var hint = AgentRecoveryAdvice.ForFailure("open_project", "WorkspaceBuildConflictException: Another operation is active.");
@@ -69,6 +80,49 @@ public sealed class AgentRecoveryAdviceTests
         Assert.Contains("action=resume", hint.NextAction);
         Assert.Contains("approved=true", hint.NextAction);
     }
+    [Fact]
+    public void MissingCompileSourceHasDistinctRecoveryFromMissingProjectFile()
+    {
+        var hint = AgentRecoveryAdvice.ForFailure("open_project",
+            "FileNotFoundException: C# Compile source document is missing in project ILSpy");
+        Assert.Equal("missing_compile_document", hint.Code);
+        Assert.Contains("missing .cs source document", hint.NextAction);
+        Assert.Contains("explicit consent", hint.NextAction);
+        Assert.Contains("Do not silently ignore", hint.NextAction);
+    }
+
+    [Fact]
+    public void AlreadyExecutedBenchmarkExplainsPrepareDirectlyToMeasure()
+    {
+        var advice = AgentRecoveryAdvice.ForFailure("measure_target",
+            "InvalidOperationException: Experiment has already been executed. Prepare a new one.");
+        Assert.Equal("experiment_already_executed", advice.Code);
+        Assert.Contains("prepare_experiment(kind=benchmark) -> tenka_measure_target", advice.NextAction);
+        Assert.Contains("Do NOT insert tenka_run_experiment", advice.NextAction);
+        Assert.Contains("never replay", advice.NextAction);
+    }
+
+    [Fact]
+    public void OversizedCrossSessionResultCannotBeRecoveredByResumingReceipt()
+    {
+        var advice = AgentRecoveryAdvice.ForFailure("read_result",
+            "KeyNotFoundException: evidence_unavailable: No completed receipt in this investigation.");
+        Assert.Equal("result_unavailable", advice.Code);
+        Assert.Contains("SAME live MCP transport session", advice.NextAction);
+        Assert.Contains("NOT persisted across sessions", advice.NextAction);
+    }
+
+    [Fact]
+    public void EphemeralTypeSelectionGivesExactReselectionRoute()
+    {
+        var advice = AgentRecoveryAdvice.ForFailure("inspect_type",
+            "KeyNotFoundException: Type selection is no longer available.");
+        Assert.Equal("selection_expired", advice.Code);
+        Assert.Contains("tenka_list_types", advice.NextAction);
+        Assert.Contains("tenka_review_context", advice.NextAction);
+        Assert.Contains("durable", advice.NextAction, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void CancellationDoesNotImplyExecutionWasRolledBack()
     {

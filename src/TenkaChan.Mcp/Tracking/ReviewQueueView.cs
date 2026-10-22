@@ -25,15 +25,27 @@ public sealed record ReviewQueueView(string SnapshotId, int Total, int Offset,
 public static class ReviewQueueViews
 {
     public const string DefaultKind = "all";
+
+    public static void ValidateFilters(string kind, string state)
+    {
+        ValidateFilters(kind, state);
+    }
+
     public static ReviewQueueView Build(string snapshotId, IReadOnlyList<ReviewQueueItem> allRows,
         string? project = null, string? kind = null, string state = "pending", string? query = null,
         int offset = 0, int limit = 50, string? cursor = null, bool trackableOnly = false, bool limited = false)
     {
         ArgumentNullException.ThrowIfNull(allRows);
         kind ??= DefaultKind;
-        if (kind is not ("all" or "type" or "method") ||
-            state is not ("all" or "pending" or "unreviewed" or "needs_review" or "checked" or "optimized"))
-            throw new ArgumentException("Invalid review filter.");
+        if (kind is not ("all" or "type" or "method"))
+            throw new ArgumentException(
+                "Invalid review kind. kind=all|type|method (category of target); " +
+                "use state=pending|all|unreviewed|needs_review|checked|optimized for review status. " +
+                "Do not pass pending as kind.");
+        if (state is not ("all" or "pending" or "unreviewed" or "needs_review" or "checked" or "optimized"))
+            throw new ArgumentException(
+                "Invalid review state. Use state=pending|all|unreviewed|needs_review|checked|optimized. " +
+                "kind is separately all|type|method.");
         if ((query?.Length ?? 0) > 200) throw new ArgumentException("Invalid review page.");
         var scoped = allRows.Where(r => (kind == "all" || r.Target.Kind == kind) &&
             (string.IsNullOrEmpty(project) || r.Target.ProjectId == project) &&
@@ -53,11 +65,11 @@ public static class ReviewQueueViews
             total.Pending > 0, reload, status, new(snapshotId),
             reload ? "Reload the source workspace with approval, then use the NEW snapshotId with tenka_review_queue, kind=all, state=pending, no cursor or other filters. Do not mark stale work complete." :
             total.Pending > visiblePending ? "Pending targets are hidden by filters. Call tenka_review_queue with coverage.restart, clearing projectId, query and cursor; do not infer completion from this page." :
-            total.Pending > 0 ? "Continue with nextCursor and offset=0. After the pass, call tenka_review_queue with coverage.restart; type and method checkpoints are independent." :
+            total.Pending > 0 ? "For each item use tenka_review_focus(snapshotId,targetId) to read the bounded tracked source and analysis without intermediate typeId/methodId calls. Continue the queue with nextCursor and offset=0. After the pass, call tenka_review_queue with coverage.restart; type and method checkpoints are independent." :
             "There are no pending checkpoints in the loaded index only. Check index limits and unsupported coverage; checked/optimized are not proof of correctness or speedup.");
         return new(snapshotId, page.Total, page.Offset, page.Items.Select(ReviewContextFingerprints.CompactForQueue).ToArray(), page.NextCursor, page.HasMore,
             "stable_project_name_target_id", Count(scoped), scoped.Any(r => r.State.RequiresReload), limited,
-            ReviewProgress.Note,
+            ReviewProgress.Note + " ソースと解析概要はtenka_review_focus(snapshotId,targetId)で一度に取得できます。状態の絞り込みはstate=pending、種類はkind=all|type|methodです。",
             "nextCursorをcursorに渡すと、途中でチェック済みが増えても、先に返した対象の次から取得します。最後まで来たらcursorなしのpendingを再確認してください。空のページは索引外を含む確認完了を意味しません。",
             "読み込み済みの索引範囲のみです。記録不可の対象や索引上限は完了扱いにしません。状態・変更の検査は読み取り時点の情報で、複数エージェントへの排他割当てではありません。", coverage);
     }
