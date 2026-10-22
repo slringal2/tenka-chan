@@ -26,9 +26,21 @@ public static class ReviewQueueViews
 {
     public const string DefaultKind = "all";
 
+    /// <summary>
+    /// Shared by the gateway preflight and the result builder. Keep validation
+    /// here rather than calling the builder (or recursively calling this method).
+    /// </summary>
     public static void ValidateFilters(string kind, string state)
     {
-        ValidateFilters(kind, state);
+        if (kind is not ("all" or "type" or "method"))
+            throw new ArgumentException(
+                "Invalid review kind. kind=all|type|method (category of target); " +
+                "use state=pending|all|unreviewed|needs_review|checked|optimized for review status. " +
+                "Do not pass pending as kind.", nameof(kind));
+        if (state is not ("all" or "pending" or "unreviewed" or "needs_review" or "checked" or "optimized"))
+            throw new ArgumentException(
+                "Invalid review state. Use state=pending|all|unreviewed|needs_review|checked|optimized. " +
+                "kind is separately all|type|method.", nameof(state));
     }
 
     public static ReviewQueueView Build(string snapshotId, IReadOnlyList<ReviewQueueItem> allRows,
@@ -37,15 +49,7 @@ public static class ReviewQueueViews
     {
         ArgumentNullException.ThrowIfNull(allRows);
         kind ??= DefaultKind;
-        if (kind is not ("all" or "type" or "method"))
-            throw new ArgumentException(
-                "Invalid review kind. kind=all|type|method (category of target); " +
-                "use state=pending|all|unreviewed|needs_review|checked|optimized for review status. " +
-                "Do not pass pending as kind.");
-        if (state is not ("all" or "pending" or "unreviewed" or "needs_review" or "checked" or "optimized"))
-            throw new ArgumentException(
-                "Invalid review state. Use state=pending|all|unreviewed|needs_review|checked|optimized. " +
-                "kind is separately all|type|method.");
+        ValidateFilters(kind, state);
         if ((query?.Length ?? 0) > 200) throw new ArgumentException("Invalid review page.");
         var scoped = allRows.Where(r => (kind == "all" || r.Target.Kind == kind) &&
             (string.IsNullOrEmpty(project) || r.Target.ProjectId == project) &&
