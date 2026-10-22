@@ -22,7 +22,7 @@ ship all notices/license texts required for packages actually redistributed.
 | Microsoft.Build.Locator 1.11.2 and Microsoft.Build.Framework 17.11.48 | [MSBuild/Microsoft .NET licensing](https://github.com/dotnet/msbuild/blob/main/LICENSE) — verify package-specific notices before distributing binaries | MSBuild integration |
 | Microsoft.Extensions.Hosting 10.0.12 | [.NET MIT](https://github.com/dotnet/runtime/blob/main/LICENSE.TXT) | Hosting |
 | Microsoft.Data.Sqlite 10.0.0 | [.NET MIT](https://github.com/dotnet/efcore/blob/main/LICENSE.txt) | Durable review history |
-| SQLitePCLRaw.lib.e_sqlite3 2.1.13 | [NuGet package](https://www.nuget.org/packages/SQLitePCLRaw.lib.e_sqlite3/2.1.13); review package's bundled native SQLite and wrapper license/notice files before binary redistribution | Native SQLite |
+| SQLitePCLRaw.lib.e_sqlite3 2.1.13 | [Apache-2.0 on NuGet](https://www.nuget.org/packages/SQLitePCLRaw.lib.e_sqlite3/2.1.13); native SQLite and additional license/NOTICE files still require verification before binary redistribution | Native SQLite |
 | Iced 1.21.0 | [MIT](https://github.com/icedland/iced/blob/master/LICENSE.txt) | x86/x64 disassembly |
 | Microsoft.Diagnostics.Tracing.TraceEvent 3.2.8 | [MIT on NuGet](https://www.nuget.org/packages/Microsoft.Diagnostics.Tracing.TraceEvent/3.2.8) | EventPipe/TraceLog |
 | Microsoft.NET.Test.Sdk 17.14.1 | [NuGet package](https://www.nuget.org/packages/Microsoft.NET.Test.Sdk/17.14.1); validate package license | Test infrastructure |

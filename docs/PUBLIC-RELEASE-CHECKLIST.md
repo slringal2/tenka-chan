@@ -42,6 +42,7 @@ release commit, not tests run against an earlier main.
   projects, logs, API tokens, internal addresses and confidential materials
   are absent from **all publishable refs**. Review `.gitignore`; note that it
   does not erase a previously committed secret.
+- [ ] Confirm you are willing to expose the repository's **past GitHub Actions run history and logs**, not only the source code. GitHub's private-to-public visibility change can expose that history; inspect run artifacts and job output for sensitive content before publication.
 - [ ] Review `.github/disabled-workflows/` and all historical branches.
   Owner policy is **no active CI**. Disabling Actions in repository settings
   is an additional control if desired; a paused current-main workflow
