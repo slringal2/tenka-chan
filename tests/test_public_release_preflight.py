@@ -115,6 +115,24 @@ class PublicReleasePreflightTests(unittest.TestCase):
         self.assertFalse(result["scanCompleteWithinLimits"])
         self.assertEqual(2, result["exitCode"])
 
+    def test_partial_clone_configuration_is_incomplete(self) -> None:
+        self.run_git("config", "remote.fixture.promisor", "true")
+        result = preflight.scan(self.repo)
+        self.assertIn("partial_clone_configuration", self.codes(result))
+        self.assertFalse(result["scanCompleteWithinLimits"])
+        self.assertEqual(2, result["exitCode"])
+
+    def test_replacement_refs_cannot_hide_original_secret(self) -> None:
+        original = self.run_git("rev-parse", "HEAD").decode("ascii").strip()
+        self.write("secret.txt", "gh" + "p_" + "X" * 36)
+        self.commit("fixture secret")
+        bad = self.run_git("rev-parse", "HEAD").decode("ascii").strip()
+        self.run_git("replace", bad, original)
+        result = preflight.scan(self.repo)
+        self.assertIn("replacement_refs_present", self.codes(result))
+        self.assertIn("credential_pattern", self.codes(result))
+        self.assertFalse(result["scanCompleteWithinLimits"])
+
     def test_oversize_blob_is_incomplete_not_clean(self) -> None:
         self.write("large.txt", "x" * 1000)
         self.commit("large fixture")
