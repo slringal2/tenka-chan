@@ -42,7 +42,8 @@ def git(repo: Path, *arguments: str, data: bytes | None = None) -> bytes:
                 "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT",
                 "GIT_ALLOW_PROTOCOL"):
         env.pop(key, None)
-    env.update(GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0", GIT_NO_LAZY_FETCH="1")
+    env.update(GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0",
+               GIT_NO_LAZY_FETCH="1", GIT_NO_REPLACE_OBJECTS="1")
     command = ["git", "--no-pager", "--no-optional-locks", "-c", "core.fsmonitor=false",
                "-c", "protocol.allow=never", "-C", str(repo), *arguments]
     try:
@@ -84,6 +85,19 @@ def scan(repo: Path, *, max_objects: int = 50000, max_blob_bytes: int = 2_000_00
     shallow = git(repo, "rev-parse", "--is-shallow-repository").strip() == b"true"
     if shallow:
         add("incomplete", "shallow_history")
+    if git(repo, "for-each-ref", "--format=%(refname)", "refs/replace").strip():
+        add("incomplete", "replacement_refs_present")
+    # Config values may contain private remotes; inspect in memory and never
+    # put raw configuration into the report. No missing objects are fetched.
+    for item in git(repo, "config", "--local", "--null", "--list").split(b"\0"):
+        key, _, value = item.partition(b"\n")
+        key = key.lower()
+        if key == b"extensions.partialclone" or (
+            key.startswith(b"remote.") and key.endswith(b".promisor") and
+            value.strip().lower() in {b"true", b"1", b"yes", b"on"}
+        ):
+            add("incomplete", "partial_clone_configuration")
+            break
     tracked = {os.fsdecode(p) for p in git(repo, "ls-tree", "-rz", "--name-only", "HEAD").split(b"\0") if p}
     for name in REQUIRED:
         if name not in tracked:
