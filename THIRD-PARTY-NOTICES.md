@@ -1,9 +1,10 @@
 # Third-party software and licensing
 
-The root [LICENSE](LICENSE) is the proposed **MIT license for Tenka-chan
-source code that its contributors have the right to license**. It does **not**
-change licenses belonging to packages, fonts, samples, trademarks or content
-owned by others.
+The root [LICENSE](LICENSE) applies the **MIT license to Tenka-chan's
+project-authored code that its contributors have the right to license**.
+It does **not** replace licenses belonging to dependencies, fonts, samples,
+trademarks or content owned by others. It does not establish contributor or
+employer ownership rights by itself.
 
 ## Direct NuGet dependencies (source build)
 
@@ -16,7 +17,7 @@ ship all notices/license texts required for packages actually redistributed.
 
 | Package or component | License / current reference | Role |
 | --- | --- | --- |
-| ModelContextProtocol 2.2.0 | [Apache-2.0 on NuGet](https://www.nuget.org/packages/ModelContextProtocol/2.2.0); upstream is transitioning from MIT, with notices for applicable contributions | MCP client/server SDK |
+| ModelContextProtocol 2.2.0 | [Apache-2.0 on NuGet](https://www.nuget.org/packages/ModelContextProtocol/2.2.0); retain the exact package's notices | MCP client/server SDK |
 | Microsoft.CodeAnalysis.CSharp.Workspaces 5.9.0 | [Roslyn MIT](https://github.com/dotnet/roslyn/blob/main/License.txt) | C# source/semantic analysis |
 | Microsoft.CodeAnalysis.Workspaces.MSBuild 5.9.0 | [Roslyn MIT](https://github.com/dotnet/roslyn/blob/main/License.txt) | MSBuild workspace |
 | Microsoft.Build.Locator 1.11.2 and Microsoft.Build.Framework 17.11.48 | [MSBuild/Microsoft .NET licensing](https://github.com/dotnet/msbuild/blob/main/LICENSE) — verify package-specific notices before distributing binaries | MSBuild integration |
@@ -34,6 +35,9 @@ runtime/transitive package resolution**. Packages can bundle dependencies
 subject to additional conditions. An Apache-2.0 library does not require
 Tenka-chan's *own code* to switch to Apache-2.0, but redistribution requires
 preserving applicable Apache license/NOTICE material and other obligations.
+The two NuGet package-license listings for ModelContextProtocol 2.2.0 and
+SQLitePCLRaw.lib.e_sqlite3 2.1.13 were rechecked on 2026-10-22. This does not
+constitute a review of the contents of all restored/transitive packages.
 
 ## External sample: ILSpy
 
@@ -53,6 +57,6 @@ those files, preserve the appropriate notices and verify their exact contents.
    native packages and transitive dependencies. Retain required license texts
    with published binaries or in their distribution.
 3. Verify the license rights to **all project-authored** code, names, visual
-   assets and third-party contributions before merging the root MIT license.
+   assets and third-party contributions before public redistribution.
 4. Recheck this file whenever package versions, release packaging or examples
    change. Do not interpret its absence of a warning as legal clearance.
