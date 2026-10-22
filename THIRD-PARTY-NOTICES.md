@@ -60,3 +60,21 @@ those files, preserve the appropriate notices and verify their exact contents.
    assets and third-party contributions before public redistribution.
 4. Recheck this file whenever package versions, release packaging or examples
    change. Do not interpret its absence of a warning as legal clearance.
+
+## Offline inventory helper
+
+The optional developer tool `scripts/collect-package-licenses.py` reads the
+explicitly supplied **restored** `project.assets.json` files and approved local
+NuGet cache roots. It inventories all package library records (including
+transitive/build/test dependencies), extracts the package-declared license
+expression or license-file reference, and hashes recorded LICENSE/NOTICE
+candidates. It never runs restore/build, fetches URLs, loads DLLs or changes
+repository visibility. Unknown/missing metadata stays explicitly incomplete;
+`publicReady` and `licenseCompatibilityVerified` remain false.
+
+See [the Windows command and report contract](docs/resolved-package-license-inventory.md).
+Python 3.10+ is optional release tooling only, not a new requirement for normal
+Tenka operation. Input/cache identity, distribution contents and legal
+compliance still require separate review; the helper is not a certified SBOM.
+The executed synthetic tests and source hashes are recorded in
+[package-license-tests-2026-10-22.json](docs/package-license-tests-2026-10-22.json).
