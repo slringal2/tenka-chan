@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "auditDate": "2026-10-22",
+  "repository": "slringal2/tenka-chan",
+  "auditedMainCommit": "fc380d012e02a341d063b5509b4f2d539876871a",
+  "publicReady": false,
+  "wholeHistoryScanned": false,
+  "allActionsLogsScanned": false,
+  "restoredDependencyInventoryVerified": false,
+  "ownershipVerified": false,
+  "ciTriggered": false,
+  "visibilityChanged": false,
+  "workflowRunsReportedByGitHub": 353,
+  "workflowRunsWithFailureReportedByGitHub": 186,
+  "manualLogReview": {
+    "method": "Read the decoded body returned by the dedicated GitHub job-log action. No exhaustive automatic log scan is claimed.",
+    "jobs": [
+      {"runId": 38572257410, "jobId": 115880230328, "kind": "ubuntu_build_test_success"},
+      {"runId": 38571645087, "jobId": 115878085915, "kind": "windows_host_experiments_failure"},
+      {"runId": 38572258783, "jobId": 115880236977, "kind": "windows_trace_success"},
+      {"runId": 38404711872, "jobId": 115321183962, "kind": "oldest_ci_ubuntu_build_failure"}
+    ],
+    "observations": [
+      "Checkout and Git Basic authentication values were masked in the reviewed bodies.",
+      "No obvious unmasked real credential was identified by this limited manual review.",
+      "Fixture localhost endpoints and standard hosted-runner paths were observed, not treated as credentials."
+    ]
+  },
+  "artifactInspection": {
+    "method": "Download actual artifact ZIPs, compare SHA-256 with GitHub digest, enumerate every ZIP entry, read and parse all TRX text in memory without executing it.",
+    "patternCategories": ["github_token", "aws_access_key", "private_key_header", "api_key_shape", "long_basic_or_bearer_value", "quoted_credential_assignment", "email"],
+    "allCategoryHitCountsWereZero": true,
+    "semanticSecretAbsenceProven": false,
+    "artifacts": [
+      {"artifactId": 11896944044, "runId": 38571645087, "bytes": 2843, "entry": "host-workflow.trx", "uncompressedBytes": 13235, "sha256": "60988e49cf032777cf8d401c302c0d90b687eb47ad80dcd60f4e0b63d2c32136", "githubDigestMatches": true},
+      {"artifactId": 11897758039, "runId": 38571645087, "bytes": 2704, "entry": "host-workflow.trx", "uncompressedBytes": 11565, "sha256": "c1202db790e13a0a58b583f570d3f59a353da699548d88fb3cdb86af5c3ed9bd", "githubDigestMatches": true},
+      {"artifactId": 11897134918, "runId": 38572258783, "bytes": 2807, "entry": "trusted-trace.trx", "uncompressedBytes": 17590, "sha256": "d765ce7e79f83a3efa2e582a8b85738e13f9f54b0a58152ca350ed47958bc1ae", "githubDigestMatches": true},
+      {"artifactId": 11898013834, "runId": 38572258783, "bytes": 2771, "entry": "trusted-trace.trx", "uncompressedBytes": 17725, "sha256": "262911ea5ad8584514c7f0f3f2cb2dd6464fe99f64abbbad04ff5bd711248b92", "githubDigestMatches": true}
+    ]
+  },
+  "limitedHistoricalPathQueries": {
+    "ref": "fc380d012e02a341d063b5509b4f2d539876871a",
+    "paths": ["mcp-config.json", ".env", "settings.json"],
+    "allReturnedEmpty": true,
+    "coversOtherBranchesOrRenamedPaths": false,
+    "coversFileContents": false
+  },
+  "packageDeclarations": {
+    "scope": "Unique direct PackageReference entries in src/TenkaChan.Mcp/TenkaChan.Mcp.csproj and tests/TenkaChan.Tests/TenkaChan.Tests.csproj, checked against version-specific official NuGet Gallery declarations. Not actual resolved transitive packages.",
+    "count": 13,
+    "declaredMIT": 9,
+    "declaredApache2": 4,
+    "traceEventNativeBundling": {
+      "version": "3.2.8",
+      "upstreamRef": "v3.2.8",
+      "nuspecBlob": "185283f94c2d3ed1aeb685626fab71b81efd5cd3",
+      "nativeExamples": ["msdia140.dll", "KernelTraceControl.dll", "KernelTraceControl.Win61.dll"],
+      "actualShippedBinaryLicenseTermsVerified": false,
+      "redistributionProhibitedClaimed": false
+    }
+  },
+  "limitations": [
+    "The four inspected logs do not cover all jobs, attempts or workflows.",
+    "The four ZIPs do not cover all workflow artifacts.",
+    "Regex no-match does not prove absence of secrets or confidential content.",
+    "No authenticated full Git clone or whole-blob history scan was available in this environment.",
+    "Native bundled files can require a separate review from the package-level declaration.",
+    "Employer, contributor, trademark and artwork rights cannot be inferred from package metadata.",
+    "No C# build, xUnit or Windows validation was executed in this audit."
+  ]
+}
