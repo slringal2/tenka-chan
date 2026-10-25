@@ -177,5 +177,5 @@ test('all dashboard picker kinds are supported and IDs or relative paths have no
 test('build results link straight to dashboard views without reopening the workspace', () => {
   const html = fs.readFileSync(path.join(web, 'workspace-build.html'), 'utf8');
   for (const view of ['overview', 'deterministic', 'hotspots']) assert.ok(html.includes(`href="/#${view}"`));
-  assert.match(html, /再度「読み込む」を押す必要はありません/);
+  assert.match(html, /パスの再入力・読み込み直しは不要です/);
 });
