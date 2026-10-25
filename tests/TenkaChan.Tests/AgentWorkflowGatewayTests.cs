@@ -54,6 +54,7 @@ public sealed class AgentWorkflowGatewayTests : IDisposable
     }
     [Theory]
     [InlineData("review_queue")]
+    [InlineData("review_focus")]
     [InlineData("review_target")]
     [InlineData("review_context")]
     [InlineData("list_types")]
@@ -68,6 +69,16 @@ public sealed class AgentWorkflowGatewayTests : IDisposable
         Assert.Contains("tenka_open_project", reply.Data.Value.GetProperty("nextAction").GetString()!);
     }
     [Fact]
+    public async Task ReloadDoesNotBypassBuildPermission()
+    {
+        var denied = await Call("reload_workspace",
+            new { snapshotId = "not-loaded", approved = false });
+        Assert.Equal("failed", denied.Outcome);
+        Assert.Equal("build_disabled", denied.Data!.Value.GetProperty("code").GetString());
+        Assert.Contains("TENKA_AGENT_ALLOW_BUILD", denied.Error);
+    }
+
+    [Fact]
     public async Task ContextStillReturnsUnloadedStateInsteadOfReopening()
     {
         var reply = await Call("context", new { });
@@ -75,6 +86,7 @@ public sealed class AgentWorkflowGatewayTests : IDisposable
         Assert.Equal(JsonValueKind.Null, reply.Data!.Value.GetProperty("workspace").ValueKind);
         Assert.False(reply.Data.Value.GetProperty("overview").GetProperty("loaded").GetBoolean());
         Assert.True(reply.Data.Value.TryGetProperty("session", out _));
+        Assert.Contains("tenka_review_focus", reply.Data.Value.GetProperty("workflow").GetString());
     }
     [Fact]
     public async Task RevocationIsIdempotentAndDuplicateRequestIsNotExecutedTwice()

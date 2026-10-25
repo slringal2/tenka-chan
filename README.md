@@ -76,17 +76,17 @@ ILSpyは固定コミットから取得し、ソースを甜花ちゃん向けに
 
 ## 外部エージェントのツール
 
-現在のMCP公開ツールは46個です。旧`workspace_open`や内蔵レビュー起動ツールではなく、次の`tenka_*`を使います。
+ツール数はバージョンと導入済み機能で変わります。実際に公開される一覧はMCPの`tools/list`で確認してください。旧`workspace_open`や内蔵レビュー起動ツールではなく、次の`tenka_*`を使います。
 
 | 領域 | 公開ツール |
 |---|---|
-| 接続・対象 | `tenka_connect` / `tenka_context` / `tenka_sample` / `tenka_open_project` / `tenka_finish` |
+| 接続・対象 | `tenka_connect` / `tenka_context` / `tenka_sample` / `tenka_open_project` / `tenka_reload_workspace` / `tenka_attach_workspace` / `tenka_finish` |
 | コード | `tenka_list_types` / `tenka_inspect_type` / `tenka_type_references` / `tenka_inspect_method` / `tenka_method_references` |
 | 静的解析 | `tenka_scan` / `tenka_rules` / `tenka_priorities` / `tenka_test_inputs` |
 | IL・JIT | `tenka_binary_methods` / `tenka_il` / `tenka_jit` / `tenka_artifact` / `tenka_native` / `tenka_compare_native` |
-| ビルド・計測 | `tenka_build` / `tenka_trace` / `tenka_import_thread` / `tenka_runtime_costs` / `tenka_run_companion` / `tenka_dynamic_diagnose` / `tenka_allocation_stacks` |
+| ビルド・計測 | `tenka_build` / `tenka_trace` / `tenka_import_thread` / `tenka_runtime_costs` / `tenka_run_companion` / `tenka_measure_companion` / `tenka_measure_target` / `tenka_dynamic_diagnose` / `tenka_allocation_stacks` |
 | 生成実験 | `tenka_prepare_experiment` / `tenka_run_experiment` / `tenka_experiment_result` / `tenka_compare_benchmarks` |
-| 確認・差分 | `tenka_review_queue` / `tenka_review_target` / `tenka_mark_review` / `tenka_review_diff` / `tenka_review_history` |
+| 確認・差分 | `tenka_review_queue` / `tenka_review_focus`（ソース・CFG要約・mark用ハッシュ） / `tenka_review_context`（IL候補） / `tenka_review_target` / `tenka_mark_review` / `tenka_review_diff` / `tenka_review_history` |
 | 報告・結果 | `tenka_note` / `tenka_read_result` |
 
 複数のMCPアダプターも、起動中の同じWebプロセスの`DashboardState`を利用します。
@@ -97,6 +97,31 @@ ILSpyは固定コミットから取得し、ソースを甜花ちゃん向けに
 確認キューを処理しながら続ける場合は、返された`nextCursor`を次の`cursor`に渡します。
 チェック済みを除いて件数が減るため、単純にoffsetを加算しないでください。
 `hasMore=false`は索引内の現在の続きがないという意味で、全コードの確認完了ではありません。
+
+## 1回でソースを読むレビュー操作
+
+`tenka_review_queue`（`kind=all`, `state=pending`）が返したdurableな
+`targetId`と現在の`snapshotId`を`tenka_review_focus`へ渡すと、
+`data.source`にソース断片、`data.analysis`に呼び出し/CFGの件数とプレビュー、
+`data.sourceHash`・`data.contextHash`・`data.expectedRevision`にレビュー記録用情報が返ります。
+ソースは既定12,000文字・上限16,000文字ですが、Unicode/エスケープ文字が多い場合は
+**JSON化した応答を52KB以下に収めるため自動で短くします**。
+続きは`sourceOffset`を推測せず、
+**前回の`sourceOffset + sourceLength`または`nextAction`に示された位置**から取得してください。
+続きのページはCFGや呼び出し関係を再計算せず、`analysisIncluded=false`になります。
+`review_context`は詳細なバイナリ候補・IL選択が必要な場合に使います。
+
+従来の大きな`inspect_method`/`review_context`結果は、同じライブMCPセッションで
+`tenka_read_result(callId, pointer="/source", offset=0, limit=30)`とすると、
+`data.source`に直接テキストが返り、`data.data`の入れ子を避けられます。
+こちらの`limit`は200文字ブロック単位（30＝最大6,000文字）です。
+これは元の`inspect_method`で表示上限に切り詰められたソースを読む経路なので、
+**完全なレビュー対象ソースには`review_focus`を使用**してください。
+
+空白のみの変更でも`contextChanged`がtrueになる場合があります。
+現行のfingerprintはプロジェクトと依存関係のソース本文を含み、改行コード以外の
+空白を正規化しないためです。既存のレビュー履歴・競合検出の安全性を維持するため、
+ハッシュ仕様は変更していません。
 
 ## 生成実験のフレームワーク
 
@@ -177,6 +202,19 @@ JIT取得には起動したアプリが対象メソッドを実際に呼ぶ必�
 
 大規模索引・履歴・結果の保存には上限があります。表示されない範囲を完了扱いにしません。
 完全な推移依存解決、実測とソース変更の厳密な結合、統計的な性能回帰判断、再起動後の調査全体の再開は残作業です。
+
+## オープンソースと公開前の確認
+
+自作部分は [MITライセンス](LICENSE) での公開を準備しています。
+外部ライブラリや取得したILSpyには**それぞれ別のライセンス**が適用されます。
+[第三者ライセンス](THIRD-PARTY-NOTICES.md)を参照してください。
+改変・商用利用はMITの条件で可能ですが、ビルド対象の信頼と
+Windowsホストの実行承認は必要です。
+
+公開する前に [公開前チェックリスト](docs/PUBLIC-RELEASE-CHECKLIST.md) に従って
+Git履歴の秘密情報、著作権/名称、全依存パッケージとWindowsビルドを確認します。
+セキュリティ問題は[非公開での報告案内](SECURITY.md)に従ってください。
+改善を提案する場合は[CONTRIBUTING.md](CONTRIBUTING.md)を参照してください。
 
 ## 詳細資料
 

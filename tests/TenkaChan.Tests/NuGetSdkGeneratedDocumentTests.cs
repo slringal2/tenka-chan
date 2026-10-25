@@ -14,8 +14,11 @@ public sealed class NuGetSdkGeneratedDocumentTests : IDisposable
     private string Packages => Path.Combine(_root, "packages");
     private string Synthetic => Path.Combine(Packages, "microsoft.net.test.sdk", "17.14.1",
         "build", "net8.0", "Microsoft.NET.Test.Sdk.Program.cs");
+    private string Injected => Path.Combine(Packages, "tunnelvisionlabs.referenceassemblyannotator",
+        "1.0.0-alpha.160", "build", "NullableAttributes.cs");
 
-    private string Fixture(string? additionalExternal = null)
+    private string Fixture(string? additionalExternal = null, string? additionalPackageInjected = null,
+        string? missingGenerated = null)
     {
         Directory.CreateDirectory(Workspace);
         Directory.CreateDirectory(Path.GetDirectoryName(Synthetic)!);
@@ -29,6 +32,16 @@ public sealed class NuGetSdkGeneratedDocumentTests : IDisposable
         File.WriteAllText(Synthetic, "namespace Microsoft.NET.Test.Sdk; public static class Program { public static int Main() => 0; }");
         var extra = additionalExternal is null ? "" :
             "<Compile Include=\"" + SecurityElement.Escape(additionalExternal) + "\" Link=\"External.cs\" />";
+        var injected = "";
+        if (additionalPackageInjected is not null)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(additionalPackageInjected)!);
+            File.WriteAllText(additionalPackageInjected,
+                "namespace TunnelVisionLabs; internal static class NullableAttributes { }");
+            injected = "<Compile Include=\"" + SecurityElement.Escape(additionalPackageInjected) + "\" Link=\"Injected.cs\" />";
+        }
+        var generated = missingGenerated is null ? "" :
+            "<Compile Include=\"" + SecurityElement.Escape(missingGenerated) + "\" />";
         File.WriteAllText(Path.Combine(tests, "Tests.csproj"), $"""
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
@@ -36,6 +49,8 @@ public sealed class NuGetSdkGeneratedDocumentTests : IDisposable
                 <ProjectReference Include="../App/App.csproj" />
                 <Compile Include="{SecurityElement.Escape(Synthetic)}" Link="Sdk.Program.cs" />
                 {extra}
+                {injected}
+                {generated}
               </ItemGroup>
             </Project>
             """);
@@ -71,6 +86,39 @@ public sealed class NuGetSdkGeneratedDocumentTests : IDisposable
     }
 
     [Fact]
+    public void ReviewedPackageInjectedSourceCatalogIsExactAndNarrow()
+    {
+        Fixture();
+        Directory.CreateDirectory(Path.GetDirectoryName(Injected)!);
+        File.WriteAllText(Injected, "namespace TunnelVisionLabs; internal static class NullableAttributes { }");
+        var policy = new NuGetSdkGeneratedDocumentPolicy(Packages);
+
+        Assert.True(policy.CanExclude(Injected));
+        // Same file name under an unreviewed package id stays outside the allowlist.
+        var otherPackage = Path.Combine(Packages, "some.other.package", "1.0.0", "build", "NullableAttributes.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(otherPackage)!);
+        File.WriteAllText(otherPackage, "unrelated");
+        Assert.False(policy.CanExclude(otherPackage));
+        // A different file inside the reviewed package is not exempt.
+        var otherFile = Path.Combine(Packages, "tunnelvisionlabs.referenceassemblyannotator",
+            "1.0.0-alpha.160", "build", "Sensitive.cs");
+        File.WriteAllText(otherFile, "unrelated");
+        Assert.False(policy.CanExclude(otherFile));
+        // The reviewed layout has no TFM folder; an unexpected nested folder is rejected.
+        var nested = Path.Combine(Packages, "tunnelvisionlabs.referenceassemblyannotator",
+            "1.0.0-alpha.160", "build", "net8.0", "NullableAttributes.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(nested)!);
+        File.WriteAllText(nested, "unrelated");
+        Assert.False(policy.CanExclude(nested));
+        // Only the package's build folder is recognised.
+        var notBuild = Path.Combine(Packages, "tunnelvisionlabs.referenceassemblyannotator",
+            "1.0.0-alpha.160", "lib", "NullableAttributes.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(notBuild)!);
+        File.WriteAllText(notBuild, "unrelated");
+        Assert.False(policy.CanExclude(notBuild));
+    }
+
+    [Fact]
     public async Task OpensMultiProjectSolutionWithoutIndexingExternalSdkSyntheticSource()
     {
         if (!MSBuildLocator.IsRegistered) MSBuildLocator.RegisterDefaults();
@@ -85,9 +133,41 @@ public sealed class NuGetSdkGeneratedDocumentTests : IDisposable
         // same document set as the App project (one user source plus any SDK-generated
         // documents, whose count varies by SDK version). Do not pin an absolute count.
         Assert.Equal(app.Documents, tests.Documents);
-        Assert.Contains(result.WorkspaceWarnings, w => w.Contains("synthetic source document"));
+        Assert.Contains(result.WorkspaceWarnings, w => w.Contains("package-injected source document"));
         Assert.NotEmpty(service.FindMethods("Check.Go"));
         Assert.DoesNotContain(service.GetReviewTargets(), t => t.Method.File == Synthetic);
+    }
+
+    [Fact]
+    public async Task OpensSolutionExcludingReviewedPackageInjectedSource()
+    {
+        if (!MSBuildLocator.IsRegistered) MSBuildLocator.RegisterDefaults();
+        var solution = Fixture(additionalPackageInjected: Injected);
+        var guard = new WorkspaceGuard([Workspace], true, false);
+        using var service = new RoslynReviewService(guard, new NuGetSdkGeneratedDocumentPolicy(Packages));
+        var result = await service.OpenAsync(solution);
+        Assert.Equal(2, result.Projects.Count);
+        Assert.Contains(result.WorkspaceWarnings, w => w.Contains("package-injected source document"));
+        Assert.NotEmpty(service.FindMethods("Check.Go"));
+        Assert.DoesNotContain(service.GetReviewTargets(), t => t.Method.File == Injected);
+    }
+
+    [Fact]
+    public async Task MissingBuildGeneratedSourceIsNotMisreportedAsMissingCsproj()
+    {
+        if (!MSBuildLocator.IsRegistered) MSBuildLocator.RegisterDefaults();
+        var missing = Path.Combine(Workspace, "Tests", "Properties", "DecompilerVersionInfo.cs");
+        var solution = Fixture(missingGenerated: missing);
+        var guard = new WorkspaceGuard([Workspace], true, false);
+        using var service = new RoslynReviewService(guard,
+            new NuGetSdkGeneratedDocumentPolicy(Packages));
+        var error = await Assert.ThrowsAsync<FileNotFoundException>(
+            () => service.OpenAsync(solution));
+        Assert.Contains("C# Compile source document is missing", error.Message);
+        Assert.Contains("DecompilerVersionInfo.cs", error.Message);
+        Assert.Contains("NOT a missing .csproj", error.Message);
+        Assert.Contains("Build the trusted project", error.Message);
+        Assert.Equal(Path.GetFullPath(missing), error.FileName);
     }
 
     [Fact]

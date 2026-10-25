@@ -71,10 +71,11 @@ public sealed partial class RoslynReviewService : IDisposable
                 ? (await _workspace.OpenProjectAsync(safePath, cancellationToken: ct)).Solution
                 : await _workspace.OpenSolutionAsync(safePath, cancellationToken: ct);
             // Reject documents outside configured allowed roots (including arbitrary
-            // linked files). MSBuildWorkspace may expose Microsoft.NET.Test.Sdk's
-            // synthetic Program.cs from the NuGet cache. Remove only that narrowly
-            // identified, non-user source from the ANALYSIS snapshot; do not grant
-            // the cache a broad allowlist or index external source as trusted code.
+            // linked files). MSBuildWorkspace may expose reviewed package-injected
+            // sources from the NuGet cache (for example Microsoft.NET.Test.Sdk's
+            // synthetic Program.cs). Remove only those narrowly identified, non-user
+            // sources from the ANALYSIS snapshot; do not grant the cache a broad
+            // allowlist or index external source as trusted code.
             var excluded = new List<DocumentId>();
             foreach (var project in _solution.Projects.Where(p => p.Language == LanguageNames.CSharp))
             {
@@ -90,12 +91,26 @@ public sealed partial class RoslynReviewService : IDisposable
                     {
                         excluded.Add(document.Id);
                     }
+                    catch (FileNotFoundException ex)
+                    {
+                        // The project file already passed its separate .csproj
+                        // validation. A missing Compile item is often emitted
+                        // by an MSBuild target which has not run yet. Do NOT
+                        // silently turn it into an empty document or hide it.
+                        var missingSource = ex.FileName ?? document.FilePath;
+                        throw new FileNotFoundException(
+                            "C# Compile source document is missing in project '" + project.Name +
+                            "': " + missingSource + ". This is NOT a missing .csproj; " +
+                            "MSBuild may generate the .cs only after restore/build. " +
+                            "Build the trusted project with explicit approval, then reopen the solution. " +
+                            "No generated source was synthesized or skipped.", missingSource, ex);
+                    }
                 }
             }
             foreach (var id in excluded) _solution = _solution.RemoveDocument(id);
             if (excluded.Count > 0)
-                _warnings.Add($"Excluded {excluded.Count} known Microsoft.NET.Test.Sdk synthetic source document(s) outside the workspace allowlist. " +
-                    "Their methods are not reviewed and Roslyn-only compilation diagnostics may differ from the built test assembly. " +
+                _warnings.Add($"Excluded {excluded.Count} known package-injected source document(s) outside the workspace allowlist. " +
+                    "Their methods are not reviewed and Roslyn-only compilation diagnostics may differ from the built assembly. " +
                     "No NuGet directory was added to TENKA_ALLOWED_ROOTS.");
             _snapshotId = Guid.NewGuid().ToString("N");
 
@@ -302,6 +317,7 @@ public sealed partial class RoslynReviewService : IDisposable
         var compilerErrors = 0;
         var compilerWarnings = 0;
         var compilerInfos = 0;
+        var compilerErrorsById = new Dictionary<string, int>(StringComparer.Ordinal);
         var projectAnalyzerDiagnostics = 0;
         var projectAnalyzersExecuted = 0;
         var additionalNotes = new List<string>();
@@ -398,7 +414,11 @@ public sealed partial class RoslynReviewService : IDisposable
             foreach (var diagnostic in compilation.GetDiagnostics(ct))
             {
                 ct.ThrowIfCancellationRequested();
-                if (diagnostic.Severity == DiagnosticSeverity.Error) compilerErrors++;
+                if (diagnostic.Severity == DiagnosticSeverity.Error)
+                {
+                    compilerErrors++;
+                    compilerErrorsById[diagnostic.Id] = compilerErrorsById.GetValueOrDefault(diagnostic.Id) + 1;
+                }
                 else if (diagnostic.Severity == DiagnosticSeverity.Warning) compilerWarnings++;
                 else compilerInfos++;
 
@@ -482,6 +502,7 @@ public sealed partial class RoslynReviewService : IDisposable
             incompleteRuleScanning,
             new string[]
             {
+                CompilerDiagnosticContext.Interpretation,
                 "Compiler diagnostics are compilation facts; rules describe candidates or language semantics, not proven application bugs.",
                 "Complexity scores are syntax heuristics; CFG metrics are optional and do not represent runtime hotness.",
                 "Findings use stable fingerprints for identical project-relative code and rule versions; snapshot IDs are session-specific.",
@@ -491,7 +512,9 @@ public sealed partial class RoslynReviewService : IDisposable
             }.Concat(additionalNotes).ToArray())
         {
             ProjectAnalyzerDiagnostics = projectAnalyzerDiagnostics,
-            ProjectAnalyzersExecuted = projectAnalyzersExecuted
+            ProjectAnalyzersExecuted = projectAnalyzersExecuted,
+            TopCompilerErrorCodes = CompilerDiagnosticContext.TopErrorCodes(compilerErrorsById),
+            PotentialReferenceResolutionErrors = CompilerDiagnosticContext.PotentialReferenceResolutionErrors(compilerErrorsById)
         };
         return new DeterministicAnalysisReport(
             summary, ordered.Take(findingLimit).ToArray(), metrics);
@@ -634,6 +657,7 @@ public sealed partial class RoslynReviewService : IDisposable
         EnsureOpen();
         var returned = new List<CompilationDiagnostic>();
         var errorCount = 0;
+        var errorsById = new Dictionary<string, int>(StringComparer.Ordinal);
         var warningCount = 0;
         var infoCount = 0;
         var take = Math.Clamp(limit, 1, 2000);
@@ -645,7 +669,11 @@ public sealed partial class RoslynReviewService : IDisposable
             if (compilation is null) continue;
             foreach (var diagnostic in compilation.GetDiagnostics(ct))
             {
-                if (diagnostic.Severity == DiagnosticSeverity.Error) errorCount++;
+                if (diagnostic.Severity == DiagnosticSeverity.Error)
+                {
+                    errorCount++;
+                    errorsById[diagnostic.Id] = errorsById.GetValueOrDefault(diagnostic.Id) + 1;
+                }
                 else if (diagnostic.Severity == DiagnosticSeverity.Warning) warningCount++;
                 else infoCount++;
 
@@ -660,7 +688,11 @@ public sealed partial class RoslynReviewService : IDisposable
             }
         }
         return new CompilationDiagnosticsReport(
-            errorCount, warningCount, infoCount, returned.Count, returned);
+            errorCount, warningCount, infoCount, returned.Count, returned)
+        {
+            TopErrorCodes = CompilerDiagnosticContext.TopErrorCodes(errorsById),
+            PotentialReferenceResolutionErrors = CompilerDiagnosticContext.PotentialReferenceResolutionErrors(errorsById)
+        };
     }
 
     public async Task<IReadOnlyList<ReferenceHit>> FindReferencesAsync(

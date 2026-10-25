@@ -72,7 +72,11 @@ public static class ExplorerEndpoints
                     }
                     case "type-references": return await index.ReferencesAsync(Required(request.TypeId), true, ct);
                     case "method-references": return await index.ReferencesAsync(Method().Id, false, ct);
-                    case "method": return new { method = Method(), inspection = await roslyn.InspectAsync(Method().Id, true, ct) };
+                    case "method": return new {
+                        method = Method(), inspection = await roslyn.InspectAsync(Method().Id, true, ct),
+                        selectionScope = "current_loaded_roslyn_snapshot_only",
+                        note = "methodId is ephemeral. Keep snapshotId and current Web instance; durable targetId is a separate key resolved via tenka_review_context."
+                    };
                     case "test-plan": return roslyn.SuggestTestPlan(Method().Id);
                     case "scan": return await dashboard.ExplorerScanAsync(ct);
                     case "priorities": return await new ReviewPriorityService(roslyn).BuildAsync(new(), ct);
@@ -203,9 +207,8 @@ public static class ExplorerEndpoints
                             // a declaration or attribute runtime time to it.
                             try
                             {
-                                var method = index.Method(frame.MatchedMethodId!);
-                                source.Add(method.Id, new MethodSummary(method.Id,
-                                    method.Project, method.Signature, method.File, method.Line));
+                                var summary = index.MethodSeed(frame.MatchedMethodId!).Summary;
+                                source.Add(summary.Id, summary);
                             }
                             catch (KeyNotFoundException) { }
                         }

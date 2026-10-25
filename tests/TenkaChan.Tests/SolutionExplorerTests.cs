@@ -50,6 +50,9 @@ public sealed class SolutionExplorerTests
         Assert.Equal(2, index.Projects.Count);
         var all = index.Types(null, "Shared.Worker");
         Assert.Equal(2, all.Total);
+        Assert.Equal("current_loaded_roslyn_snapshot_only", all.SelectionScope);
+        Assert.Contains("tenka_review_queue", all.NextAction);
+        Assert.Contains("tenka_inspect_type", all.NextAction);
         Assert.NotEqual(all.Items[0].Id, all.Items[1].Id);
         Assert.NotEqual(all.Items[0].ProjectId, all.Items[1].ProjectId);
         var first = await index.TypeAsync(all.Items[0].Id);

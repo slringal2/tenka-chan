@@ -42,6 +42,18 @@ public sealed partial class DashboardState
             snapshotId = index.SnapshotId, path = _path, projects = index.Projects,
             assemblies = ExplorerProjectActions.Assemblies(index, discovery),
             companions = ExplorerProjectActions.Companions(index, guard),
+            reviewWorkflow =
+                "Use tenka_review_queue(kind=all,state=pending) -> tenka_review_focus(snapshotId,durable targetId) " +
+                "for bounded source and analysis in one call. Add sourceOffset when sourceHasMore. " +
+                "Use review_context(includeBinary=true) only for IL candidates. " +
+                "After source changes, explicitly approve reload_workspace with current snapshotId.",
+            measurementWorkflow =
+                "Check companions[] for a benchmark whose ProjectReference reaches the chosen target. " +
+                "If none is present (common for ILSpy's 3-project analysis subset), " +
+                "use tenka_review_queue(kind=all) -> tenka_review_context(targetId) -> " +
+                "tenka_prepare_experiment(kind=benchmark) -> tenka_measure_target on the UNEXECUTED experiment. " +
+                "Do not call tenka_run_experiment first. All execution still requires explicit approval.",
+            selectionScope = "typeId/methodId/projectId are current-snapshot-only. Durable targetId is separately resolved by tenka_review_context.",
             capabilities = new
             {
                 build = guard.TrustMsBuild && Environment.GetEnvironmentVariable("TENKA_ENABLE_LOCAL_EXEC") == "1",
@@ -86,7 +98,14 @@ public sealed partial class DashboardState
         _findings = findings; _diagnostics = diagnostics; _deterministic = deterministic; _hotspots = hotspots;
         _lastScanned = DateTimeOffset.UtcNow;
         return new { summary = deterministic.Summary, findings = deterministic.Findings,
-            methods = deterministic.MethodMetrics, hotspots, note = "静的な調査候補です。実測時間やバグの確定ではありません。表示上限はsummaryを確認してください。" };
+            methods = deterministic.MethodMetrics, hotspots,
+            compilation = new {
+                diagnostics.Scope, diagnostics.ErrorCount,
+                diagnostics.WarningCount, diagnostics.InformationCount,
+                diagnostics.PotentialReferenceResolutionErrors,
+                diagnostics.TopErrorCodes, diagnostics.Interpretation
+            },
+            note = "Compiler errors are from the loaded Roslyn graph, not a verified build. A partial .slnx may have missing references; see compilation.topErrorCodes and compilation.interpretation before treating errors as defects." };
     }
 
     public void InvalidateExplorerReports()

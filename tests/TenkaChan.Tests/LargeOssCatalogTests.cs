@@ -26,6 +26,8 @@ public sealed class LargeOssCatalogTests : IDisposable
         Fixture(); var result = Catalog().Find(Path.Combine(_root, "src/TenkaChan.Web"));
         Assert.True(result.Available); Assert.False(result.AssemblyExists);
         Assert.EndsWith("ILSpy.Analysis.slnx", result.ProjectPath); Assert.Equal(3, result.ProjectCount);
+        Assert.Contains("tenka_measure_target", result.MeasurementGuidance);
+        Assert.Contains("UNEXECUTED", result.MeasurementGuidance);
         Assert.False(Directory.Exists(Path.Combine(_root, "samples/External/ILSpy-10.0/source/ICSharpCode.ILSpyCmd/bin")));
     }
     [Fact] public void MissingCloneOffersTheBatchFileWithoutCreatingDirectories()

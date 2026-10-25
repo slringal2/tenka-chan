@@ -6,7 +6,15 @@ public sealed record ReviewContextComponent(string Name, string Hash);
 public sealed record ReviewContextFingerprint(int Version, string Hash, bool Complete,
     IReadOnlyList<ReviewContextComponent> Components);
 public sealed record ReviewContextChange(string Status, int? PreviousVersion, int CurrentVersion,
-    IReadOnlyList<string> ChangedComponents, string Note);
+    IReadOnlyList<string> ChangedComponents, string Note)
+{
+    // Additive explanation only; fingerprint v2 and all stored checkpoint hashes
+    // remain exactly the same. Whitespace changes are deliberately conservative.
+    public string HashSemantics =>
+        "Context fingerprint includes raw sourceFiles in this project's dependency closure. " +
+        "Whitespace-only edits can change contextHash (and sourceHash if in the marked declaration); " +
+        "only line ending styles are normalized. This is a change detector, not semantic equivalence.";
+}
 
 /// <summary>
 /// Versioned, bounded diagnostics for the conservative project/dependency context.
@@ -67,7 +75,7 @@ public static class ReviewContextFingerprints
         var changes = current.Components.Where(c => old[c.Name] != c.Hash).Select(c => c.Name).ToList();
         if (previous.Complete != current.Complete) changes.Add("referenceAvailability");
         return Result("changed", changes.ToArray(),
-            "These components changed in the loaded project/dependency closure. sourceFiles includes other methods; generatedSources is diagnostic only and is NOT ignored. Reload alone does not approve changed context.");
+            "These components changed in the loaded project/dependency closure. sourceFiles includes raw content from this and dependent source files, including whitespace-only edits (only CRLF/CR are normalized to LF). Changing whitespace can set BOTH sourceChanged and contextChanged without changing program behavior. generatedSources is diagnostic only and is NOT ignored. Reload alone does not approve changed context.");
     }
 
     // List responses must not repeat two full manifests per target. Detailed target/context

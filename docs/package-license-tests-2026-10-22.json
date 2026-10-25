@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "verifiedDate": "2026-10-22",
+  "scope": "Disposable synthetic NuGet assets/nuspec/cache and subprocess CLI fixtures; not actual repository restored dependencies",
+  "environment": {
+    "python": "3.13.5",
+    "os": "Debian GNU/Linux 13 (trixie)"
+  },
+  "command": "python tests/test_package_license_inventory.py",
+  "testsRun": 27,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "success": true,
+  "windowsVerified": false,
+  "dotnetBuildVerified": false,
+  "realDependencyInventoryVerified": false,
+  "publicReady": false,
+  "files": [
+    {
+      "path": "scripts/collect-package-licenses.py",
+      "sha256": "18f0d0c4c90c2ad1cf58b903e91087ec09099aa6f11496907297c28634751c75",
+      "gitBlobSha1": "d983dc3954288a9b94b965777d5e759bdc7af216"
+    },
+    {
+      "path": "tests/test_package_license_inventory.py",
+      "sha256": "69a13872beb4d5be0ed1441573eade5371cdb12d67b66212414eccb673d2e568",
+      "gitBlobSha1": "03c5f0aa2f755a149f40f7b60a8310df31efe2a2"
+    }
+  ]
+}
