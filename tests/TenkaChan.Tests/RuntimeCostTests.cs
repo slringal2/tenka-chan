@@ -12,6 +12,94 @@ public sealed class RuntimeCostTests
     {
         var a = new RuntimeCostAccumulator(); foreach (var e in events) a.Add(e); return Assert.Single(a.Build());
     }
+
+    [Fact]
+    public void ExceptionThrownIsFirstChanceAndRemainsPerPidClrOnly()
+    {
+        var a = new RuntimeCostAccumulator();
+        a.Add(E("exception_thrown", 1, pid: 10, clr: 1) with
+        { ExceptionType = "System.InvalidOperationException", ExceptionFlags = 0 });
+        a.Add(E("exception_thrown", 2, pid: 10, clr: 1) with
+        { ExceptionType = "System.InvalidOperationException", ExceptionFlags = 0x04 });
+        a.Add(E("exception_thrown", 3, pid: 10, clr: 2) with
+        { ExceptionType = "System.InvalidOperationException", ExceptionFlags = 0 });
+        a.Add(E("exception_thrown", 4, pid: 20, clr: 1) with
+        { ExceptionType = "System.TimeoutException", ExceptionFlags = 0 });
+        var summaries = a.Build();
+        Assert.Equal(3, summaries.Count);
+        var current = Assert.Single(summaries, x => x.ProcessId == 10 && x.ClrInstanceId == 1);
+        Assert.Equal(2, current.ExceptionThrows);
+        var kind = Assert.Single(current.ExceptionTypes);
+        Assert.Equal("System.InvalidOperationException", kind.TypeName);
+        Assert.Equal(2, kind.ObservedThrows);
+        Assert.Equal(1, kind.RethrowFlagsObserved);
+        Assert.Equal(1d, kind.FirstThrownMs);
+        Assert.Equal(2d, kind.LastThrownMs);
+        Assert.False(kind.DefectConfirmed);
+        Assert.Contains("throw_site_unresolved", kind.SourceAttribution);
+        Assert.Equal("first_chance_throws_observed", current.Coverage["managedExceptions"]);
+        Assert.Equal(0, current.ContentionStops);
+        Assert.Null(current.CpuMilliseconds);
+        Assert.All(current.InvestigationHints, hint => Assert.False(hint.DefectConfirmed));
+        Assert.Equal(1, Assert.Single(summaries, x => x.ProcessId == 10 && x.ClrInstanceId == 2).ExceptionThrows);
+    }
+
+    [Fact]
+    public void ExceptionRowsAreBoundedButObservedTotalsAndTruncationRemainExplicit()
+    {
+        var a = new RuntimeCostAccumulator(new(MaxRows: 1));
+        a.Add(E("exception_thrown", 1) with { ExceptionType = "System.TimeoutException" });
+        a.Add(E("exception_thrown", 2) with { ExceptionType = "System.InvalidOperationException" });
+        a.Add(E("exception_thrown", 3) with { ExceptionType = "System.InvalidOperationException" });
+        var summary = Assert.Single(a.Build());
+        Assert.Equal(3, summary.ExceptionThrows);
+        Assert.Equal(2, summary.ExceptionKindsRetained);
+        Assert.True(summary.ExceptionTypeListTruncated);
+        Assert.True(summary.DetailsTruncated);
+        var common = Assert.Single(summary.ExceptionTypes);
+        Assert.Equal("System.InvalidOperationException", common.TypeName);
+        Assert.Equal(2, common.ObservedThrows);
+    }
+
+    [Fact]
+    public void ExcessiveExceptionTypeCardinalityIsRejectedAsCoverageNotLostSilently()
+    {
+        var a = new RuntimeCostAccumulator();
+        for (var i = 0; i < 260; i++)
+            a.Add(E("exception_thrown", i) with { ExceptionType = "A.Exception" + i });
+        var report = Assert.Single(a.Build());
+        Assert.Equal(260, report.ExceptionThrows);
+        Assert.Equal(256, report.ExceptionKindsRetained);
+        Assert.True(report.ExceptionTypeListTruncated);
+        Assert.Contains("exception_type_group_limit", report.IncompleteEvidence.Keys);
+        Assert.True(report.DetailsTruncated);
+    }
+
+    [Fact]
+    public void ExceptionTypeIsSanitizedAndMessagesAreNeverAnOutputField()
+    {
+        var report = One(E("exception_thrown", 0) with
+        { ExceptionType = " System.\r\n\tInvalidOperationException " },
+            E("exception_thrown", 1) with { ExceptionType = null });
+        Assert.Equal(2, report.ExceptionThrows);
+        Assert.Contains(report.ExceptionTypes, kind => kind.TypeName == "System.InvalidOperationException");
+        Assert.Contains(report.ExceptionTypes, kind => kind.TypeName == "(exception type unavailable)");
+        var json = System.Text.Json.JsonSerializer.Serialize(report);
+        Assert.DoesNotContain("ExceptionMessage", json);
+        Assert.DoesNotContain("ExceptionHR", json);
+        Assert.DoesNotContain("EIPCodeThrow", json);
+    }
+
+    [Fact]
+    public void OfficialClrEvent80MapsToManagedThrowWithoutAffectingContentionIds()
+    {
+        Assert.Equal("exception_thrown", RuntimeCostReader.ClrEventKind(80));
+        Assert.Equal("contention_start", RuntimeCostReader.ClrEventKind(81));
+        Assert.Equal("contention_stop", RuntimeCostReader.ClrEventKind(91));
+        Assert.Null(RuntimeCostReader.ClrEventKind(250));
+        var keywords = TrustedTraceCapture.RuntimeCostProviders.Split(',')[1].Split(':')[1];
+        Assert.True((Convert.ToInt64(keywords, 16) & 0x8000L) != 0L);
+    }
     [Fact]
     public void CollectionLifetimeIsNotPauseTime()
     {

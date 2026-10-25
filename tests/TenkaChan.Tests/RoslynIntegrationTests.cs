@@ -50,6 +50,23 @@ public sealed class RoslynIntegrationTests
             using var service = new RoslynReviewService(guard);
             var summary = await service.OpenAsync(projectPath);
             Assert.True(summary.MethodCount >= 2);
+            // A read-only dynamic diagnosis must not replace the user's
+            // selected shared workload profile. Import remains explicit.
+            var traceJson = Path.Combine(root, "demo.speedscope.json");
+            File.WriteAllText(traceJson, """
+                {"shared":{"frames":[{"name":"Fixture.Demo.Add(System.Int32,System.Int32)"}]},
+                 "profiles":[{"type":"sampled","name":"read-only-thread","unit":"milliseconds",
+                   "samples":[[0]],"weights":[5]}]}
+                """);
+            Assert.Null(service.CurrentHotspotProfile);
+            var preview = await service.AnalyzeHotspotProfileAsync(traceJson);
+            Assert.Equal(5, preview.TotalWeight);
+            Assert.Contains(preview.Frames, f => f.MatchedMethodId is not null);
+            Assert.Null(service.CurrentHotspotProfile);
+            var imported = await service.ImportHotspotProfileAsync(traceJson);
+            Assert.NotNull(service.CurrentHotspotProfile);
+            Assert.Equal(imported, service.CurrentHotspotProfile);
+
             var add = Assert.Single(service.FindMethods("Demo.Add"));
             var details = await service.InspectAsync(add.Id);
             Assert.Contains("return a + b", details.Source);

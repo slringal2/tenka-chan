@@ -566,6 +566,49 @@ public sealed partial class RoslynReviewService : IDisposable
     }
 
     /// <summary>
+    /// Analyze one explicit saved speedscope thread WITHOUT changing the
+    /// shared current profile. A caller holding the dashboard gate may use
+    /// this to produce a side-effect-free report from an existing trace.
+    /// </summary>
+    public async Task<SampledHotspotReport> AnalyzeHotspotProfileAsync(
+        string filePath, int profileIndex = 0, int maxFrames = 500,
+        CancellationToken ct = default)
+    {
+        var safeFile = _guard.RequireFile(filePath, ".json");
+        await _openLock.WaitAsync(ct);
+        try
+        {
+            EnsureOpen();
+            return SpeedscopeHotspotParser.Read(safeFile,
+                ProfileMethodIdentities(), profileIndex, maxFrames);
+        }
+        finally { _openLock.Release(); }
+    }
+
+    /// <summary>
+    /// Return names from the current Roslyn snapshot for conservative
+    /// profile/stack matching. No raw source text or process operation.
+    /// </summary>
+    public async Task<IReadOnlyList<ProfileMethodIdentity>> GetProfileMethodIdentitiesAsync(
+        CancellationToken ct = default)
+    {
+        await _openLock.WaitAsync(ct);
+        try
+        {
+            EnsureOpen();
+            return ProfileMethodIdentities();
+        }
+        finally { _openLock.Release(); }
+    }
+
+    private ProfileMethodIdentity[] ProfileMethodIdentities() =>
+        _methods.Values.Where(m => CallableSyntax.CanCorrelateByMetadataName(m.Symbol))
+            .Select(m => new ProfileMethodIdentity(m.Summary.Id,
+                m.Symbol.ContainingType.ToDisplayString(
+                    SymbolDisplayFormat.CSharpErrorMessageFormat) + "." +
+                m.Symbol.Name)).ToArray();
+
+    /// <summary>
     /// Import a sampled workload profile created separately by a trusted
     /// profiler. This parser never starts an executable or profiler.
     /// </summary>
@@ -578,12 +621,7 @@ public sealed partial class RoslynReviewService : IDisposable
         try
         {
             EnsureOpen();
-            var methods = _methods.Values.Where(m => CallableSyntax.CanCorrelateByMetadataName(m.Symbol)).Select(m =>
-                new ProfileMethodIdentity(m.Summary.Id,
-                    m.Symbol.ContainingType.ToDisplayString(
-                        SymbolDisplayFormat.CSharpErrorMessageFormat) + "." +
-                    m.Symbol.Name)).ToArray();
-            var report = SpeedscopeHotspotParser.Read(safeFile, methods,
+            var report = SpeedscopeHotspotParser.Read(safeFile, ProfileMethodIdentities(),
                 profileIndex, maxFrames);
             _hotspotProfile = report;
             return report;

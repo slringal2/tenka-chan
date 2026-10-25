@@ -259,7 +259,7 @@ public static class SpeedscopeHotspotParser
         if (stack.Count > 0) data[stack[^1]].Exclusive += weight;
     }
 
-    private static bool FrameMatches(string frame, string fullyQualifiedMember)
+    internal static bool FrameMatches(string frame, string fullyQualifiedMember)
     {
         // A suffix-only match can accidentally map Another.A.B.Method to
         // A.B.Method. Require a real start/boundary before the namespace.

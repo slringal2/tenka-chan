@@ -121,8 +121,23 @@ public sealed class DashboardAgentTools
     public static Task<string> ImportThread(DashboardAgentClient client, string snapshotId, string artifactId, int profileIndex, CancellationToken cancellationToken = default) =>
         client.CallAsync("import_thread", new { snapshotId, artifactId, profileIndex }, cancellationToken);
 
+    [McpServerTool(Name = "tenka_allocation_stacks")]
+    [Description("Read captured CLR AllocationTick managed stacks from a CURRENT trace artifact through a temporary offline ETLX conversion (max 16 MB raw trace, 256 MB conversion), with exact-name Roslyn method association and explicit ambiguous/unresolved counts. No target execution, builds, symbol downloads or external process attachment. Only triggering-object sample counts/sizes, NOT total bytes allocated per method. Requires snapshotId and artifactId from tenka_trace; approved=false because this is read-only.")]
+    public static Task<string> AllocationStacks(DashboardAgentClient client,
+        string snapshotId, string artifactId, int limit = 30,
+        CancellationToken cancellationToken = default) =>
+        client.CallAsync("allocation_stacks", new { snapshotId, artifactId, limit }, cancellationToken);
+
+    [McpServerTool(Name = "tenka_dynamic_diagnose")]
+    [Description("Read a previously captured trace from the CURRENT Roslyn snapshot. Supply its artifactId and explicit profileIndex. Correlates sampled Speedscope frame names to source methods, adds separate static candidates and per-process GC/allocation/Monitor context. No execution; this does NOT measure per-method CPU, attribute GC/allocations to source, prove source/binary identity, or detect deadlocks. Output is bounded and flags incomplete traces.")]
+    public static Task<string> DynamicDiagnose(DashboardAgentClient client, string snapshotId,
+        string artifactId, int profileIndex, int limit = 30,
+        CancellationToken cancellationToken = default) =>
+        client.CallAsync("dynamic_diagnose",
+            new { snapshotId, artifactId, profileIndex, limit }, cancellationToken);
+
     [McpServerTool(Name = "tenka_runtime_costs")]
-    [Description("Read saved GC/allocation/Monitor events from a trace. No program launch. Missing events mean not observed, not zero cost.")]
+    [Description("Read saved GC/allocation/Monitor and first-chance exception events from a trace. Returns bounded exception type counts, no messages or throw-site attribution. Caught exceptions are not confirmed bugs. No program launch. Missing events mean not observed, not zero cost.")]
     public static Task<string> RuntimeCosts(DashboardAgentClient client, string snapshotId, string artifactId, CancellationToken cancellationToken = default) =>
         client.CallAsync("runtime_costs", new { snapshotId, artifactId }, cancellationToken);
 

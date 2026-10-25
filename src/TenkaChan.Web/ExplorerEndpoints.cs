@@ -10,7 +10,8 @@ public sealed record ExplorerRequest(string SnapshotId, string Action, string? P
     string? TypeId = null, string? MethodId = null, string? AssemblyId = null, string? CompanionId = null,
     string? ArtifactId = null, string? BaselineId = null, int NativeIndex = 0, int BaselineIndex = 0,
     int? ProfileIndex = null, int? MetadataToken = null, string? AssemblySha256 = null,
-    bool Approved = false, bool AllowRestore = false, string[]? Arguments = null);
+    bool Approved = false, bool AllowRestore = false, string[]? Arguments = null,
+    int Limit = 30);
 
 public static class ExplorerEndpoints
 {
@@ -129,6 +130,93 @@ public static class ExplorerEndpoints
                         return new AssemblyWorkbench(guard, experiments, jit).Compare(
                             new(LocalJitCaptureId: left.Id, MethodIndex: request.BaselineIndex),
                             new(LocalJitCaptureId: right.Id, MethodIndex: request.NativeIndex));
+                    }
+                    case "allocation-stacks":
+                    {
+                        // Explicitly choose an existing trace artifact from this
+                        // source snapshot; no arbitrary executable or path input.
+                        var selected = dashboard.ExplorerResult(index, request.ArtifactId, "trace");
+                        var capture = (TraceCaptureReport)selected.Data;
+                        var identities = await roslyn.GetProfileMethodIdentitiesAsync(ct);
+                        var grouped = await new AllocationStackTraceReader(guard)
+                            .ReadAsync(capture.ReportPath, identities, request.Limit, ct);
+                        var staticScreen = await roslyn.AnalyzePerformanceHotspotsAsync(
+                            maxMethods: 500, maxSites: 1500, ct: ct);
+                        if (staticScreen.SnapshotId != index.SnapshotId)
+                            throw new WorkspaceBuildConflictException("Source snapshot changed during allocation analysis.");
+                        var scored = staticScreen.Methods.ToDictionary(
+                            m => m.Method.Id, StringComparer.Ordinal);
+                        var sites = staticScreen.Sites.GroupBy(
+                            site => site.MethodId, StringComparer.Ordinal)
+                            .ToDictionary(group => group.Key,
+                                group => group.OrderByDescending(site => site.Weight)
+                                    .Take(4).Select(site =>
+                                        site.Category + " at line " + site.Line).ToArray(),
+                                StringComparer.Ordinal);
+                        return grouped with
+                        {
+                            Hotspots = grouped.Hotspots.Select(row =>
+                            {
+                                scored.TryGetValue(row.MethodId, out var screen);
+                                var candidates = sites.GetValueOrDefault(row.MethodId) ?? [];
+                                try
+                                {
+                                    var method = index.Method(row.MethodId);
+                                    return row with
+                                    {
+                                        SourceFile = method.File, SourceLine = method.Line,
+                                        StaticSuspicionScore = screen?.SuspicionScore,
+                                        StaticCandidates = candidates
+                                    };
+                                }
+                                catch (KeyNotFoundException)
+                                {
+                                    return row with { StaticSuspicionScore = screen?.SuspicionScore,
+                                        StaticCandidates = candidates };
+                                }
+                            }).ToArray()
+                        };
+                    }
+                    case "dynamic-diagnose":
+                    {
+                        // Entire workflow runs under the current source-snapshot
+                        // gate. No new application, profiler, build or model runs.
+                        if (request.ProfileIndex is not int profileIndex)
+                            throw new ArgumentException("Select a profileIndex from the trace artifact.");
+                        var artifact = dashboard.ExplorerResult(index, request.ArtifactId, "trace");
+                        var capture = (TraceCaptureReport)artifact.Data;
+                        var reader = new TrustedTraceCapture(guard);
+                        var verified = reader.Read(capture.ReportPath);
+                        var file = reader.RequireProfile(verified, profileIndex);
+                        var observed = await roslyn.AnalyzeHotspotProfileAsync(
+                            file, profileIndex, 500, ct);
+                        var costs = await new RuntimeCostReader(guard).ReadAsync(
+                            verified.ReportPath, null, new(500000, 20, null), ct);
+                        // Recheck hashes after both analyses so modified reports or
+                        // trace bytes cannot silently become "verified" evidence.
+                        var unchanged = reader.Read(verified.ReportPath);
+                        if (unchanged.NetTrace != verified.NetTrace ||
+                            unchanged.Speedscope != verified.Speedscope)
+                            throw new InvalidDataException("Trace artifacts changed while building the dynamic diagnosis.");
+                        var source = new Dictionary<string, MethodSummary>(StringComparer.Ordinal);
+                        foreach (var frame in observed.Frames.Where(f => f.MatchedMethodId is not null))
+                        {
+                            if (source.ContainsKey(frame.MatchedMethodId!)) continue;
+                            // An indexed callable might be unsupported in the
+                            // type explorer (e.g. local function). Do not invent
+                            // a declaration or attribute runtime time to it.
+                            try
+                            {
+                                var summary = index.MethodSeed(frame.MatchedMethodId!).Summary;
+                                source.Add(summary.Id, summary);
+                            }
+                            catch (KeyNotFoundException) { }
+                        }
+                        var staticCandidates = await roslyn.AnalyzePerformanceHotspotsAsync(
+                            maxMethods: 500, maxSites: 1500, ct: ct);
+                        return DynamicTraceDiagnosisBuilder.Build(index.SnapshotId,
+                            artifact.Id, verified, profileIndex, observed, costs, source,
+                            staticCandidates, request.Limit);
                     }
                     case "runtime-costs":
                     {

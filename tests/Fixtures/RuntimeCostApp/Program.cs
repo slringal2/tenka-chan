@@ -11,6 +11,7 @@ public static class Workload
         Busy();
         if (args.Contains("--idle")) { Thread.Sleep(300); Console.WriteLine("idle"); return; }
         Allocate();
+        ObserveExceptions();
         for (var i = 0; i < 4; i++)
         {
             using var ready = new ManualResetEventSlim();
@@ -26,6 +27,18 @@ public static class Workload
         Busy();
         Console.WriteLine("runtime-cost-fixture=" + _sink);
     }
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static void ObserveExceptions()
+    {
+        // First-chance throws are expected and caught; the reader MUST NOT
+        // classify them as application failures or leak the message text.
+        for (var i = 0; i < 6; i++)
+        {
+            try { throw new InvalidOperationException("PRIVATE-FIXTURE-MESSAGE-DO-NOT-EXPOSE"); }
+            catch (InvalidOperationException) { Interlocked.Increment(ref _sink); }
+        }
+    }
+
     [MethodImpl(MethodImplOptions.NoInlining)]
     public static void Allocate()
     {
