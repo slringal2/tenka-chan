@@ -18,17 +18,18 @@ public sealed class ReviewContextChurnTests : IDisposable
     private readonly string _root = Path.Combine(Path.GetTempPath(), "tenka-context-" + Guid.NewGuid().ToString("N"));
     private readonly List<AdhocWorkspace> _workspaces = [];
     private readonly byte[] _core = File.ReadAllBytes(typeof(object).Assembly.Location);
+    private ReviewSourceCatalog? _lastCatalog;
     private WorkspaceGuard Guard => new([_root], true, false);
 
     private async Task<TrackedReviewTarget> Catalog(string snapshot, string referencePath = "cache-one.dll",
         string code = "class C { public int M()=>1; public int N()=>1; }", bool release = false,
         string[]? symbols = null, string? generated = null, bool dependency = false, int dependencyValue = 1,
-        bool reverseDocuments = false, string[]? referenceAliases = null, bool diskReference = false)
+        bool reverseDocuments = false, string[]? referenceAliases = null, bool diskReference = false, string projectXml = "<Project/>")
     {
         Directory.CreateDirectory(_root);
         var workspace = new AdhocWorkspace(); _workspaces.Add(workspace);
         var id = ProjectId.CreateNewId(); var project = Path.Combine(_root, "P.csproj");
-        File.WriteAllText(project, "<Project/>");
+        File.WriteAllText(project, projectXml);
         var solution = workspace.CurrentSolution.AddProject(ProjectInfo.Create(id, VersionStamp.Create(), "P", "P",
             LanguageNames.CSharp, filePath: project,
             compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
@@ -79,6 +80,7 @@ public sealed class ReviewContextChurnTests : IDisposable
         }
         var index = await SourceExplorerIndex.CreateAsync(snapshot, solution, seeds);
         var catalog = await index.ReviewCatalogAsync(Guard, default);
+        _lastCatalog = catalog;
         return catalog.Targets.Single(t => t.Kind == "method" && t.Name.Contains("C.M()", StringComparison.Ordinal));
     }
     private static ReviewCheckpoint Mark(TrackedReviewTarget target) => new(1, target.Id, target.Kind, target.Name,
@@ -207,6 +209,43 @@ public sealed class ReviewContextChurnTests : IDisposable
         Assert.Equal(a.LegacyContextHash, b.LegacyContextHash); // v1 omitted aliases.
         Assert.NotEqual(a.ContextHash, b.ContextHash);
         Assert.Contains("metadataReferences", ReviewProgress.State(b, Mark(a), false).ContextChange!.ChangedComponents);
+    }
+    [Fact]
+    public async Task HintPathEditIsDiagnosedAsProjectFileChangeNotMetadataChange()
+    {
+        // Catalog-level test: AdhocWorkspace does not evaluate either HintPath with MSBuild.
+        var before = await Catalog("before", projectXml: "<Project><ItemGroup><Reference Include=\"D\"><HintPath>a/D.dll</HintPath></Reference></ItemGroup></Project>");
+        var after = await Catalog("after", projectXml: "<Project><ItemGroup><Reference Include=\"D\"><HintPath>b/D.dll</HintPath></Reference></ItemGroup></Project>");
+        Assert.Equal(before.SourceHash, after.SourceHash);
+        Assert.Equal("projectFiles", Assert.Single(ReviewProgress.State(after, Mark(before), false).ContextChange!.ChangedComponents));
+    }
+    [Fact]
+    public async Task CatalogDiagnosticsDescribeTheSameFingerprintReads()
+    {
+        var target = await Catalog("snapshot", diskReference: true);
+        var report = _lastCatalog!.ReferencesFor(target.ProjectId);
+        Assert.True(report.Available);
+        Assert.Equal(0, report.UnresolvedIdentities);
+        var item = Assert.Single(report.Items);
+        Assert.Equal(target.ProjectPath, item.ProjectPath);
+        Assert.Equal(Path.Combine(_root, "cache-one.dll"), item.FilePath);
+        Assert.True(item.IdentityComplete);
+        Assert.Null(item.FailureCode);
+        Assert.Equal(ReviewProgress.Hash(item.Identity), item.IdentityHash);
+        // Reading saved diagnostics must not probe the path again or change context state.
+        File.Delete(item.FilePath!);
+        Assert.Equal(item, Assert.Single(_lastCatalog.ReferencesFor(target.ProjectId).Items));
+        Assert.Contains("not a live filesystem probe", report.Note);
+    }
+    [Fact]
+    public async Task DiagnosticsIncludeLoadedDependencyProjectsOnly()
+    {
+        var target = await Catalog("snapshot", dependency: true);
+        var report = _lastCatalog!.ReferencesFor(target.ProjectId);
+        Assert.Equal(3, report.Total); // Owner's metadata + project link, dependency's metadata.
+        Assert.Equal(2, report.Items.Select(item => item.ProjectId).Distinct().Count());
+        Assert.Single(report.Items.Where(item => item.Kind == "project"));
+        Assert.Equal(0, report.UnresolvedIdentities);
     }
     public void Dispose()
     {

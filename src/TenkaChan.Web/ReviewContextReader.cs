@@ -53,6 +53,7 @@ public static class ReviewContextReader
             return (object)new
             {
                 snapshotId = index.SnapshotId, selection, target, state, source,
+                referenceDiagnostics = ReviewReferenceDiagnostics.Summarize(catalog.ReferencesFor(target.ProjectId)),
                 markBasis = new { snapshotId = index.SnapshotId, targetId = target.Id,
                     target.SourceHash, target.ContextHash, expectedRevision = state.Revision },
                 binary = new { status = binaryStatus, assemblyCount,

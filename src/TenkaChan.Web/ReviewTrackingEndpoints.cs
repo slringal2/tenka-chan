@@ -49,7 +49,8 @@ public sealed class ReviewTrackingService(DashboardState dashboard,WorkspaceGuar
     {
         var target=catalog.Require(targetId);var stale=await catalog.StaleProjectsAsync(guard,false,ct);
         var history=store.History(target.Id);var state=ReviewProgress.State(target,history.FirstOrDefault(),stale.Contains(target.ProjectId));
-        return new {snapshotId=catalog.SnapshotId,target,state,history,note=ReviewProgress.Note};
+        return new {snapshotId=catalog.SnapshotId,target,state,history,
+            referenceDiagnostics=catalog.ReferencesFor(target.ProjectId),note=ReviewProgress.Note};
     },ct);
     public Task<object> Badges(string snapshot,string[] ids,CancellationToken ct) => With(snapshot,async catalog=>
     {
