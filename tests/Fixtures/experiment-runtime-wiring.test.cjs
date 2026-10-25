@@ -40,10 +40,12 @@ test('framework resolver is read-only and does not start a model or install a ru
   assert.doesNotMatch(policy,/Process\.Start|HttpClient|File\.Write|File\.Delete|Assembly\.Load/);
 });
 test('README lists exactly the currently registered tool names',()=>{
-  const source=read('src/TenkaChan.Mcp/Agent/DashboardAgentTools.cs')+read('src/TenkaChan.Mcp/Agent/ReviewProgressTools.cs');
-  const names=new Set([...source.matchAll(/McpServerTool\(Name = "([^"]+)"/g)].map(m=>m[1]));
+  const program=read('src/TenkaChan.Mcp/Program.cs');
+  const classes=[...program.matchAll(/\.WithTools<([A-Za-z_][A-Za-z0-9_]*)>\(\)/g)].map(m=>m[1]);
+  assert.ok(classes.length>0);assert.equal(new Set(classes).size,classes.length);
+  const names=new Set(classes.flatMap(name=>[...read(`src/TenkaChan.Mcp/Agent/${name}.cs`).matchAll(/McpServerTool\(Name = "([^"]+)"/g)].map(m=>m[1])));
   const docs=new Set([...read('README.md').matchAll(/`(tenka_[a-z_]+)`/g)].map(m=>m[1]));
-  assert.equal(names.size,36);assert.deepEqual([...docs].sort(),[...names].sort());
+  assert.ok(names.size>0);assert.deepEqual([...docs].sort(),[...names].sort());
 });
 test('main quick start no longer tells the operator to configure an internal model',()=>{
   const doc=read('README.md');
