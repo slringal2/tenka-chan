@@ -81,6 +81,7 @@ ILSpyは固定コミットから取得し、ソースを甜花ちゃん向けに
 | 領域 | 公開ツール |
 |---|---|
 | 接続・対象 | `tenka_connect` / `tenka_context` / `tenka_sample` / `tenka_open_project` / `tenka_reload_workspace` / `tenka_attach_workspace` / `tenka_finish` |
+| 調査セッション・承認 | `tenka_investigation` / `tenka_approve_session` / `tenka_revoke_approval` / `tenka_session_status` |
 | コード | `tenka_list_types` / `tenka_inspect_type` / `tenka_type_references` / `tenka_inspect_method` / `tenka_method_references` |
 | 静的解析 | `tenka_scan` / `tenka_rules` / `tenka_priorities` / `tenka_test_inputs` |
 | IL・JIT | `tenka_binary_methods` / `tenka_il` / `tenka_jit` / `tenka_artifact` / `tenka_native` / `tenka_compare_native` |

@@ -84,7 +84,7 @@ class ProbeWireTests(unittest.TestCase):
         result,calls,cached,events=self.run_probe()
         self.assertEqual(result.returncode,0,result.stderr)
         output=json.loads(result.stdout)
-        self.assertEqual(output['mcpTools'],36)
+        self.assertEqual(output['mcpTools'],len(expected_tool_names(ROOT)))
         self.assertFalse(output['modelInference']);self.assertFalse(output['targetExecution'])
         # Context: one MCP call + one duplicate HTTP pair; note: one call.
         self.assertEqual(len(cached),3)
