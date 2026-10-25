@@ -186,7 +186,8 @@ public sealed class AgentJournalTests
         var s = j.Begin("agent", "");
         var call = j.Start(Request(s.Id, tool: "inspect_method"));
         j.Complete(call.CallId, new { inspection = new { source = "public void M(){}", diagnostics = new string('a', 70000) } });
-        var alias = JsonSerializer.SerializeToElement(j.ReadResult(s.Id, call.CallId, "/source", 0, 30));
+        var alias = JsonSerializer.SerializeToElement(j.ReadResult(s.Id, call.CallId, "/source", 0, 30),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
         Assert.Equal("public void M(){}", alias.GetProperty("source").GetString());
         var old = JsonSerializer.SerializeToElement(j.ReadResult(s.Id, call.CallId, "/inspection/source", 0, 30));
         Assert.Equal("public void M(){}", old.GetProperty("data").GetString());
